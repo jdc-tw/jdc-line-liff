@@ -88,7 +88,7 @@
   </style>
 </head>
 <body>
-  <div id="loading">載入中…（build v4 6/19）</div>
+  <div id="loading">載入中…（build v5 6/19 ISO）</div>
   <div id="main">
     <h1>日本國土開發<br>LINE 平台</h1>
 
@@ -261,12 +261,12 @@
       var t0 = Date.now();
       var beat = setInterval(function () {
         var el = document.getElementById('loading');
-        if (el) el.textContent = '④ 載入資料(JSONP)… ' + Math.round((Date.now() - t0) / 1000) + 's';
+        if (el) el.textContent = '④ 載入名單(同源 roster.json)… ' + Math.round((Date.now() - t0) / 1000) + 's';
       }, 1000);
-      dbg('④ 載入資料(JSONP)… 0s');
-      jsonp('getInit', { userId: userId }, 15000).then(function (data) {
+      dbg('④ 載入名單(同源 roster.json)… 0s');
+      // 隔離驗證：名單改讀同源靜態檔，完全不碰 GAS 跨網域 JSONP
+      fetch('roster.json?t=' + Date.now()).then(function (r) { return r.json(); }).then(function (un) {
         clearInterval(beat);
-        var un = (data && data.unitsAndNames) || {};
         gNamesByUnit = un.namesByUnit || {};
 
         // 填充綁定表單下拉
@@ -287,7 +287,7 @@
           onUnitChange(rptUnit, rptName, gNamesByUnit);
         });
 
-        var state = data && data.bindingState;
+        var state = null;  // 隔離驗證：跳過 GAS 綁定狀態查詢，固定顯示綁定表單
         document.getElementById('loading').style.display = 'none';
         document.getElementById('main').style.display = '';
 
