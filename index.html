@@ -88,7 +88,7 @@
   </style>
 </head>
 <body>
-  <div id="loading">載入中…（build v7 6/19 FIX）</div>
+  <div id="loading">載入中，請稍候…</div>
   <div id="main">
     <h1>日本國土開發<br>LINE 平台</h1>
 
@@ -169,36 +169,20 @@
     var GAS_URL = 'https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
     var LIFF_ID = '2010451233-a781rqsm';
 
-    // ─── 持久診斷紀錄(跨越空白存活) ─────────────────────────────────────────────
+    // ─── 靜默飛行紀錄器(僅寫本機，不顯示；日後 LINE 內出事可撈) ──────────────────
+    // 只保留最近一輪的步驟時間軸；不在畫面上呈現，避免干擾使用者。
     function lg(m) {
       try {
         var a = JSON.parse(localStorage.getItem('dl') || '[]');
         a.push({ t: Date.now(), m: m });
+        if (a.length > 40) a = a.slice(-40);
         localStorage.setItem('dl', JSON.stringify(a));
       } catch (e) {}
     }
-    (function renderPrev() {
-      try {
-        var prev = localStorage.getItem('dl');
-        if (prev && prev !== '[]') {
-          var a = JSON.parse(prev);
-          var t0 = a[0].t;
-          var s = a.map(function (x) { return '+' + (x.t - t0) + 'ms　' + x.m; }).join('\n');
-          var box = document.createElement('pre');
-          box.style.cssText = 'background:#fff;border:1px solid #f5a;padding:8px;font-size:11px;line-height:1.4;overflow:auto;max-height:50vh;white-space:pre-wrap;margin:0 0 12px';
-          box.textContent = '【上次紀錄】\n' + s;
-          var L = document.getElementById('loading');
-          L.parentNode.insertBefore(box, L);
-        }
-        localStorage.setItem('dl', '[]');
-      } catch (e) {}
-    })();
-    window.onerror = function (m, src, line, col) { lg('❌ window.onerror: ' + m + ' @' + line + ':' + col); };
+    window.onerror = function (m, src, line, col) { lg('window.onerror: ' + m + ' @' + line + ':' + col); };
     window.addEventListener('unhandledrejection', function (e) {
-      lg('❌ unhandledrejection: ' + ((e.reason && e.reason.message) || e.reason));
+      lg('unhandledrejection: ' + ((e.reason && e.reason.message) || e.reason));
     });
-    window.addEventListener('pagehide', function () { lg('⚠️ PAGEHIDE 頁面被卸載/導走'); });
-    document.addEventListener('visibilitychange', function () { lg('visibility=' + document.visibilityState); });
 
     // ─── JSONP helper ──────────────────────────────────────────────────────────
     // 診斷強化：區分「script 根本沒載入(WebView 封鎖跨網域)」與「script 載入了但
@@ -288,16 +272,9 @@
       gDisplayName = displayName;
 
       // 一次 JSONP 取回「名單＋綁定狀態」
-      var t0 = Date.now();
-      var beat = setInterval(function () {
-        var el = document.getElementById('loading');
-        if (el) el.textContent = '④ 載入資料… ' + Math.round((Date.now() - t0) / 1000) + 's';
-      }, 1000);
-      dbg('④ 載入資料… 0s');
-      lg('④a getInit JSONP 發出');
+      lg('④ getInit JSONP 發出');
       jsonp('getInit', { userId: userId }, 15000).then(function (data) {
-        lg('④c getInit 回來');
-        clearInterval(beat);
+        lg('④ getInit 回來');
         var un = (data && data.unitsAndNames) || {};
         gNamesByUnit = un.namesByUnit || {};
 
@@ -358,8 +335,7 @@
           show('section-report');
         }
       }).catch(function (err) {
-        lg('④✗ fetch/render catch: ' + (err && err.message ? err.message : err));
-        clearInterval(beat);
+        lg('④ catch: ' + (err && err.message ? err.message : err));
         var el = document.getElementById('loading');
         if (el) {
           el.innerHTML = '<div class="msg msg-err">載入失敗：' + (err && err.message ? err.message : err) +
@@ -468,8 +444,8 @@
     });
 
     // ─── LIFF init ─────────────────────────────────────────────────────────────
-    function dbg(m) { var L = document.getElementById('loading'); if (L) L.textContent = m; lg('dbg ' + m); }
-    lg('=== 新一輪開始 build v7 ===');
+    function dbg(m) { lg(m); }  // 只寫飛行紀錄，畫面維持「載入中」
+    lg('=== 開始 ===');
     dbg('① liff.init…');
     liff.init({ liffId: LIFF_ID })
       .then(function () {
