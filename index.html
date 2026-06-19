@@ -88,7 +88,7 @@
   </style>
 </head>
 <body>
-  <div id="loading">載入中…（build v6 6/19 LOG）</div>
+  <div id="loading">載入中…（build v7 6/19 FIX）</div>
   <div id="main">
     <h1>日本國土開發<br>LINE 平台</h1>
 
@@ -287,19 +287,18 @@
       gUserId = userId;
       gDisplayName = displayName;
 
-      // 一次 JSONP 取回「名單＋綁定狀態」(避免 LINE 內建瀏覽器對第二個 JSONP script 卡住)
-      // 心跳：每秒更新秒數。若畫面變空白＝整頁被導走；若秒數持續跳動但卡住＝JSONP 真的卡在 WebView。
+      // 一次 JSONP 取回「名單＋綁定狀態」
       var t0 = Date.now();
       var beat = setInterval(function () {
         var el = document.getElementById('loading');
-        if (el) el.textContent = '④ 載入名單(同源 roster.json)… ' + Math.round((Date.now() - t0) / 1000) + 's';
+        if (el) el.textContent = '④ 載入資料… ' + Math.round((Date.now() - t0) / 1000) + 's';
       }, 1000);
-      dbg('④ 載入名單(同源 roster.json)… 0s');
-      lg('④a fetch roster.json 發出');
-      // 隔離驗證：名單改讀同源靜態檔，完全不碰 GAS 跨網域 JSONP
-      fetch('roster.json?t=' + Date.now()).then(function (r) { lg('④b fetch 回應 status=' + r.status); return r.json(); }).then(function (un) {
-        lg('④c json 解析完成 units=' + (un.units ? un.units.length : '?'));
+      dbg('④ 載入資料… 0s');
+      lg('④a getInit JSONP 發出');
+      jsonp('getInit', { userId: userId }, 15000).then(function (data) {
+        lg('④c getInit 回來');
         clearInterval(beat);
+        var un = (data && data.unitsAndNames) || {};
         gNamesByUnit = un.namesByUnit || {};
 
         // 填充綁定表單下拉
@@ -320,10 +319,10 @@
           onUnitChange(rptUnit, rptName, gNamesByUnit);
         });
 
-        var state = null;  // 隔離驗證：跳過 GAS 綁定狀態查詢，固定顯示綁定表單
+        var state = data && data.bindingState;
         document.getElementById('loading').style.display = 'none';
-        document.getElementById('main').style.display = '';
-        lg('④d 表單已顯示(成功路徑)');
+        document.getElementById('main').style.display = 'block';
+        lg('④d 表單已顯示 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
 
         if (!state || !state.bound) {
           // 未綁定 → 顯示綁定表單
@@ -398,7 +397,7 @@
             rptUnit.value = unit;
             onUnitChange(rptUnit, rptName, gNamesByUnit);
             rptName.value = name;
-            document.getElementById('main').style.display = '';
+            document.getElementById('main').style.display = 'block';
             show('section-report');
             btn.disabled = false;
           } else {
@@ -470,7 +469,7 @@
 
     // ─── LIFF init ─────────────────────────────────────────────────────────────
     function dbg(m) { var L = document.getElementById('loading'); if (L) L.textContent = m; lg('dbg ' + m); }
-    lg('=== 新一輪開始 build v6 ===');
+    lg('=== 新一輪開始 build v7 ===');
     dbg('① liff.init…');
     liff.init({ liffId: LIFF_ID })
       .then(function () {
