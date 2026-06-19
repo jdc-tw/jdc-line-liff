@@ -237,12 +237,11 @@
       gUserId = userId;
       gDisplayName = displayName;
 
-      // 先抓員工名單（綁定表單與回報區都需要）
-      dbg('④ 取員工名單(JSONP)…');
-      jsonp('getUnitsAndNames').then(function (data) {
-        dbg('⑤ 名單OK(' + ((data && data.units) || []).length + '單位), 查狀態(JSONP)…');
-        gNamesByUnit = (data && data.namesByUnit) || {};
-        var units = (data && data.units) || [];
+      // 一次 JSONP 取回「名單＋綁定狀態」(避免 LINE 內建瀏覽器對第二個 JSONP script 卡住)
+      dbg('④ 載入資料(JSONP)…');
+      jsonp('getInit', { userId: userId }).then(function (data) {
+        var un = (data && data.unitsAndNames) || {};
+        gNamesByUnit = un.namesByUnit || {};
 
         // 填充綁定表單下拉
         var selUnit = document.getElementById('sel-unit');
@@ -262,9 +261,7 @@
           onUnitChange(rptUnit, rptName, gNamesByUnit);
         });
 
-        // 查綁定狀態
-        return jsonp('getBindingState', { userId: userId });
-      }).then(function (state) {
+        var state = data && data.bindingState;
         document.getElementById('loading').style.display = 'none';
         document.getElementById('main').style.display = '';
 
