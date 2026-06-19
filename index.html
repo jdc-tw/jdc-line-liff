@@ -435,22 +435,26 @@
     dbg('① liff.init…');
     liff.init({ liffId: LIFF_ID })
       .then(function () {
-        dbg('② init OK, isInClient=' + liff.isInClient() + ' isLoggedIn=' + liff.isLoggedIn());
-        if (!liff.isLoggedIn()) {
-          dbg('② 未登入→login…');
-          liff.login();
-          return;
+        var inClient = liff.isInClient();
+        var loggedIn = liff.isLoggedIn();
+        if (loggedIn) {
+          // 已登入：照常往下走
+          dbg('② OK inClient=' + inClient + ' loggedIn=true → getProfile…');
+          return liff.getProfile().then(function (profile) {
+            dbg('③ getProfile OK uid=' + String(profile.userId).slice(0, 8) + '…');
+            startApp(profile.userId, profile.displayName);
+          });
         }
-        return liff.getProfile();
-      })
-      .then(function (profile) {
-        if (!profile) return;
-        dbg('③ getProfile OK uid=' + String(profile.userId).slice(0, 8) + '…');
-        startApp(profile.userId, profile.displayName);
+        // 未登入：不自動重導(避免整頁變空白)，停住顯示狀態＋手動按鈕
+        document.getElementById('loading').innerHTML =
+          '<div class="msg msg-err">② 未登入<br>isInClient=' + inClient + '<br>isLoggedIn=false' +
+          '</div><p class="hint">在 LINE app 內開啟時這裡本應為 true。若 inClient=true 卻 loggedIn=false，' +
+          '代表 LIFF 掛的 channel 設定有問題。</p>' +
+          '<button class="btn btn-primary" onclick="liff.login()">手動登入試試</button>';
       })
       .catch(function (err) {
-        document.getElementById('loading').textContent =
-          'LIFF 初始化失敗：' + (err && err.message ? err.message : err);
+        document.getElementById('loading').innerHTML =
+          '<div class="msg msg-err">① LIFF 初始化失敗：' + (err && err.message ? err.message : err) + '</div>';
       });
   </script>
 </body>
