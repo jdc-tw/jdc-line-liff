@@ -79,7 +79,7 @@
       render(false, '驗證失敗', '連結不完整，請重新從 LINE 取得驗證連結。');
     } else {
       jsonp('verify', { t: t }).then(function (res) {
-        if (res && res.ok) render(true, '驗證成功！', (res && res.msg) || '您的帳號已完成驗證，可回到 LINE 使用。');
+        if (res && res.ok) render(true, '員工身分驗證成功！', (res && res.msg) || '您的 LINE 帳號已完成員工身分驗證。');
         else render(false, '驗證失敗', (res && res.msg) || '連結無效或已過期，請重新從 LINE 取得驗證連結。');
       }).catch(function (err) {
         render(false, '驗證失敗', '連線發生問題（' + (err && err.message ? err.message : err) + '），請稍後再試。');
