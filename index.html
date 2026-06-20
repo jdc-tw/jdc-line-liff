@@ -64,6 +64,9 @@
     .msg-info { background: #e8f0fe; color: #1a56c4; }
     #loading { text-align: center; padding: 40px 0; color: #888; font-size: 15px; }
     #main { display: none; }
+    .birth-row { display: flex; gap: 8px; margin-bottom: 14px; }
+    .birth-row select { margin-bottom: 0; }
+    .birth-row #sel-birth-y { flex: 1.4; }
     .radio-group { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
     .radio-group label {
       flex: 1;
@@ -95,7 +98,7 @@
     <!-- 未綁定：綁定表單 -->
     <div id="section-bind" class="card" style="display:none">
       <h2>請確認您的身分</h2>
-      <p class="hint">請選擇您的所屬單位與姓名，系統將寄送驗證信到您的公司信箱。</p>
+      <p class="hint">請選擇所屬單位、姓名與出生年月日；核對無誤後，系統會寄驗證信到您的公司信箱。</p>
       <label for="sel-unit">所屬單位</label>
       <select id="sel-unit">
         <option value="">── 請選擇 ──</option>
@@ -104,6 +107,12 @@
       <select id="sel-name" disabled>
         <option value="">── 請先選單位 ──</option>
       </select>
+      <label>出生年月日（西元）</label>
+      <div class="birth-row">
+        <select id="sel-birth-y"><option value="">年</option></select>
+        <select id="sel-birth-m"><option value="">月</option></select>
+        <select id="sel-birth-d"><option value="">日</option></select>
+      </div>
       <div id="bind-msg"></div>
       <button class="btn btn-primary" id="btn-bind" disabled>確認送出</button>
     </div>
@@ -271,12 +280,19 @@
       gUserId = userId;
       gDisplayName = displayName;
 
-      // 一次 JSONP 取回「名單＋綁定狀態」
-      lg('④ getInit JSONP 發出');
-      jsonp('getInit', { userId: userId }, 15000).then(function (data) {
-        lg('④ getInit 回來');
-        var un = (data && data.unitsAndNames) || {};
-        gNamesByUnit = un.namesByUnit || {};
+      // 名單走同源靜態檔(快、不打 GAS)；綁定狀態走 GAS(per-user 即時)
+      lg('④ 載入 roster.json + getBindingState');
+      Promise.all([
+        fetch('roster.json?v=' + Date.now()).then(function (r) {
+          if (!r.ok) throw new Error('roster ' + r.status);
+          return r.json();
+        }),
+        jsonp('getBindingState', { userId: userId }, 15000)
+      ]).then(function (arr) {
+        lg('④ 資料回來');
+        var roster = arr[0] || {};
+        var state = arr[1];
+        gNamesByUnit = roster.namesByUnit || {};
 
         // 填充綁定表單下拉
         var selUnit = document.getElementById('sel-unit');
@@ -296,7 +312,9 @@
           onUnitChange(rptUnit, rptName, gNamesByUnit);
         });
 
-        var state = data && data.bindingState;
+        // 生日下拉（西元）
+        populateBirthSelects();
+
         document.getElementById('loading').style.display = 'none';
         document.getElementById('main').style.display = 'block';
         lg('④d 表單已顯示 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
@@ -344,27 +362,53 @@
       });
     }
 
+    // ─── 生日下拉 ──────────────────────────────────────────────────────────────
+    function populateBirthSelects() {
+      var y = document.getElementById('sel-birth-y');
+      var m = document.getElementById('sel-birth-m');
+      var d = document.getElementById('sel-birth-d');
+      if (y.options.length > 1) return; // 已填過
+      var thisYear = new Date().getFullYear();
+      for (var yy = thisYear - 16; yy >= 1945; yy--) {
+        y.appendChild(new Option(yy + ' 年', yy));
+      }
+      for (var mm = 1; mm <= 12; mm++) m.appendChild(new Option(mm + ' 月', mm));
+      for (var dd = 1; dd <= 31; dd++) d.appendChild(new Option(dd + ' 日', dd));
+      [y, m, d].forEach(function (s) { s.addEventListener('change', updateBindBtn); });
+    }
+
     // ─── 綁定送出 ──────────────────────────────────────────────────────────────
     function updateBindBtn() {
-      var selUnit = document.getElementById('sel-unit');
-      var selName = document.getElementById('sel-name');
-      document.getElementById('btn-bind').disabled = !(selUnit.value && selName.value);
+      var unit = document.getElementById('sel-unit').value;
+      var name = document.getElementById('sel-name').value;
+      var by = document.getElementById('sel-birth-y').value;
+      var bm = document.getElementById('sel-birth-m').value;
+      var bd = document.getElementById('sel-birth-d').value;
+      document.getElementById('btn-bind').disabled = !(unit && name && by && bm && bd);
     }
 
     document.getElementById('btn-bind').addEventListener('click', function () {
       var btn = this;
       var unit = document.getElementById('sel-unit').value;
       var name = document.getElementById('sel-name').value;
+      var by = document.getElementById('sel-birth-y').value;
+      var bm = document.getElementById('sel-birth-m').value;
+      var bd = document.getElementById('sel-birth-d').value;
       var msgEl = document.getElementById('bind-msg');
-      if (!unit || !name) return;
+      if (!unit || !name || !by || !bm || !bd) return;
       btn.disabled = true;
       showMsg(msgEl, '送出中…', 'info');
-      jsonp('submitBinding', { userId: gUserId, displayName: gDisplayName, unit: unit, name: name })
+      jsonp('submitBinding', { userId: gUserId, displayName: gDisplayName, unit: unit, name: name, birthYear: by, birthMonth: bm, birthDay: bd })
         .then(function (res) {
           if (res && res.ok) {
             showMsg(msgEl, '已送出！請至公司信箱點擊驗證連結。', 'ok');
             hide('section-bind');
             show('section-pending');
+          } else if (res && res.mismatch) {
+            // 生日/資料不符 → 留在表單讓他重選，並一併開放回報
+            showMsg(msgEl, res.msg || '資料與名單不符，請確認後重試。', 'err');
+            show('section-report');
+            btn.disabled = false;
           } else if (res && res.needReport) {
             showMsg(msgEl, res.msg || '請使用下方回報功能聯絡管理員。', 'err');
             // 把回報區的單位姓名帶入
