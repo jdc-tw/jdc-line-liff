@@ -156,22 +156,12 @@
       <p class="hint">待活動公告後，請重新開啟此頁面填寫。</p>
     </div>
 
-    <!-- 回報區（已驗證時顯示；綁定失敗找不到信箱時也顯示） -->
+    <!-- 問題回報：一顆按鈕（之後接員工意見 Google 表單） -->
     <div id="section-report" class="card" style="display:none">
       <h2>問題回報</h2>
-      <p class="hint">若遇到任何問題，請填寫後送出，管理員將協助處理。</p>
-      <label for="rpt-unit">所屬單位</label>
-      <select id="rpt-unit">
-        <option value="">── 請選擇 ──</option>
-      </select>
-      <label for="rpt-name">姓名</label>
-      <select id="rpt-name" disabled>
-        <option value="">── 請先選單位 ──</option>
-      </select>
-      <label for="rpt-issue">問題說明</label>
-      <textarea id="rpt-issue" placeholder="請描述您的問題…"></textarea>
+      <p class="hint">找不到您的名字／單位、資料不符，或有其他問題，請點此回報。</p>
       <div id="rpt-msg"></div>
-      <button class="btn btn-secondary" id="btn-rpt">送出回報</button>
+      <button class="btn btn-secondary" id="btn-rpt">問題回報</button>
     </div>
   </div>
 
@@ -317,19 +307,13 @@
         });
         selName.addEventListener('change', updateBindBtn);
 
-        // 填充回報區下拉
-        var rptUnit = document.getElementById('rpt-unit');
-        var rptName = document.getElementById('rpt-name');
-        populateUnitSelect(rptUnit, gNamesByUnit);
-        rptUnit.addEventListener('change', function () {
-          onUnitChange(rptUnit, rptName, gNamesByUnit);
-        });
-
         // 生日下拉（西元）
         populateBirthSelects();
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('main').style.display = 'block';
+        // 問題回報按鈕：各狀態都顯示，讓卡關的人隨時能回報
+        show('section-report');
         lg('④d 表單已顯示 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
 
         if (!state || !state.bound) {
@@ -339,18 +323,11 @@
           // 已綁定未驗證
           show('section-pending');
         } else {
-          // 已驗證：已知身分 → 上方問候 + 預填問題回報的單位/姓名
+          // 已驗證：已知身分 → 上方問候
           if (state.name) {
             var greet = document.getElementById('greeting');
             greet.textContent = '您好，' + state.name;
             greet.style.display = '';
-          }
-          if (state.unit && state.name) {
-            var rU = document.getElementById('rpt-unit');
-            var rN = document.getElementById('rpt-name');
-            rU.value = state.unit;
-            onUnitChange(rU, rN, gNamesByUnit);
-            rN.value = state.name;
           }
           if (state.activity) {
             gActivityId = state.activity.id;
@@ -430,20 +407,11 @@
             hide('section-bind');
             show('section-pending');
           } else if (res && res.mismatch) {
-            // 生日/資料不符 → 留在表單讓他重選，並一併開放回報
+            // 生日/資料不符 → 留在表單讓他重選（下方已有問題回報按鈕可用）
             showMsg(msgEl, res.msg || '資料與名單不符，請確認後重試。', 'err');
-            show('section-report');
             btn.disabled = false;
           } else if (res && res.needReport) {
-            showMsg(msgEl, res.msg || '請使用下方回報功能聯絡管理員。', 'err');
-            // 把回報區的單位姓名帶入
-            var rptUnit = document.getElementById('rpt-unit');
-            var rptName = document.getElementById('rpt-name');
-            rptUnit.value = unit;
-            onUnitChange(rptUnit, rptName, gNamesByUnit);
-            rptName.value = name;
-            document.getElementById('main').style.display = 'block';
-            show('section-report');
+            showMsg(msgEl, res.msg || '請使用下方「問題回報」聯絡管理員。', 'err');
             btn.disabled = false;
           } else {
             showMsg(msgEl, (res && res.error) || '送出失敗，請稍後再試。', 'err');
@@ -486,30 +454,9 @@
         });
     });
 
-    // ─── 問題回報送出 ──────────────────────────────────────────────────────────
+    // ─── 問題回報（暫顯即將開放；之後接員工意見 Google 表單） ──────────────────
     document.getElementById('btn-rpt').addEventListener('click', function () {
-      var btn = this;
-      var msgEl = document.getElementById('rpt-msg');
-      var unit  = document.getElementById('rpt-unit').value;
-      var name  = document.getElementById('rpt-name').value;
-      var issue = document.getElementById('rpt-issue').value.trim();
-      if (!unit || !name) { showMsg(msgEl, '請選擇所屬單位與姓名。', 'err'); return; }
-      if (!issue) { showMsg(msgEl, '請輸入問題說明。', 'err'); return; }
-      btn.disabled = true;
-      showMsg(msgEl, '送出中…', 'info');
-      jsonp('submitReport', { unit: unit, name: name, issue: issue })
-        .then(function (res) {
-          if (res && res.ok) {
-            showMsg(msgEl, '回報已送出，管理員將盡快處理。', 'ok');
-            document.getElementById('rpt-issue').value = '';
-          } else {
-            showMsg(msgEl, (res && res.error) || '送出失敗，請稍後再試。', 'err');
-            btn.disabled = false;
-          }
-        }).catch(function (err) {
-          showMsg(msgEl, '網路錯誤：' + (err && err.message ? err.message : err), 'err');
-          btn.disabled = false;
-        });
+      showMsg(document.getElementById('rpt-msg'), '功能即將開放，請洽管理員。', 'info');
     });
 
     // ─── LIFF init ─────────────────────────────────────────────────────────────
