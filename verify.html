@@ -61,14 +61,12 @@
       box.className = 'card ' + (ok ? 'ok' : 'err');
       var html = '<div class="icon">' + (ok ? '✅' : '⚠️') + '</div><h1>' + title + '</h1><p>' + msg + '</p>';
       if (ok) {
+        // 用「按鈕(使用者點擊)」回 LINE：點擊才會觸發 iOS 的 LINE universal link、開回 LINE app。
+        // 不用 JS 自動跳轉——那只會在 Safari 內開 LIFF、反而卡住。
         html += '<a class="btn" href="' + LIFF_LINK + '">回 LINE 填寫出席調查</a>';
-        html += '<p style="font-size:13px;color:#999;margin-top:10px">正在自動帶您回 LINE…若沒有跳轉，請點上方按鈕。</p>';
-        box.innerHTML = html;
-        // 自動嘗試跳回 LINE；部分 iPhone 會擋「瀏覽器自動開 app」，故保留按鈕兜底。
-        setTimeout(function () { location.replace(LIFF_LINK); }, 1500);
-      } else {
-        box.innerHTML = html;
+        html += '<p style="font-size:13px;color:#999;margin-top:10px">點上方按鈕回 LINE 填寫；或回到 LINE 點剛收到的通知。</p>';
       }
+      box.innerHTML = html;
     }
 
     function getToken() {
