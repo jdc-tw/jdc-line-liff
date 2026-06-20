@@ -521,7 +521,7 @@
         // 未登入(例如驗證信跳回 Safari 這種外部瀏覽器)→ 走 LINE 登入後自動回來
         if (!liff.isLoggedIn()) {
           dbg('② 未登入 → liff.login()');
-          liff.login();
+          liff.login({ redirectUri: location.href }); // 保留 ?act= 等 query 過登入
           return;
         }
         dbg('② loggedIn → getProfile…');
