@@ -231,6 +231,17 @@
       });
     }
 
+    // 取網址 ?act=<活動ID>；LIFF 有時把原始 query 包進 liff.state，兩處都找。
+    function getAct() {
+      try {
+        var p = new URLSearchParams(location.search);
+        if (p.get('act')) return p.get('act');
+        var st = p.get('liff.state');
+        if (st) return new URLSearchParams(decodeURIComponent(st)).get('act') || '';
+      } catch (e) {}
+      return '';
+    }
+
     // ─── 全域狀態 ──────────────────────────────────────────────────────────────
     var gUserId = '';
     var gDisplayName = '';
@@ -288,7 +299,7 @@
           if (!r.ok) throw new Error('roster ' + r.status);
           return r.json();
         }),
-        jsonp('getBindingState', { userId: userId }, 30000)
+        jsonp('getBindingState', { userId: userId, act: getAct() }, 30000)
       ]).then(function (arr) {
         lg('④ 資料回來');
         var roster = arr[0] || {};

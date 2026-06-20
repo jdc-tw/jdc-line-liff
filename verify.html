@@ -17,6 +17,12 @@
     p { color: #555; }
     .ok h1 { color: #1a7d44; }
     .err h1 { color: #b71c1c; }
+    .btn {
+      display: block; margin-top: 20px; padding: 13px; border-radius: 8px;
+      background: #06c755; color: #fff; font-size: 16px; font-weight: 700;
+      text-decoration: none; letter-spacing: .02em;
+    }
+    .btn:active { background: #05a847; }
   </style>
 </head>
 <body>
@@ -28,6 +34,7 @@
 
   <script>
     var GAS_URL = 'https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+    var LIFF_LINK = 'https://liff.line.me/2010451233-a781rqsm';
 
     function jsonp(action, params, timeoutMs) {
       return new Promise(function (resolve, reject) {
@@ -52,7 +59,16 @@
     function render(ok, title, msg) {
       var box = document.getElementById('box');
       box.className = 'card ' + (ok ? 'ok' : 'err');
-      box.innerHTML = '<div class="icon">' + (ok ? '✅' : '⚠️') + '</div><h1>' + title + '</h1><p>' + msg + '</p>';
+      var html = '<div class="icon">' + (ok ? '✅' : '⚠️') + '</div><h1>' + title + '</h1><p>' + msg + '</p>';
+      if (ok) {
+        html += '<a class="btn" href="' + LIFF_LINK + '">回 LINE 填寫出席調查</a>';
+        html += '<p style="font-size:13px;color:#999;margin-top:10px">正在自動帶您回 LINE…若沒有跳轉，請點上方按鈕。</p>';
+        box.innerHTML = html;
+        // 自動嘗試跳回 LINE；部分 iPhone 會擋「瀏覽器自動開 app」，故保留按鈕兜底。
+        setTimeout(function () { location.replace(LIFF_LINK); }, 1500);
+      } else {
+        box.innerHTML = html;
+      }
     }
 
     function getToken() {
