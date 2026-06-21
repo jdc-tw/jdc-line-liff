@@ -2,12 +2,10 @@
 
 公司同仁透過 LINE 完成**一次性員工身分驗證**，之後在 LINE 內填寫各種**活動出席／意願調查**的前端（LIFF 網頁，跑在 GitHub Pages）。後端為 Google Apps Script（私有 repo）。
 
-## 📐 系統架構文件（技術人員）
+## 📐 系統文件
 
-完整流程、平台、畫面/對話內容、限制與設定：
-
-- 🌐 **渲染網頁（含流程圖/時序圖/狀態圖）**：<https://jdc-tw.github.io/jdc-line-liff/docs/>
-- 📄 **Markdown 原始檔**：[`docs/員工身分驗證-系統架構.md`](docs/員工身分驗證-系統架構.md)
+- 🌐 **系統總覽（給主管／快速理解，視覺化精華頁）**：<https://jdc-tw.github.io/jdc-line-liff/docs/>
+- 📄 **完整技術文件（給工程師，含流程/時序/狀態圖、限制、設定）**：[`docs/員工身分驗證-系統架構.md`](docs/員工身分驗證-系統架構.md)
 
 ## 檔案
 
