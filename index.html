@@ -238,8 +238,9 @@
     var gDisplayName = '';
     var gNamesByUnit = {};
     var gActivityId = '';
-    var gFormReady = false;   // 下拉/listener 只初始化一次
-    var gRendered = false;    // 名單已到、主畫面已顯示
+    var gFormReady = false;    // 下拉/listener 只初始化一次
+    var gRendered = false;     // 主畫面已顯示
+    var gRosterReady = false;  // 名單(同源)已到
     var gRealState = undefined; // getBindingState 的真實結果（背景回來）
 
     // ─── UI helpers ────────────────────────────────────────────────────────────
@@ -288,13 +289,21 @@
       gUserId = userId;
       gDisplayName = displayName;
       gRendered = false;
+      gRosterReady = false;
       gRealState = undefined;
 
       var cacheKey = 'bstate_' + userId;
       var cached = null;
       try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch (e) {}
 
-      // (1) 名單回來 → 立刻渲染（樂觀：有 cache 用 cache，沒有預設綁定首頁）
+      // 樂觀只賭「穩定狀態」：未綁定(含新用戶)→綁定首頁、已驗證→活動，這兩個秒顯且不易變。
+      // 「待驗證」是過渡態(同仁剛去點驗證信、最可能已變)→ 不猜，等真實狀態，避免閃錯畫面。
+      var optState;
+      if (!cached || !cached.bound) optState = { bound: false };
+      else if (cached.verified) optState = cached;
+      else optState = null;
+
+      // (1) 名單回來(同源,快) → 有可信狀態就立刻渲染
       lg('④ 載入 roster.json（樂觀渲染）');
       fetch('roster.json?v=' + Date.now()).then(function (r) {
         if (!r.ok) throw new Error('roster ' + r.status);
@@ -302,27 +311,36 @@
       }).then(function (roster) {
         gNamesByUnit = roster.namesByUnit || {};
         setupForm();
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('main').style.display = 'block';
-        show('section-report'); // 問題回報按鈕各狀態都在
-        gRendered = true;
-        applyState(gRealState !== undefined ? gRealState : (cached || { bound: false }));
-        lg('④ 樂觀畫面已顯示');
+        gRosterReady = true;
+        if (gRealState !== undefined) renderState(gRealState);
+        else if (optState) renderState(optState);
+        // else: 待驗證 → 保持「載入中」，等 getBindingState 回來才顯示正確畫面
+        lg('④ roster ready');
       }).catch(function (err) {
         lg('④ roster catch: ' + (err && err.message));
         showLoadError(err);
       });
 
-      // (2) 背景查真實狀態 → 寫快取 + 校正畫面
+      // (2) 背景查真實狀態 → 寫快取 + 顯示/校正畫面
       jsonp('getBindingState', { userId: userId, act: getAct() }, 30000).then(function (state) {
         lg('④ getBindingState 回 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
         try { localStorage.setItem(cacheKey, JSON.stringify(state)); } catch (e) {}
         gRealState = state;
-        if (gRendered) applyState(state);
+        renderState(state);
       }).catch(function (err) {
         lg('④ getBindingState catch: ' + (err && err.message));
-        // 背景失敗：樂觀畫面(綁定首頁/上次狀態)仍可用，不擋人操作
+        // 背景失敗：若已樂觀顯示(綁定首頁/活動)仍可用；若在等(待驗證)則維持載入中
       });
+    }
+
+    // 顯示主畫面 + 套用狀態（名單沒到先不顯示；可重複呼叫＝校正）
+    function renderState(state) {
+      if (!gRosterReady) return;
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('main').style.display = 'block';
+      show('section-report');
+      gRendered = true;
+      applyState(state);
     }
 
     // 下拉/listener 只初始化一次
