@@ -4,8 +4,7 @@
 
 ## 📐 系統文件
 
-- 🌐 **系統總覽（給主管／快速理解，視覺化精華頁）**：<https://jdc-tw.github.io/jdc-line-liff/docs/>
-- 📄 **完整技術文件（給工程師，含流程/時序/狀態圖、限制、設定）**：[`docs/員工身分驗證-系統架構.md`](docs/員工身分驗證-系統架構.md)
+> 系統架構文件（含帳號／檔案／分頁明細、流程／時序／狀態圖、UI 截圖、美化版總覽頁）已移至**私有 repo** `jdc-tw/jdc-line-gas` 的 [`docs/`](https://github.com/jdc-tw/jdc-line-gas/tree/main/docs)，以 GitHub 帳號權限控管，不公開於網際網路。需檢視請向管理員索取該私有 repo 的存取權。
 
 ## 檔案
 
@@ -15,7 +14,6 @@
 | `verify.html` | email 驗證信連結落地頁（JSONP 回呼後端完成驗證） |
 | `roster.json` | 同源靜態名單（單位→姓名下拉來源） |
 | `update-roster.sh` | 名單更新後重新產生 `roster.json` 並發佈 |
-| `docs/` | 系統架構文件與渲染頁 |
 
 ## 架構一句話
 
