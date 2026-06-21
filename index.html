@@ -238,6 +238,9 @@
     var gDisplayName = '';
     var gNamesByUnit = {};
     var gActivityId = '';
+    var gFormReady = false;   // 下拉/listener 只初始化一次
+    var gRendered = false;    // 名單已到、主畫面已顯示
+    var gRealState = undefined; // getBindingState 的真實結果（背景回來）
 
     // ─── UI helpers ────────────────────────────────────────────────────────────
     function showMsg(el, text, type) {
@@ -278,90 +281,103 @@
       }
     }
 
-    // ─── 主流程 ────────────────────────────────────────────────────────────────
+    // ─── 主流程（樂觀渲染）─────────────────────────────────────────────────────
+    // 名單是同源靜態檔(~0.2s)，getBindingState 打 GAS(~3s)。不等 GAS：名單一到就用
+    // localStorage 的「上次狀態」秒顯正確畫面，GAS 回來再校正。首屏 ~4s → ~0.3s。
     function startApp(userId, displayName) {
       gUserId = userId;
       gDisplayName = displayName;
+      gRendered = false;
+      gRealState = undefined;
 
-      // 名單走同源靜態檔(快、不打 GAS)；綁定狀態走 GAS(per-user 即時)
-      lg('④ 載入 roster.json + getBindingState');
-      Promise.all([
-        fetch('roster.json?v=' + Date.now()).then(function (r) {
-          if (!r.ok) throw new Error('roster ' + r.status);
-          return r.json();
-        }),
-        jsonp('getBindingState', { userId: userId, act: getAct() }, 30000)
-      ]).then(function (arr) {
-        lg('④ 資料回來');
-        var roster = arr[0] || {};
-        var state = arr[1];
+      var cacheKey = 'bstate_' + userId;
+      var cached = null;
+      try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch (e) {}
+
+      // (1) 名單回來 → 立刻渲染（樂觀：有 cache 用 cache，沒有預設綁定首頁）
+      lg('④ 載入 roster.json（樂觀渲染）');
+      fetch('roster.json?v=' + Date.now()).then(function (r) {
+        if (!r.ok) throw new Error('roster ' + r.status);
+        return r.json();
+      }).then(function (roster) {
         gNamesByUnit = roster.namesByUnit || {};
-
-        // 填充綁定表單下拉
-        var selUnit = document.getElementById('sel-unit');
-        var selName = document.getElementById('sel-name');
-        populateUnitSelect(selUnit, gNamesByUnit);
-        selUnit.addEventListener('change', function () {
-          onUnitChange(selUnit, selName, gNamesByUnit);
-          updateBindBtn();
-        });
-        selName.addEventListener('change', updateBindBtn);
-
-        // 生日下拉（西元）
-        populateBirthSelects();
-
+        setupForm();
         document.getElementById('loading').style.display = 'none';
         document.getElementById('main').style.display = 'block';
-        // 問題回報按鈕：各狀態都顯示，讓卡關的人隨時能回報
-        show('section-report');
-        lg('④d 表單已顯示 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
-
-        if (!state || !state.bound) {
-          // 未綁定 → 顯示綁定表單
-          show('section-bind');
-        } else if (!state.verified) {
-          // 已綁定未驗證
-          show('section-pending');
-        } else {
-          // 已驗證：已知身分 → 上方問候
-          if (state.name) {
-            var greet = document.getElementById('greeting');
-            greet.textContent = '您好，' + state.name;
-            greet.style.display = '';
-          }
-          if (state.activity) {
-            gActivityId = state.activity.id;
-            document.getElementById('act-title').textContent = state.activity.name || '活動出席回覆';
-            document.getElementById('act-question').textContent = state.activity.question || '';
-            // 填入既有回答
-            if (state.existingAnswer) {
-              var ea = state.existingAnswer;
-              var radios = document.querySelectorAll('input[name="attend"]');
-              radios.forEach(function (r) { if (r.value === ea.attend) r.checked = true; });
-              var dietRadios = document.querySelectorAll('input[name="diet"]');
-              dietRadios.forEach(function (r) { if (r.value === ea.diet) r.checked = true; });
-              document.getElementById('txt-opinion').value = ea.opinion || '';
-            }
-            // 不參加時隱藏葷素欄
-            document.querySelectorAll('input[name="attend"]').forEach(function (r) {
-              r.addEventListener('change', function () {
-                document.getElementById('diet-row').style.display = r.value === '參加' ? '' : 'none';
-              });
-            });
-            show('section-activity');
-          } else {
-            show('section-no-activity');
-          }
-          show('section-report');
-        }
+        show('section-report'); // 問題回報按鈕各狀態都在
+        gRendered = true;
+        applyState(gRealState !== undefined ? gRealState : (cached || { bound: false }));
+        lg('④ 樂觀畫面已顯示');
       }).catch(function (err) {
-        lg('④ catch: ' + (err && err.message ? err.message : err));
-        var el = document.getElementById('loading');
-        if (el) {
-          el.innerHTML = '<div class="msg msg-err">載入失敗：' + (err && err.message ? err.message : err) +
-            '</div><button class="btn btn-secondary" onclick="location.reload()">重新整理</button>';
-        }
+        lg('④ roster catch: ' + (err && err.message));
+        showLoadError(err);
       });
+
+      // (2) 背景查真實狀態 → 寫快取 + 校正畫面
+      jsonp('getBindingState', { userId: userId, act: getAct() }, 30000).then(function (state) {
+        lg('④ getBindingState 回 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
+        try { localStorage.setItem(cacheKey, JSON.stringify(state)); } catch (e) {}
+        gRealState = state;
+        if (gRendered) applyState(state);
+      }).catch(function (err) {
+        lg('④ getBindingState catch: ' + (err && err.message));
+        // 背景失敗：樂觀畫面(綁定首頁/上次狀態)仍可用，不擋人操作
+      });
+    }
+
+    // 下拉/listener 只初始化一次
+    function setupForm() {
+      if (gFormReady) return;
+      gFormReady = true;
+      var selUnit = document.getElementById('sel-unit');
+      var selName = document.getElementById('sel-name');
+      populateUnitSelect(selUnit, gNamesByUnit);
+      selUnit.addEventListener('change', function () { onUnitChange(selUnit, selName, gNamesByUnit); updateBindBtn(); });
+      selName.addEventListener('change', updateBindBtn);
+      populateBirthSelects();
+      // 活動：不參加時隱藏葷素欄
+      document.querySelectorAll('input[name="attend"]').forEach(function (r) {
+        r.addEventListener('change', function () {
+          document.getElementById('diet-row').style.display = r.value === '參加' ? '' : 'none';
+        });
+      });
+    }
+
+    // 依狀態顯示正確畫面（冪等，可重複套用＝校正）
+    function applyState(state) {
+      ['section-bind', 'section-pending', 'section-activity', 'section-no-activity'].forEach(hide);
+      var greet = document.getElementById('greeting');
+      if (!state || !state.bound) {
+        greet.style.display = 'none';
+        show('section-bind');
+      } else if (!state.verified) {
+        greet.style.display = 'none';
+        show('section-pending');
+      } else {
+        if (state.name) { greet.textContent = '您好，' + state.name; greet.style.display = ''; }
+        else greet.style.display = 'none';
+        if (state.activity) {
+          gActivityId = state.activity.id;
+          document.getElementById('act-title').textContent = state.activity.name || '活動出席回覆';
+          document.getElementById('act-question').textContent = state.activity.question || '';
+          var ea = state.existingAnswer;
+          if (ea) {
+            document.querySelectorAll('input[name="attend"]').forEach(function (r) { r.checked = (r.value === ea.attend); });
+            document.querySelectorAll('input[name="diet"]').forEach(function (r) { r.checked = (r.value === ea.diet); });
+            document.getElementById('txt-opinion').value = ea.opinion || '';
+            document.getElementById('diet-row').style.display = (ea.attend === '參加') ? '' : 'none';
+          }
+          show('section-activity');
+        } else {
+          show('section-no-activity');
+        }
+      }
+    }
+
+    function showLoadError(err) {
+      var el = document.getElementById('loading');
+      if (el) el.innerHTML = '<div class="msg msg-err">載入失敗：' + (err && err.message ? err.message : err) +
+        '</div><button class="btn btn-secondary" onclick="location.reload()">重新整理</button>';
     }
 
     // ─── 生日下拉 ──────────────────────────────────────────────────────────────
@@ -406,6 +422,8 @@
             showMsg(msgEl, '已送出！請至公司信箱點擊驗證連結。', 'ok');
             hide('section-bind');
             show('section-pending');
+            // 更新樂觀快取為「待驗證」，去收信後回來不會閃綁定首頁
+            try { localStorage.setItem('bstate_' + gUserId, JSON.stringify({ bound: true, verified: false })); } catch (e) {}
           } else if (res && res.mismatch) {
             // 生日/資料不符 → 留在表單讓他重選（下方已有問題回報按鈕可用）
             showMsg(msgEl, res.msg || '資料與名單不符，請確認後重試。', 'err');
