@@ -490,9 +490,14 @@
         });
     });
 
-    // ─── 問題回報（暫顯即將開放；之後接員工意見 Google 表單） ──────────────────
+    // ─── 問題回報：開員工意見 Google 表單 ──────────────────────────────────────
+    var REPORT_FORM_URL = 'https://forms.gle/tK3yac2wdxouCb6f9';
     document.getElementById('btn-rpt').addEventListener('click', function () {
-      showMsg(document.getElementById('rpt-msg'), '功能即將開放，請洽管理員。', 'info');
+      if (window.liff && liff.openWindow) {
+        liff.openWindow({ url: REPORT_FORM_URL, external: true });
+      } else {
+        window.open(REPORT_FORM_URL, '_blank');
+      }
     });
 
     // ─── LIFF init ─────────────────────────────────────────────────────────────
