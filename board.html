@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新人報到・人事核准看板</title>
+<style>
+ body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:1100px;margin:0 auto;padding:24px;font-size:18px;color:#333}
+ h1{font-size:26px} .row{border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0}
+ label{display:inline-block;min-width:64px;color:#666} input{font-size:18px;padding:6px 10px;margin:4px 8px 4px 0}
+ .btn{font-size:18px;padding:10px 20px;border:0;border-radius:8px;cursor:pointer;color:#fff;margin-right:8px}
+ .ok{background:#6e9281} .no{background:#b0694a} .msg{margin:8px 0;color:#b9863f}
+</style></head><body>
+<h1>新人報到・人事核准看板</h1>
+<div id="who" class="msg"></div>
+<div id="list">載入中…</div>
+<script>
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function getToken(){var m=location.search.match(/[?&]t=([^&]+)/);return m?decodeURIComponent(m[1]):'';}
+function jsonp(action,params){return new Promise(function(res){
+  var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+  var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  var s=document.createElement('script');
+  s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
+  s.onerror=function(){res({ok:false,msg:'連線失敗'});cleanup();};
+  function cleanup(){delete window[cb];s.remove();}
+  window[cb]=function(d){res(d);cleanup();};
+  document.body.appendChild(s);});}
+var TOKEN=getToken();
+function load(){
+  document.getElementById('list').textContent='載入中…';
+  jsonp('getCheckinPending',{token:TOKEN}).then(function(r){
+    if(!r||!r.ok){document.getElementById('list').textContent=(r&&r.msg)||'連結無效或已失效。';return;}
+    document.getElementById('who').textContent='核准人：'+r.who;
+    var box=document.getElementById('list'); box.innerHTML='';
+    if(!r.rows.length){box.textContent='目前沒有待確認的報到。';return;}
+    r.rows.forEach(function(o){box.appendChild(renderRow(o));});
+  });
+}
+function renderRow(o){
+  var d=document.createElement('div');d.className='row';
+  function fld(label,key){return '<label>'+label+'</label><input data-k="'+key+'" value="'+(o[key]||'').toString().replace(/"/g,'&quot;')+'">';}
+  d.innerHTML='<div>'+fld('姓名','姓名')+fld('部門','部門')+fld('單位','單位')+fld('職稱','職稱')+'</div>'+
+    '<div>'+fld('公司信箱','公司信箱')+fld('員編','員編')+'</div>'+
+    '<div><input data-k="退件原因" placeholder="退件原因（退件時填）" style="min-width:320px"></div>'+
+    '<div class="msg"></div>'+
+    '<button class="btn ok">核准</button><button class="btn no">退件</button>';
+  function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
+  var msg=d.querySelector('.msg');
+  d.querySelector('.ok').onclick=function(){msg.textContent='處理中…';
+    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),department:val('部門'),unit:val('單位'),title:val('職稱'),email:val('公司信箱'),empno:val('員編')})
+      .then(function(r){if(r&&r.ok){d.style.opacity=.4;msg.textContent='已核准、報到完成。';}else msg.textContent=(r&&r.msg)||'失敗';});};
+  d.querySelector('.no').onclick=function(){msg.textContent='處理中…';
+    jsonp('rejectCheckin',{token:TOKEN,row:o._row,reason:val('退件原因')})
+      .then(function(r){if(r&&r.ok){d.style.opacity=.4;msg.textContent='已退件，已通知新人重填。';}else msg.textContent=(r&&r.msg)||'失敗';});};
+  return d;
+}
+load();
+</script></body></html>
