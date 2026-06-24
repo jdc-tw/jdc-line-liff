@@ -167,7 +167,7 @@
       <label for="ob-unit">單位</label>
       <select id="ob-unit"><option value="">── 請選擇 ──</option></select>
       <label for="ob-title">職稱</label>
-      <input type="text" id="ob-title" placeholder="例：工程師" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;background:#fafafa;margin-bottom:14px;box-sizing:border-box">
+      <select id="ob-title"><option value="">── 請選擇 ──</option></select>
       <div id="ob-msg"></div>
       <button class="btn btn-primary" id="btn-onboard" disabled>送出報到</button>
     </div>
@@ -430,19 +430,22 @@
       var btn = document.getElementById('btn-onboard');
       var msg = document.getElementById('ob-msg');
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
-      // 單位：用 roster 的 namesByUnit keys
-      Object.keys(gNamesByUnit).forEach(function (u) {
-        var o = document.createElement('option'); o.value = u; o.textContent = u; unit.appendChild(o);
-      });
-      // 部門：getDepartments
-      jsonp('getDepartments', {}, 30000).then(function (res) {
-        (res && res.departments || []).forEach(function (d) {
-          var o = document.createElement('option'); o.value = d; o.textContent = d; dept.appendChild(o);
+      // 部門／職稱／單位 都用下拉，一次抓 getCheckinOptions
+      function fillSelect(sel, arr) {
+        (arr || []).forEach(function (v) {
+          var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
         });
+      }
+      jsonp('getCheckinOptions', {}, 30000).then(function (res) {
+        res = res || {};
+        fillSelect(dept, res.departments);
+        fillSelect(title, res.titles);
+        // 單位優先用後端回的；沒有就退回 roster 的 namesByUnit keys
+        fillSelect(unit, (res.units && res.units.length) ? res.units : Object.keys(gNamesByUnit));
       });
-      function refresh() { btn.disabled = !(nameI.value.trim() && dept.value && unit.value && title.value.trim()); }
-      [nameI, title].forEach(function (el) { el.addEventListener('input', refresh); });
-      [dept, unit].forEach(function (el) { el.addEventListener('change', refresh); });
+      function refresh() { btn.disabled = !(nameI.value.trim() && dept.value && unit.value && title.value); }
+      nameI.addEventListener('input', refresh);
+      [dept, unit, title].forEach(function (el) { el.addEventListener('change', refresh); });
       btn.addEventListener('click', function () {
         btn.disabled = true; showMsg(msg, '送出中…', 'info');
         jsonp('submitCheckin', {

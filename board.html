@@ -4,7 +4,8 @@
 <style>
  body{font-family:-apple-system,"PingFang TC",sans-serif;max-width:1100px;margin:0 auto;padding:24px;font-size:18px;color:#333}
  h1{font-size:26px} .row{border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0}
- label{display:inline-block;min-width:64px;color:#666} input{font-size:18px;padding:6px 10px;margin:4px 8px 4px 0}
+ label{display:inline-block;min-width:64px;color:#666}
+ input,select{font-size:18px;padding:6px 10px;margin:4px 8px 4px 0;font-family:inherit}
  .btn{font-size:18px;padding:10px 20px;border:0;border-radius:8px;cursor:pointer;color:#fff;margin-right:8px}
  .ok{background:#6e9281} .no{background:#b0694a} .msg{margin:8px 0;color:#b9863f}
 </style></head><body>
@@ -24,33 +25,52 @@ function jsonp(action,params){return new Promise(function(res){
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 var TOKEN=getToken();
-function load(){
-  document.getElementById('list').textContent='載入中…';
-  jsonp('getCheckinPending',{token:TOKEN}).then(function(r){
-    if(!r||!r.ok){document.getElementById('list').textContent=(r&&r.msg)||'連結無效或已失效。';return;}
-    document.getElementById('who').textContent='核准人：'+r.who;
-    var box=document.getElementById('list'); box.innerHTML='';
-    if(!r.rows.length){box.textContent='目前沒有待確認的報到。';return;}
-    r.rows.forEach(function(o){box.appendChild(renderRow(o));});
-  });
+var gOpts={departments:[],titles:[],units:[]};
+function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;');}
+function fldInput(label,key,cur){return '<label>'+label+'</label><input data-k="'+key+'" value="'+esc(cur)+'">';}
+function fldSelect(label,key,cur,opts){
+  var inList=false,body='';
+  (opts||[]).forEach(function(v){var sel=(v===cur);if(sel)inList=true;body+='<option'+(sel?' selected':'')+'>'+esc(v)+'</option>';});
+  var extra=(cur&&!inList)?'<option selected>'+esc(cur)+'</option>':'';   // 現值不在清單→補上
+  var none='<option value=""'+(cur?'':' selected')+'>── 請選擇 ──</option>';
+  return '<label>'+label+'</label><select data-k="'+key+'">'+none+extra+body+'</select>';
 }
 function renderRow(o){
   var d=document.createElement('div');d.className='row';
-  function fld(label,key){return '<label>'+label+'</label><input data-k="'+key+'" value="'+(o[key]||'').toString().replace(/"/g,'&quot;')+'">';}
-  d.innerHTML='<div>'+fld('姓名','姓名')+fld('部門','部門')+fld('單位','單位')+fld('職稱','職稱')+'</div>'+
-    '<div>'+fld('公司信箱','公司信箱')+fld('員編','員編')+'</div>'+
-    '<div><input data-k="退件原因" placeholder="退件原因（退件時填）" style="min-width:320px"></div>'+
-    '<div class="msg"></div>'+
-    '<button class="btn ok">核准</button><button class="btn no">退件</button>';
+  d.innerHTML='<div>'+fldInput('姓名','姓名',o['姓名'])
+      +fldSelect('部門','部門',o['部門'],gOpts.departments)
+      +fldSelect('單位','單位',o['單位'],gOpts.units)
+      +fldSelect('職稱','職稱',o['職稱'],gOpts.titles)+'</div>'
+    +'<div>'+fldInput('公司信箱','公司信箱',o['公司信箱'])+fldInput('員編','員編',o['員編'])+'</div>'
+    +'<div><input data-k="退件原因" placeholder="退件原因（退件時必填）" style="min-width:320px"></div>'
+    +'<div class="msg"></div>'
+    +'<button class="btn ok">核准</button><button class="btn no">退件</button>';
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
   var msg=d.querySelector('.msg');
-  d.querySelector('.ok').onclick=function(){msg.textContent='處理中…';
+  d.querySelector('.ok').onclick=function(){
+    if(!val('員編').trim()){msg.textContent='請先補員編再核准。';return;}
+    msg.textContent='處理中…';
     jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),department:val('部門'),unit:val('單位'),title:val('職稱'),email:val('公司信箱'),empno:val('員編')})
       .then(function(r){if(r&&r.ok){d.style.opacity=.4;msg.textContent='已核准、報到完成。';}else msg.textContent=(r&&r.msg)||'失敗';});};
-  d.querySelector('.no').onclick=function(){msg.textContent='處理中…';
+  d.querySelector('.no').onclick=function(){
+    if(!val('退件原因').trim()){msg.textContent='退件請先填原因。';return;}
+    msg.textContent='處理中…';
     jsonp('rejectCheckin',{token:TOKEN,row:o._row,reason:val('退件原因')})
       .then(function(r){if(r&&r.ok){d.style.opacity=.4;msg.textContent='已退件，已通知新人重填。';}else msg.textContent=(r&&r.msg)||'失敗';});};
   return d;
+}
+function load(){
+  document.getElementById('list').textContent='載入中…';
+  jsonp('getCheckinOptions',{}).then(function(opt){
+    if(opt&&opt.departments)gOpts=opt;
+    return jsonp('getCheckinPending',{token:TOKEN});
+  }).then(function(r){
+    if(!r||!r.ok){document.getElementById('list').textContent=(r&&r.msg)||'連結無效或已失效。';return;}
+    document.getElementById('who').textContent='核准人：'+r.who;
+    var box=document.getElementById('list');box.innerHTML='';
+    if(!r.rows.length){box.textContent='目前沒有待確認的報到。';return;}
+    r.rows.forEach(function(o){box.appendChild(renderRow(o));});
+  });
 }
 load();
 </script></body></html>
