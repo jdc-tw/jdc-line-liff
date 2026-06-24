@@ -54,7 +54,7 @@ function renderRow(o){
   var msg=d.querySelector('.msg');
   d.querySelector('.ok').onclick=function(){
     if(!val('員編').trim()){msg.textContent='請先補員編再核准。';return;}
-    var pre=val('email-prefix').trim();
+    var pre=emailPrefix(val('email-prefix')).replace(/\s/g,'');  // 去掉誤打的 @後段與空白
     var email=pre?pre+EMAIL_DOMAIN:'';
     msg.textContent='處理中…';
     jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:val('職稱'),email:email,empno:val('員編')})
