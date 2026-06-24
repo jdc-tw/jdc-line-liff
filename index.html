@@ -162,8 +162,6 @@
       <p class="hint">歡迎加入！請填寫以下資料完成報到登記，送出後待人事確認。</p>
       <label for="ob-name">姓名</label>
       <input type="text" id="ob-name" placeholder="請輸入姓名" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;background:#fafafa;margin-bottom:14px;box-sizing:border-box">
-      <label for="ob-dept">部門</label>
-      <select id="ob-dept"><option value="">── 請選擇 ──</option></select>
       <label for="ob-unit">單位</label>
       <select id="ob-unit"><option value="">── 請選擇 ──</option></select>
       <label for="ob-title">職稱</label>
@@ -424,13 +422,12 @@
     function setupOnboard() {
       if (gObReady) return; gObReady = true;
       var nameI = document.getElementById('ob-name');
-      var dept = document.getElementById('ob-dept');
       var unit = document.getElementById('ob-unit');
       var title = document.getElementById('ob-title');
       var btn = document.getElementById('btn-onboard');
       var msg = document.getElementById('ob-msg');
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
-      // 部門／職稱／單位 都用下拉，一次抓 getCheckinOptions
+      // 單位／職稱 用下拉，一次抓 getCheckinOptions
       function fillSelect(sel, arr) {
         (arr || []).forEach(function (v) {
           var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
@@ -438,19 +435,18 @@
       }
       jsonp('getCheckinOptions', {}, 30000).then(function (res) {
         res = res || {};
-        fillSelect(dept, res.departments);
         fillSelect(title, res.titles);
-        // 單位優先用後端回的；沒有就退回 roster 的 namesByUnit keys
+        // 單位＝員工名單寬表的單位；後端沒回就退回 roster 的 namesByUnit keys
         fillSelect(unit, (res.units && res.units.length) ? res.units : Object.keys(gNamesByUnit));
       });
-      function refresh() { btn.disabled = !(nameI.value.trim() && dept.value && unit.value && title.value); }
+      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value); }
       nameI.addEventListener('input', refresh);
-      [dept, unit, title].forEach(function (el) { el.addEventListener('change', refresh); });
+      [unit, title].forEach(function (el) { el.addEventListener('change', refresh); });
       btn.addEventListener('click', function () {
         btn.disabled = true; showMsg(msg, '送出中…', 'info');
         jsonp('submitCheckin', {
           userId: gUserId, displayName: gDisplayName,
-          name: nameI.value.trim(), department: dept.value, unit: unit.value, title: title.value.trim()
+          name: nameI.value.trim(), unit: unit.value, title: title.value.trim()
         }, 30000).then(function (res) {
           if (res && res.ok) showMsg(msg, '報到登記完成！待人事確認後會以 LINE 通知您。', 'ok');
           else { showMsg(msg, (res && res.msg) || '送出失敗，請稍後再試。', 'err'); btn.disabled = false; }

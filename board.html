@@ -6,14 +6,17 @@
  h1{font-size:26px} .row{border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0}
  label{display:inline-block;min-width:64px;color:#666}
  input,select{font-size:18px;padding:6px 10px;margin:4px 8px 4px 0;font-family:inherit}
- .btn{font-size:18px;padding:10px 20px;border:0;border-radius:8px;cursor:pointer;color:#fff;margin-right:8px}
- .ok{background:#6e9281} .no{background:#b0694a} .msg{margin:8px 0;color:#b9863f}
+ .date{color:#888;font-size:15px;margin-bottom:8px}
+ .suffix{color:#666;margin-right:16px}
+ .btn{font-size:18px;padding:10px 24px;border:0;border-radius:8px;cursor:pointer;color:#fff}
+ .ok{background:#6e9281} .msg{margin:8px 0;color:#b9863f}
 </style></head><body>
 <h1>新人報到・人事核准看板</h1>
 <div id="who" class="msg"></div>
 <div id="list">載入中…</div>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+var EMAIL_DOMAIN='@jdc-corpn.com.tw';
 function getToken(){var m=location.search.match(/[?&]t=([^&]+)/);return m?decodeURIComponent(m[1]):'';}
 function jsonp(action,params){return new Promise(function(res){
   var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
@@ -25,44 +28,43 @@ function jsonp(action,params){return new Promise(function(res){
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 var TOKEN=getToken();
-var gOpts={departments:[],titles:[],units:[]};
+var gOpts={titles:[],units:[]};
 function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;');}
+function emailPrefix(full){full=(full||'').toString();var i=full.indexOf('@');return i>=0?full.slice(0,i):full;}
 function fldInput(label,key,cur){return '<label>'+label+'</label><input data-k="'+key+'" value="'+esc(cur)+'">';}
 function fldSelect(label,key,cur,opts){
   var inList=false,body='';
   (opts||[]).forEach(function(v){var sel=(v===cur);if(sel)inList=true;body+='<option'+(sel?' selected':'')+'>'+esc(v)+'</option>';});
-  var extra=(cur&&!inList)?'<option selected>'+esc(cur)+'</option>':'';   // 現值不在清單→補上
+  var extra=(cur&&!inList)?'<option selected>'+esc(cur)+'</option>':'';
   var none='<option value=""'+(cur?'':' selected')+'>── 請選擇 ──</option>';
   return '<label>'+label+'</label><select data-k="'+key+'">'+none+extra+body+'</select>';
 }
 function renderRow(o){
   var d=document.createElement('div');d.className='row';
-  d.innerHTML='<div>'+fldInput('姓名','姓名',o['姓名'])
-      +fldSelect('部門','部門',o['部門'],gOpts.departments)
+  var dateDisp=o['報到日期']?'<div class="date">報到日期：'+esc(o['報到日期'])+'</div>':'';
+  d.innerHTML=dateDisp
+    +'<div>'+fldInput('姓名','姓名',o['姓名'])
       +fldSelect('單位','單位',o['單位'],gOpts.units)
       +fldSelect('職稱','職稱',o['職稱'],gOpts.titles)+'</div>'
-    +'<div>'+fldInput('公司信箱','公司信箱',o['公司信箱'])+fldInput('員編','員編',o['員編'])+'</div>'
-    +'<div><input data-k="退件原因" placeholder="退件原因（退件時必填）" style="min-width:320px"></div>'
+    +'<div><label>公司信箱</label><input data-k="email-prefix" value="'+esc(emailPrefix(o['公司信箱']))+'" placeholder="信箱前綴" style="min-width:170px"><span class="suffix">'+EMAIL_DOMAIN+'</span>'
+      +fldInput('員編','員編',o['員編'])+'</div>'
     +'<div class="msg"></div>'
-    +'<button class="btn ok">核准</button><button class="btn no">退件</button>';
+    +'<button class="btn ok">核准</button>';
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
   var msg=d.querySelector('.msg');
   d.querySelector('.ok').onclick=function(){
     if(!val('員編').trim()){msg.textContent='請先補員編再核准。';return;}
+    var pre=val('email-prefix').trim();
+    var email=pre?pre+EMAIL_DOMAIN:'';
     msg.textContent='處理中…';
-    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),department:val('部門'),unit:val('單位'),title:val('職稱'),email:val('公司信箱'),empno:val('員編')})
+    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:val('職稱'),email:email,empno:val('員編')})
       .then(function(r){if(r&&r.ok){d.style.opacity=.4;msg.textContent='已核准、報到完成。';}else msg.textContent=(r&&r.msg)||'失敗';});};
-  d.querySelector('.no').onclick=function(){
-    if(!val('退件原因').trim()){msg.textContent='退件請先填原因。';return;}
-    msg.textContent='處理中…';
-    jsonp('rejectCheckin',{token:TOKEN,row:o._row,reason:val('退件原因')})
-      .then(function(r){if(r&&r.ok){d.style.opacity=.4;msg.textContent='已退件，已通知新人重填。';}else msg.textContent=(r&&r.msg)||'失敗';});};
   return d;
 }
 function load(){
   document.getElementById('list').textContent='載入中…';
   jsonp('getCheckinOptions',{}).then(function(opt){
-    if(opt&&opt.departments)gOpts=opt;
+    if(opt&&(opt.units||opt.titles))gOpts=opt;
     return jsonp('getCheckinPending',{token:TOKEN});
   }).then(function(r){
     if(!r||!r.ok){document.getElementById('list').textContent=(r&&r.msg)||'連結無效或已失效。';return;}
