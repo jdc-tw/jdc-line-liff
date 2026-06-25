@@ -192,7 +192,7 @@
       </div>
       <p class="hint" style="margin-top:-8px">此為您希望的公司信箱帳號，最終以人事核定為準。</p>
       <div id="ob-msg"></div>
-      <button class="btn btn-primary" id="btn-onboard">送出報到</button>
+      <button class="btn btn-primary" id="btn-onboard" disabled>送出報到</button>
     </div>
 
     <!-- 問題回報：一顆按鈕（之後接員工意見 Google 表單） -->
@@ -471,24 +471,17 @@
         fillSelect(unit, (res.units && res.units.length) ? res.units : Object.keys(gNamesByUnit));
       });
       function birthVal() { return birth.value || ''; } // type=date 直接給 YYYY-MM-DD
+      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal() && acct.value.trim()); }
       // 帳號只收半形字元：即時濾掉中文／全形／emoji／空白
       acct.addEventListener('input', function () {
         var cleaned = acct.value.replace(/[^\x21-\x7E]/g, '');
         if (cleaned !== acct.value) acct.value = cleaned;
+        refresh();
       });
       function acctVal() { return acct.value.trim() ? acct.value.trim() + EMAIL_DOMAIN : ''; }
-      // 按鈕一律啟用（與問題回報同綠色），點下去才驗證缺漏欄位
-      function firstMissing() {
-        if (!nameI.value.trim()) return '請填寫姓名。';
-        if (!unit.value) return '請選擇單位。';
-        if (!title.value) return '請選擇職稱。';
-        if (!birthVal()) return '請選擇生日。';
-        if (!acct.value.trim()) return '請填寫希望的公司帳號。';
-        return '';
-      }
+      nameI.addEventListener('input', refresh);
+      [unit, title, birth].forEach(function (el) { el.addEventListener('change', refresh); });
       btn.addEventListener('click', function () {
-        var miss = firstMissing();
-        if (miss) { showMsg(msg, miss, 'err'); return; }
         btn.disabled = true; showMsg(msg, '送出中…', 'info');
         jsonp('submitCheckin', {
           userId: gUserId, displayName: gDisplayName,
