@@ -27,7 +27,7 @@ jobs:
           GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
           curl -fsSL "$GAS?action=getUnitsAndNames&callback=__cb" \
             | sed -E 's/^__cb\((.*)\)$/\1/' > roster.json.new
-          node -e "const r=require('./roster.json.new'); if(!r.units||!r.namesByUnit||!r.units.length) throw new Error('roster 內容異常，放棄更新'); console.log('✓ units',r.units.length,'| titles',(r.titles||[]).length)"
+          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('roster.json.new','utf8')); if(!r.units||!r.namesByUnit||!r.units.length) throw new Error('roster 內容異常，放棄更新'); console.log('✓ units',r.units.length,'| titles',(r.titles||[]).length)"
           mv roster.json.new roster.json
 
       - name: 有變動才 commit & push
