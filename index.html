@@ -69,7 +69,11 @@
     .birth-row #sel-birth-y { flex: 2; }
     .birth-row #sel-birth-m, .birth-row #sel-birth-d { flex: 1; }
     .email-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-    .email-row input { margin-bottom: 0; flex: 1; min-width: 0; }
+    .email-row input {
+      margin-bottom: 0; flex: 1; min-width: 0;
+      padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 15px; font-family: inherit; background: #fafafa; box-sizing: border-box;
+    }
     .email-row .suffix { font-size: 14px; color: #777; white-space: nowrap; }
     .radio-group { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
     .radio-group label {
@@ -190,7 +194,7 @@
       <h2>問題回報</h2>
       <p class="hint">找不到您的名字／單位、資料不符，或有其他問題，請點此回報。</p>
       <div id="rpt-msg"></div>
-      <button class="btn btn-secondary" id="btn-rpt">問題回報</button>
+      <button class="btn btn-primary" id="btn-rpt">問題回報</button>
     </div>
   </div>
 
