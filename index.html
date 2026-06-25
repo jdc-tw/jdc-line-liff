@@ -166,6 +166,12 @@
       <select id="ob-unit"><option value="">── 請選擇 ──</option></select>
       <label for="ob-title">職稱</label>
       <select id="ob-title"><option value="">── 請選擇 ──</option></select>
+      <label>生日</label>
+      <div class="birth-row">
+        <select id="ob-birth-y"><option value="">年</option></select>
+        <select id="ob-birth-m"><option value="">月</option></select>
+        <select id="ob-birth-d"><option value="">日</option></select>
+      </div>
       <div id="ob-msg"></div>
       <button class="btn btn-primary" id="btn-onboard" disabled>送出報到</button>
     </div>
@@ -424,6 +430,9 @@
       var nameI = document.getElementById('ob-name');
       var unit = document.getElementById('ob-unit');
       var title = document.getElementById('ob-title');
+      var by = document.getElementById('ob-birth-y');
+      var bm = document.getElementById('ob-birth-m');
+      var bd = document.getElementById('ob-birth-d');
       var btn = document.getElementById('btn-onboard');
       var msg = document.getElementById('ob-msg');
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
@@ -439,14 +448,20 @@
         // 單位＝員工名單寬表的單位；後端沒回就退回 roster 的 namesByUnit keys
         fillSelect(unit, (res.units && res.units.length) ? res.units : Object.keys(gNamesByUnit));
       });
-      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value); }
+      // 生日下拉
+      var thisYear = new Date().getFullYear();
+      for (var yy = thisYear - 16; yy >= 1945; yy--) by.appendChild(new Option(yy + ' 年', yy));
+      for (var mm = 1; mm <= 12; mm++) bm.appendChild(new Option(mm + ' 月', mm));
+      for (var dd = 1; dd <= 31; dd++) bd.appendChild(new Option(dd + ' 日', dd));
+      function birthVal() { return (by.value && bm.value && bd.value) ? (by.value + '-' + ('0' + bm.value).slice(-2) + '-' + ('0' + bd.value).slice(-2)) : ''; }
+      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal()); }
       nameI.addEventListener('input', refresh);
-      [unit, title].forEach(function (el) { el.addEventListener('change', refresh); });
+      [unit, title, by, bm, bd].forEach(function (el) { el.addEventListener('change', refresh); });
       btn.addEventListener('click', function () {
         btn.disabled = true; showMsg(msg, '送出中…', 'info');
         jsonp('submitCheckin', {
           userId: gUserId, displayName: gDisplayName,
-          name: nameI.value.trim(), unit: unit.value, title: title.value.trim()
+          name: nameI.value.trim(), unit: unit.value, title: title.value.trim(), birth: birthVal()
         }, 30000).then(function (res) {
           if (res && res.ok) showMsg(msg, '報到登記完成！待人事確認後會以 LINE 通知您。', 'ok');
           else { showMsg(msg, (res && res.msg) || '送出失敗，請稍後再試。', 'err'); btn.disabled = false; }
