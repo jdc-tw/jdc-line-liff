@@ -68,7 +68,7 @@ function renderRow(o){
     +'<label>單位</label>'+selectHtml('單位',o['單位'],gOpts.units)
     +'<label>職稱</label>'+selectHtml('職稱',o['職稱'],gOpts.titles)
     +'<label>生日</label><input type="date" data-k="生日" value="'+esc(o['生日'])+'">'
-    +'<label>公司信箱</label><div class="email-row"><input data-k="email-prefix" value="'+esc(emailPrefix(o['公司信箱']))+'" placeholder="信箱前綴"><span class="suffix">'+EMAIL_DOMAIN+'</span></div>'
+    +'<label>公司信箱</label><div class="email-row"><input data-k="email-prefix" value="'+esc(emailPrefix(o['公司信箱']))+'" placeholder="請補上信箱帳號"><span class="suffix">'+EMAIL_DOMAIN+'</span></div>'
     +'<label>員工編號</label><input data-k="員編" value="'+esc(o['員編'])+'" placeholder="請補上員編">'
     +'<div class="msg"></div>'
     +'<button class="btn btn-primary">核准報到</button>';
