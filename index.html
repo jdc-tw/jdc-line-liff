@@ -470,9 +470,26 @@
           var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
         });
       }
+      // 單位分兩群好掃描：本部單位固定這 6 個，其餘自動歸工地專案（新工地免維護）
+      var HQ_UNITS = { '支店主管': 1, '管理部': 1, '施工部': 1, '工務管理': 1, '技術報價組': 1, '施工圖組': 1 };
+      function fillUnitGrouped(sel, units) {
+        var hq = [], site = [];
+        (units || []).forEach(function (u) { (HQ_UNITS[u] ? hq : site).push(u); });
+        function grp(label, arr) {
+          if (!arr.length) return;
+          var og = document.createElement('optgroup'); og.label = label;
+          arr.forEach(function (u) { var o = document.createElement('option'); o.value = u; o.textContent = u; og.appendChild(o); });
+          sel.appendChild(og);
+        }
+        grp('本部單位', hq); grp('工地專案', site);
+      }
       // 單位／職稱都從同源 roster.json 讀（秒顯、免打 GAS）；定時更新跑 update-roster.sh
-      fillSelect(unit, Object.keys(gNamesByUnit));
+      fillUnitGrouped(unit, Object.keys(gNamesByUnit));
       fillSelect(title, gTitles);
+      // 職稱清單沒有自己的職稱→選這個，人事核准時補（後端會擋人事忘了改）
+      var optHR = document.createElement('option');
+      optHR.value = '（找不到，由人事填寫）'; optHR.textContent = '（找不到，由人事填寫）';
+      title.appendChild(optHR);
       function birthVal() { return birth.value || ''; } // type=date 直接給 YYYY-MM-DD
       function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal() && acct.value.trim()); }
       // 帳號只收半形字元：即時濾掉中文／全形／emoji／空白
