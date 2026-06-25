@@ -67,6 +67,7 @@ function renderRow(o){
     +'<label>姓名</label><input data-k="姓名" value="'+esc(o['姓名'])+'">'
     +'<label>單位</label>'+selectHtml('單位',o['單位'],gOpts.units)
     +'<label>職稱</label>'+selectHtml('職稱',o['職稱'],gOpts.titles)
+    +'<label>生日</label><input type="date" data-k="生日" value="'+esc(o['生日'])+'">'
     +'<label>公司信箱</label><div class="email-row"><input data-k="email-prefix" value="'+esc(emailPrefix(o['公司信箱']))+'" placeholder="信箱前綴"><span class="suffix">'+EMAIL_DOMAIN+'</span></div>'
     +'<label>員工編號</label><input data-k="員編" value="'+esc(o['員編'])+'" placeholder="請補上員編">'
     +'<div class="msg"></div>'
@@ -78,7 +79,7 @@ function renderRow(o){
     var pre=emailPrefix(val('email-prefix')).replace(/\s/g,'');
     var email=pre?pre+EMAIL_DOMAIN:'';
     setMsg(msg,'處理中…','info');
-    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:val('職稱'),email:email,empno:val('員編')})
+    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:val('職稱'),birth:val('生日'),email:email,empno:val('員編')})
       .then(function(r){if(r&&r.ok){d.className='card done';setMsg(msg,'已核准、報到完成。','ok');}else setMsg(msg,(r&&r.msg)||'失敗','err');});};
   return d;
 }
