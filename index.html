@@ -100,6 +100,10 @@
     .brand { text-align: center; margin: 4px 0 14px; }
     .brand img { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
     .mascot { display: block; width: 116px; height: auto; margin: 2px auto 12px; }
+    #ob-birth {
+      width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 15px; font-family: inherit; background: #fafafa; margin-bottom: 14px; box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
@@ -179,12 +183,8 @@
       <select id="ob-unit"><option value="">── 請選擇 ──</option></select>
       <label for="ob-title">職稱</label>
       <select id="ob-title"><option value="">── 請選擇 ──</option></select>
-      <label>生日</label>
-      <div class="birth-row">
-        <select id="ob-birth-y"><option value="">年</option></select>
-        <select id="ob-birth-m"><option value="">月</option></select>
-        <select id="ob-birth-d"><option value="">日</option></select>
-      </div>
+      <label for="ob-birth">生日</label>
+      <input type="date" id="ob-birth">
       <label for="ob-acct">希望的公司帳號</label>
       <div class="email-row">
         <input type="text" id="ob-acct" placeholder="請輸入希望的帳號" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
@@ -192,7 +192,7 @@
       </div>
       <p class="hint" style="margin-top:-8px">此為您希望的公司信箱帳號，最終以人事核定為準。</p>
       <div id="ob-msg"></div>
-      <button class="btn btn-primary" id="btn-onboard" disabled>送出報到</button>
+      <button class="btn btn-primary" id="btn-onboard">送出報到</button>
     </div>
 
     <!-- 問題回報：一顆按鈕（之後接員工意見 Google 表單） -->
@@ -449,13 +449,14 @@
       var nameI = document.getElementById('ob-name');
       var unit = document.getElementById('ob-unit');
       var title = document.getElementById('ob-title');
-      var by = document.getElementById('ob-birth-y');
-      var bm = document.getElementById('ob-birth-m');
-      var bd = document.getElementById('ob-birth-d');
+      var birth = document.getElementById('ob-birth');
       var acct = document.getElementById('ob-acct');
       var btn = document.getElementById('btn-onboard');
       var msg = document.getElementById('ob-msg');
       var EMAIL_DOMAIN = '@jdc-corpn.com.tw';
+      // 已有公司 logo，報到頁不重複顯示平台標題
+      var h1 = document.querySelector('#main > h1'); if (h1) h1.style.display = 'none';
+      birth.max = new Date().toISOString().slice(0, 10); // 生日不可晚於今天
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
       // 單位／職稱 用下拉，一次抓 getCheckinOptions
       function fillSelect(sel, arr) {
@@ -469,23 +470,25 @@
         // 單位＝員工名單寬表的單位；後端沒回就退回 roster 的 namesByUnit keys
         fillSelect(unit, (res.units && res.units.length) ? res.units : Object.keys(gNamesByUnit));
       });
-      // 生日下拉
-      var thisYear = new Date().getFullYear();
-      for (var yy = thisYear - 16; yy >= 1945; yy--) by.appendChild(new Option(yy + ' 年', yy));
-      for (var mm = 1; mm <= 12; mm++) bm.appendChild(new Option(mm + ' 月', mm));
-      for (var dd = 1; dd <= 31; dd++) bd.appendChild(new Option(dd + ' 日', dd));
-      function birthVal() { return (by.value && bm.value && bd.value) ? (by.value + '-' + ('0' + bm.value).slice(-2) + '-' + ('0' + bd.value).slice(-2)) : ''; }
+      function birthVal() { return birth.value || ''; } // type=date 直接給 YYYY-MM-DD
       // 帳號只收半形字元：即時濾掉中文／全形／emoji／空白
       acct.addEventListener('input', function () {
         var cleaned = acct.value.replace(/[^\x21-\x7E]/g, '');
         if (cleaned !== acct.value) acct.value = cleaned;
-        refresh();
       });
       function acctVal() { return acct.value.trim() ? acct.value.trim() + EMAIL_DOMAIN : ''; }
-      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal() && acct.value.trim()); }
-      nameI.addEventListener('input', refresh);
-      [unit, title, by, bm, bd].forEach(function (el) { el.addEventListener('change', refresh); });
+      // 按鈕一律啟用（與問題回報同綠色），點下去才驗證缺漏欄位
+      function firstMissing() {
+        if (!nameI.value.trim()) return '請填寫姓名。';
+        if (!unit.value) return '請選擇單位。';
+        if (!title.value) return '請選擇職稱。';
+        if (!birthVal()) return '請選擇生日。';
+        if (!acct.value.trim()) return '請填寫希望的公司帳號。';
+        return '';
+      }
       btn.addEventListener('click', function () {
+        var miss = firstMissing();
+        if (miss) { showMsg(msg, miss, 'err'); return; }
         btn.disabled = true; showMsg(msg, '送出中…', 'info');
         jsonp('submitCheckin', {
           userId: gUserId, displayName: gDisplayName,
