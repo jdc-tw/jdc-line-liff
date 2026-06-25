@@ -7,6 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>日本國土開發 LINE 平台</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg" />
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -96,11 +97,15 @@
     .hint { font-size: 13px; color: #888; margin-bottom: 14px; }
     hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
     #section-report { margin-top: 8px; }
+    .brand { text-align: center; margin: 4px 0 14px; }
+    .brand img { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
+    .mascot { display: block; width: 116px; height: auto; margin: 2px auto 12px; }
   </style>
 </head>
 <body>
   <div id="loading">載入中，請稍候…</div>
   <div id="main">
+    <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
     <h1>日本國土開發<br>LINE 平台</h1>
     <p id="greeting" style="display:none; font-size:15px; color:#06c755; font-weight:700; margin:-8px 0 16px"></p>
 
@@ -166,6 +171,7 @@
     <!-- 新人報到表單 -->
     <div id="section-onboard" class="card" style="display:none">
       <h2>新人報到</h2>
+      <img class="mascot" src="assets/mascot.png" alt="">
       <p class="hint">歡迎加入！請填寫以下資料完成報到登記，送出後待人事確認。</p>
       <label for="ob-name">姓名</label>
       <input type="text" id="ob-name" placeholder="請輸入姓名" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;background:#fafafa;margin-bottom:14px;box-sizing:border-box">
