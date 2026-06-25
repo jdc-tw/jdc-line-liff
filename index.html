@@ -287,6 +287,7 @@
     var gUserId = '';
     var gDisplayName = '';
     var gNamesByUnit = {};
+    var gTitles = []; // 報到職稱清單，來自 roster.json（同源、免打 GAS）
     var gActivityId = '';
     var gFormReady = false;    // 下拉/listener 只初始化一次
     var gRendered = false;     // 主畫面已顯示
@@ -361,9 +362,11 @@
         return r.json();
       }).then(function (roster) {
         gNamesByUnit = roster.namesByUnit || {};
+        gTitles = roster.titles || [];
         setupForm();
         gRosterReady = true;
-        if (gRealState !== undefined) renderState(gRealState);
+        if (getMode() === 'onboard') renderState({}); // 報到模式：roster 一到就顯示，不等 GAS
+        else if (gRealState !== undefined) renderState(gRealState);
         else if (optState) renderState(optState);
         // else: 待驗證 → 保持「載入中」，等 getBindingState 回來才顯示正確畫面
         lg('④ roster ready');
@@ -372,7 +375,9 @@
         showLoadError(err);
       });
 
-      // (2) 背景查真實狀態 → 寫快取 + 顯示/校正畫面
+      // (2) 報到模式用不到綁定狀態 → 省掉這支 ~4s GAS 呼叫
+      if (getMode() !== 'onboard') {
+      // 背景查真實狀態 → 寫快取 + 顯示/校正畫面
       jsonp('getBindingState', { userId: userId, act: getAct() }, 30000).then(function (state) {
         lg('④ getBindingState 回 bound=' + (state && state.bound) + ' verified=' + (state && state.verified));
         try { localStorage.setItem(cacheKey, JSON.stringify(state)); } catch (e) {}
@@ -382,6 +387,7 @@
         lg('④ getBindingState catch: ' + (err && err.message));
         // 背景失敗：若已樂觀顯示(綁定首頁/活動)仍可用；若在等(待驗證)則維持載入中
       });
+      }
     }
 
     // 顯示主畫面 + 套用狀態（名單沒到先不顯示；可重複呼叫＝校正）
@@ -464,12 +470,9 @@
           var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
         });
       }
-      jsonp('getCheckinOptions', {}, 30000).then(function (res) {
-        res = res || {};
-        fillSelect(title, res.titles);
-        // 單位＝員工名單寬表的單位；後端沒回就退回 roster 的 namesByUnit keys
-        fillSelect(unit, (res.units && res.units.length) ? res.units : Object.keys(gNamesByUnit));
-      });
+      // 單位／職稱都從同源 roster.json 讀（秒顯、免打 GAS）；定時更新跑 update-roster.sh
+      fillSelect(unit, Object.keys(gNamesByUnit));
+      fillSelect(title, gTitles);
       function birthVal() { return birth.value || ''; } // type=date 直接給 YYYY-MM-DD
       function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal() && acct.value.trim()); }
       // 帳號只收半形字元：即時濾掉中文／全形／emoji／空白
