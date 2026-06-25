@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 名單更新後跑這支，把最新員工名單灌進 roster.json 並推上 GitHub Pages。
-# 員工名單一個月更新不到一次，所以手動跑即可（不設自動排程，保持簡單）。
+# 手動把最新員工名單灌進 roster.json 並推上 GitHub Pages（本機跑、用於臨時強制刷新）。
+# 正常更新已自動化：見 .github/workflows/update-roster.yml（每日排程＋Run workflow 手動按鈕，零密鑰）。
+# 這支保留作為本機手動逃生口；平時不需要跑。
 set -euo pipefail
 cd "$(dirname "$0")"
 
