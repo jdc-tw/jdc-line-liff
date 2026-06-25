@@ -68,6 +68,9 @@
     .birth-row select { margin-bottom: 0; padding-left: 10px; padding-right: 6px; }
     .birth-row #sel-birth-y { flex: 2; }
     .birth-row #sel-birth-m, .birth-row #sel-birth-d { flex: 1; }
+    .email-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .email-row input { margin-bottom: 0; flex: 1; min-width: 0; }
+    .email-row .suffix { font-size: 14px; color: #777; white-space: nowrap; }
     .radio-group { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
     .radio-group label {
       flex: 1;
@@ -172,6 +175,12 @@
         <select id="ob-birth-m"><option value="">月</option></select>
         <select id="ob-birth-d"><option value="">日</option></select>
       </div>
+      <label for="ob-acct">希望的公司帳號</label>
+      <div class="email-row">
+        <input type="text" id="ob-acct" placeholder="請輸入希望的帳號" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+        <span class="suffix">@jdc-corpn.com.tw</span>
+      </div>
+      <p class="hint" style="margin-top:-8px">此為您希望的公司信箱帳號，最終以人事核定為準。</p>
       <div id="ob-msg"></div>
       <button class="btn btn-primary" id="btn-onboard" disabled>送出報到</button>
     </div>
@@ -433,8 +442,10 @@
       var by = document.getElementById('ob-birth-y');
       var bm = document.getElementById('ob-birth-m');
       var bd = document.getElementById('ob-birth-d');
+      var acct = document.getElementById('ob-acct');
       var btn = document.getElementById('btn-onboard');
       var msg = document.getElementById('ob-msg');
+      var EMAIL_DOMAIN = '@jdc-corpn.com.tw';
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
       // 單位／職稱 用下拉，一次抓 getCheckinOptions
       function fillSelect(sel, arr) {
@@ -454,14 +465,21 @@
       for (var mm = 1; mm <= 12; mm++) bm.appendChild(new Option(mm + ' 月', mm));
       for (var dd = 1; dd <= 31; dd++) bd.appendChild(new Option(dd + ' 日', dd));
       function birthVal() { return (by.value && bm.value && bd.value) ? (by.value + '-' + ('0' + bm.value).slice(-2) + '-' + ('0' + bd.value).slice(-2)) : ''; }
-      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal()); }
+      // 帳號只收半形字元：即時濾掉中文／全形／emoji／空白
+      acct.addEventListener('input', function () {
+        var cleaned = acct.value.replace(/[^\x21-\x7E]/g, '');
+        if (cleaned !== acct.value) acct.value = cleaned;
+        refresh();
+      });
+      function acctVal() { return acct.value.trim() ? acct.value.trim() + EMAIL_DOMAIN : ''; }
+      function refresh() { btn.disabled = !(nameI.value.trim() && unit.value && title.value && birthVal() && acct.value.trim()); }
       nameI.addEventListener('input', refresh);
       [unit, title, by, bm, bd].forEach(function (el) { el.addEventListener('change', refresh); });
       btn.addEventListener('click', function () {
         btn.disabled = true; showMsg(msg, '送出中…', 'info');
         jsonp('submitCheckin', {
           userId: gUserId, displayName: gDisplayName,
-          name: nameI.value.trim(), unit: unit.value, title: title.value.trim(), birth: birthVal()
+          name: nameI.value.trim(), unit: unit.value, title: title.value.trim(), birth: birthVal(), email: acctVal()
         }, 30000).then(function (res) {
           if (res && res.ok) showMsg(msg, '報到登記完成！待人事確認後會以 LINE 通知您。', 'ok');
           else { showMsg(msg, (res && res.msg) || '送出失敗，請稍後再試。', 'err'); btn.disabled = false; }
