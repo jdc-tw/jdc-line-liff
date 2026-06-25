@@ -1,0 +1,44 @@
+name: 更新 roster.json
+
+# 每日自動把最新員工名單（單位／姓名／職稱）從 GAS 灌進 roster.json。
+# 零密鑰：GAS endpoint 公開、推送用 Actions 內建 GITHUB_TOKEN。永不過期、免維護。
+# 佳岑維護員工名單 Sheet 即可，前端報到頁選項最多 1 天內自動跟上。
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 每日 06:00 台北（UTC 22:00）
+  workflow_dispatch: {}     # 手動按鈕：要立即刷新時，到 Actions 頁按 Run workflow
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-roster
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 從 GAS 取最新名單
+        run: |
+          GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
+          curl -fsSL "$GAS?action=getUnitsAndNames&callback=__cb" \
+            | sed -E 's/^__cb\((.*)\)$/\1/' > roster.json.new
+          node -e "const r=require('./roster.json.new'); if(!r.units||!r.namesByUnit||!r.units.length) throw new Error('roster 內容異常，放棄更新'); console.log('✓ units',r.units.length,'| titles',(r.titles||[]).length)"
+          mv roster.json.new roster.json
+
+      - name: 有變動才 commit & push
+        run: |
+          if git diff --quiet roster.json; then
+            echo "名單無變動，不需更新。"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add roster.json
+          git commit -m "chore: 自動更新 roster.json（排程）"
+          git push
+          echo "✓ 已更新並推上 GitHub Pages"
