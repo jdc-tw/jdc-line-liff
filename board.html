@@ -22,7 +22,7 @@
     font-size: 15px; font-family: inherit; background: #fafafa; margin-bottom: 14px; -webkit-appearance: none;
   }
   input:focus, select:focus { outline: none; border-color: #06c755; background: #fff; }
-  .email-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .email-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
   .email-row input { margin-bottom: 0; flex: 1; min-width: 0; }
   .email-row .suffix { font-size: 14px; color: #777; white-space: nowrap; }
   .titlefield input { margin-bottom: 4px; }
@@ -38,8 +38,9 @@
   .empty { text-align: center; color: #888; padding: 40px 0; font-size: 15px; }
   .sec { font-size: 15px; color: #666; margin: 28px 0 10px; }
   .tblscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-  .donetbl { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; white-space: nowrap; }
-  .donetbl th, .donetbl td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; }
+  .donetbl { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+  .donetbl th, .donetbl td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; word-break: break-word; }
+  .donetbl th:first-child, .donetbl td:first-child { white-space: nowrap; }  /* 報到日期不斷行 */
   .donetbl th { background: #fafafa; color: #666; font-weight: 600; position: sticky; top: 0; }
   .donetbl tr:last-child td { border-bottom: none; }
   /* ── 長者友善：放大預設字級（2026-06-26）─────────────────────────────────── */
