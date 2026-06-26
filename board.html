@@ -70,6 +70,13 @@
     .done-meta { font-size: 16px; }
     .done-date { font-size: 15px; }
     .linkbtn { font-size: 16px; }
+    /* 待確認卡：桌機最多兩欄。1 張＝單欄置中；≥2 張＝並排，超過自動換列(2+1…)。
+       用 :has 偵測卡片數自動切換，核准後卡片減少也會自動縮回。手機(<768)維持單欄。 */
+    #pending { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+    #pending .card { margin-bottom: 0; }
+    #pending .empty { grid-column: 1 / -1; }
+    #pending:has(.card ~ .card) { grid-template-columns: 1fr 1fr; }
+    body:has(#pending .card ~ .card) { max-width: 940px; }
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
