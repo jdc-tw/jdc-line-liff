@@ -8,6 +8,7 @@
   <meta http-equiv="Expires" content="0" />
   <title>日本國土開發 LINE 平台</title>
   <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg" />
+  <script src="assets/groups.js"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -105,6 +106,16 @@
       font-size: 15px; font-family: inherit; background: #fafafa; margin-bottom: 14px; box-sizing: border-box;
       -webkit-appearance: none; appearance: none;  /* iOS date input 不加這行不吃 width:100%，會比其他欄窄 */
     }
+    /* ── 長者友善：放大預設字級（2026-06-26，集中於此方便日後調整）────────────── */
+    body { font-size: 17px; }
+    select, textarea, #ob-birth, .email-row input { font-size: 16px; }
+    label { font-size: 15px; }
+    .hint { font-size: 14px; }
+    .btn { font-size: 17px; }
+    .msg, #loading, .radio-group label { font-size: 16px; }
+    h2 { font-size: 18px; }
+    .email-row .suffix { font-size: 15px; }
+    .email-row input { min-width: 55%; }   /* 放大後前綴框不被後綴擠到看不見 */
   </style>
 </head>
 <body>
@@ -112,7 +123,7 @@
   <div id="main">
     <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
     <h1>日本國土開發<br>LINE 平台</h1>
-    <p id="greeting" style="display:none; font-size:15px; color:#06c755; font-weight:700; margin:-8px 0 16px"></p>
+    <p id="greeting" style="display:none; font-size:16px; color:#06c755; font-weight:700; margin:-8px 0 16px"></p>
 
     <!-- 未綁定：綁定表單 -->
     <div id="section-bind" class="card" style="display:none">
@@ -179,7 +190,7 @@
       <img class="mascot" src="assets/mascot.png" alt="">
       <p class="hint">歡迎加入！請填寫以下資料完成報到登記，送出後待人事確認。</p>
       <label for="ob-name">姓名</label>
-      <input type="text" id="ob-name" placeholder="請輸入姓名" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;background:#fafafa;margin-bottom:14px;box-sizing:border-box">
+      <input type="text" id="ob-name" placeholder="請輸入姓名" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:16px;font-family:inherit;background:#fafafa;margin-bottom:14px;box-sizing:border-box">
       <label for="ob-unit">單位</label>
       <select id="ob-unit"><option value="">── 請選擇 ──</option></select>
       <label for="ob-title">職稱</label>
@@ -465,23 +476,9 @@
       var h1 = document.querySelector('#main > h1'); if (h1) h1.style.display = 'none';
       birth.max = new Date().toISOString().slice(0, 10); // 生日不可晚於今天
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
-      // 單位/職稱下拉分群好掃描（同源 roster.json，秒顯免打 GAS；定時更新跑 update-roster.sh）
-      // 本部單位固定這 6 個、支店專有職稱固定這 6 個，其餘自動歸另一群（新單位/職稱免維護）
-      var HQ_UNITS = { '支店主管': 1, '管理部': 1, '施工部': 1, '工務管理': 1, '技術報價組': 1, '施工圖組': 1 };
-      var BRANCH_TITLES = { '支店長': 1, '部長': 1, '經理': 1, '事務員': 1, '估算': 1, '建築繪圖人員': 1 };
-      // items 依 isB() 分兩群：false→A 群(在前)、true→B 群，各包一個 optgroup
-      function fillGrouped(sel, items, isB, labelA, labelB) {
-        var a = [], b = [];
-        (items || []).forEach(function (x) { (isB(x) ? b : a).push(x); });
-        [[labelA, a], [labelB, b]].forEach(function (pair) {
-          if (!pair[1].length) return;
-          var og = document.createElement('optgroup'); og.label = pair[0];
-          pair[1].forEach(function (x) { var o = document.createElement('option'); o.value = x; o.textContent = x; og.appendChild(o); });
-          sel.appendChild(og);
-        });
-      }
-      fillGrouped(unit, Object.keys(gNamesByUnit), function (u) { return !HQ_UNITS[u]; }, '本部單位', '工地專案');
-      fillGrouped(title, gTitles, function (t) { return BRANCH_TITLES[t]; }, '共通職稱', '支店專有');
+      // 單位/職稱下拉分群好掃描（分類在共用 assets/groups.js，與人事看板同一份、永不分歧）
+      unit.insertAdjacentHTML('beforeend', jdcGroupedOptions(Object.keys(gNamesByUnit), 'unit', ''));
+      title.insertAdjacentHTML('beforeend', jdcGroupedOptions(gTitles, 'title', ''));
       // 職稱清單沒有自己的職稱→選這個，人事核准時補（後端會擋人事忘了改）
       var optHR = document.createElement('option');
       optHR.value = '（找不到，由人事填寫）'; optHR.textContent = '（找不到，由人事填寫）';

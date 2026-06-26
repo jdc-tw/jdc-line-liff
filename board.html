@@ -2,6 +2,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>新人報到・核准看板</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<script src="assets/groups.js"></script>
 <style>
   .brand { text-align: center; margin: 0 0 14px; }
   .brand img { width: 100%; max-width: 240px; height: auto; }
@@ -14,7 +15,6 @@
   h1 { font-size: 20px; margin: 0 0 6px; color: #1a1a1a; }
   .who { font-size: 13px; color: #888; margin-bottom: 18px; }
   .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-  .card.done { opacity: .5; }
   .rowdate { font-size: 13px; color: #888; margin-bottom: 12px; }
   label { display: block; margin: 0 0 6px; font-size: 14px; color: #555; font-weight: 600; }
   input, select {
@@ -25,6 +25,8 @@
   .email-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .email-row input { margin-bottom: 0; flex: 1; min-width: 0; }
   .email-row .suffix { font-size: 14px; color: #777; white-space: nowrap; }
+  .titlefield input { margin-bottom: 4px; }
+  .linkbtn { background: none; border: none; color: #06c755; font-size: 13px; padding: 4px 0 10px; cursor: pointer; font-family: inherit; -webkit-appearance: none; width: auto; }
   .btn { display: block; width: 100%; padding: 13px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; }
   .btn-primary { background: #06c755; color: #fff; }
   .btn-primary:active { background: #05a847; }
@@ -34,14 +36,37 @@
   .msg-err { background: #fdecea; color: #b71c1c; }
   .msg-info { background: #e8f0fe; color: #1a56c4; }
   .empty { text-align: center; color: #888; padding: 40px 0; font-size: 15px; }
+  .sec { font-size: 15px; color: #666; margin: 28px 0 10px; }
+  .tblscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .donetbl { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; white-space: nowrap; }
+  .donetbl th, .donetbl td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; }
+  .donetbl th { background: #fafafa; color: #666; font-weight: 600; position: sticky; top: 0; }
+  .donetbl tr:last-child td { border-bottom: none; }
+  /* ── 長者友善：放大預設字級（2026-06-26）─────────────────────────────────── */
+  body { font-size: 17px; }
+  input, select { font-size: 16px; }
+  label { font-size: 15px; }
+  .empty, .sec { font-size: 16px; }
+  .msg, .linkbtn { font-size: 15px; }
+  .rowdate, .who { font-size: 14px; }
+  .donetbl, .donetbl th, .donetbl td { font-size: 14px; }
+  .email-row input { min-width: 55%; }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <h1>新人報到・核准看板</h1>
 <div id="who" class="who"></div>
-<div id="list"><div class="empty">載入中…</div></div>
+<div id="pending"><div class="empty">載入中…</div></div>
+<div id="doneWrap" style="display:none">
+  <h2 class="sec">已核准（近一年）</h2>
+  <div class="tblscroll"><table class="donetbl">
+    <thead><tr><th>報到日期</th><th>姓名</th><th>單位</th><th>職稱</th><th>員編</th></tr></thead>
+    <tbody id="donebody"></tbody>
+  </table></div>
+</div>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 var EMAIL_DOMAIN='@jdc-corpn.com.tw';
+var SENTINEL='（找不到，由人事填寫）';   // 新人「找不到」哨兵 → 看板停在請選擇
 function getToken(){var m=location.search.match(/[?&]t=([^&]+)/);return m?decodeURIComponent(m[1]):'';}
 function jsonp(action,params){return new Promise(function(res){
   var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
@@ -54,51 +79,91 @@ function jsonp(action,params){return new Promise(function(res){
   document.body.appendChild(s);});}
 var TOKEN=getToken();
 var gOpts={titles:[],units:[]};
-function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;');}
+function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function emailPrefix(full){full=(full||'').toString();var i=full.indexOf('@');return i>=0?full.slice(0,i):full;}
 function setMsg(el,text,type){el.className='msg show msg-'+(type||'info');el.textContent=text;}
-function selectHtml(key,cur,opts){
-  var inList=false,body='';
-  (opts||[]).forEach(function(v){var sel=(v===cur);if(sel)inList=true;body+='<option'+(sel?' selected':'')+'>'+esc(v)+'</option>';});
-  var extra=(cur&&!inList)?'<option selected>'+esc(cur)+'</option>':'';
+
+function unitSelectHtml(cur){
   var none='<option value=""'+(cur?'':' selected')+'>── 請選擇 ──</option>';
-  return '<select data-k="'+key+'">'+none+extra+body+'</select>';
+  return '<select data-k="單位">'+none+jdcGroupedOptions(gOpts.units,'unit',cur)+'</select>';
 }
+// 職稱欄：分組下拉，最後一項「＋ 手動輸入職稱…」可就地切成鍵盤輸入（附「改用清單選」切回）
+function buildTitleField(box, cur){
+  function toSelect(val){
+    box.innerHTML='<select data-k="職稱">'
+      +'<option value=""'+(val?'':' selected')+'>── 請選擇 ──</option>'
+      +jdcGroupedOptions(gOpts.titles,'title',val)
+      +'<option value="__manual__">＋ 手動輸入職稱…</option></select>';
+    var sel=box.querySelector('select');
+    sel.onchange=function(){ if(sel.value==='__manual__') toInput(''); };
+  }
+  function toInput(val){
+    box.innerHTML='<input data-k="職稱" type="text" value="'+esc(val||'')+'" placeholder="請輸入職稱">'
+      +'<button type="button" class="linkbtn" data-back>↩ 改用清單選</button>';
+    box.querySelector('[data-back]').onclick=function(){ toSelect(''); };
+    box.querySelector('input').focus();
+  }
+  toSelect(cur);   // 哨兵「找不到」也保留顯示，讓人事一眼看出是新人按了找不到、需主動補
+}
+
 function renderRow(o){
   var d=document.createElement('div');d.className='card';
   d.innerHTML=
     (o['報到日期']?'<div class="rowdate">報到日期：'+esc(o['報到日期'])+'</div>':'')
     +'<label>姓名</label><input data-k="姓名" value="'+esc(o['姓名'])+'">'
-    +'<label>單位</label>'+selectHtml('單位',o['單位'],gOpts.units)
-    +'<label>職稱</label>'+selectHtml('職稱',o['職稱'],gOpts.titles)
+    +'<label>單位</label>'+unitSelectHtml(o['單位'])
+    +'<label>職稱</label><div class="titlefield" data-tf></div>'
     +'<label>生日</label><input type="date" data-k="生日" value="'+esc(o['生日'])+'">'
     +'<label>公司信箱</label><div class="email-row"><input data-k="email-prefix" value="'+esc(emailPrefix(o['公司信箱']))+'" placeholder="請補上信箱帳號"><span class="suffix">'+EMAIL_DOMAIN+'</span></div>'
     +'<label>員工編號</label><input data-k="員編" value="'+esc(o['員編'])+'" placeholder="請補上員編">'
     +'<div class="msg"></div>'
     +'<button class="btn btn-primary">核准報到</button>';
+  buildTitleField(d.querySelector('[data-tf]'), o['職稱']);
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
   var msg=d.querySelector('.msg');
   d.querySelector('.btn').onclick=function(){
     if(!val('員編').trim()){setMsg(msg,'請先補員工編號再核准。','err');return;}
+    var title=val('職稱').trim();
+    if(!title){setMsg(msg,'請選擇或輸入職稱。','err');return;}
+    if(title===SENTINEL){setMsg(msg,'職稱仍為「找不到」，請改選或手動輸入正式職稱。','err');return;}
     var pre=emailPrefix(val('email-prefix')).replace(/\s/g,'');
     var email=pre?pre+EMAIL_DOMAIN:'';
     setMsg(msg,'處理中…','info');
-    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:val('職稱'),birth:val('生日'),email:email,empno:val('員編')})
-      .then(function(r){if(r&&r.ok){d.className='card done';setMsg(msg,'已核准、報到完成。','ok');}else setMsg(msg,(r&&r.msg)||'失敗','err');});};
+    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:title,birth:val('生日'),email:email,empno:val('員編')})
+      .then(function(r){
+        if(r&&r.ok){
+          addDoneRow({'報到日期':o['報到日期'],'姓名':val('姓名'),'單位':val('單位'),'職稱':title,'員編':val('員編')}, true);
+          d.remove();
+          if(!document.querySelector('#pending .card')) document.getElementById('pending').innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
+        } else setMsg(msg,(r&&r.msg)||'失敗','err');
+      });
+  };
   return d;
 }
+
+function doneRowHtml(o){
+  return '<tr><td>'+esc(o['報到日期']||'')+'</td><td>'+esc(o['姓名'])+'</td><td>'+esc(o['單位'])+'</td><td>'+esc(o['職稱'])+'</td><td>'+esc(o['員編'])+'</td></tr>';
+}
+function addDoneRow(o, prepend){
+  document.getElementById('doneWrap').style.display='';
+  var tb=document.getElementById('donebody');
+  tb.insertAdjacentHTML(prepend?'afterbegin':'beforeend', doneRowHtml(o));
+}
+
 function load(){
-  document.getElementById('list').innerHTML='<div class="empty">載入中…</div>';
+  document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';
   jsonp('getCheckinOptions',{}).then(function(opt){
     if(opt&&(opt.units||opt.titles))gOpts=opt;
     return jsonp('getCheckinPending',{token:TOKEN});
   }).then(function(r){
-    var box=document.getElementById('list');
+    var box=document.getElementById('pending');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
     document.getElementById('who').textContent='核准人：'+r.who;
     box.innerHTML='';
-    if(!r.rows.length){box.innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';return;}
-    r.rows.forEach(function(o){box.appendChild(renderRow(o));});
+    if(!r.rows.length) box.innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
+    else r.rows.forEach(function(o){box.appendChild(renderRow(o));});
+    var done=r.done||[]; var tb=document.getElementById('donebody'); tb.innerHTML='';
+    if(done.length){ document.getElementById('doneWrap').style.display=''; tb.innerHTML=done.map(doneRowHtml).join(''); }
   });
 }
 load();
