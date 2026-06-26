@@ -10,9 +10,11 @@ function jdcEsc(s) {
 // 產生分組的 <optgroup> 選項 HTML。kind:'unit'|'title'；current 會被選中
 // （若 current 不在清單內，例如舊資料或哨兵，額外保留成一個選項，不漏值）。
 function jdcGroupedOptions(items, kind, current) {
-  var labelA, labelB, isB;
-  if (kind === 'unit') { labelA = '本部單位'; labelB = '工地專案'; isB = function (x) { return !JDC_HQ_UNITS[x]; }; }
-  else { labelA = '共通職稱'; labelB = '支店專有'; isB = function (x) { return !!JDC_BRANCH_TITLES[x]; }; }
+  // 群名用中性「分組一/分組二」：只負責把相關項目聚在一起、好掃描，不對分類做語意斷言
+  // （所以新單位/新職稱落哪群都不會「講錯」）。分組依據仍是下面兩個 set。
+  var labelA = '分組一', labelB = '分組二', isB;
+  if (kind === 'unit') { isB = function (x) { return !JDC_HQ_UNITS[x]; }; }
+  else { isB = function (x) { return !!JDC_BRANCH_TITLES[x]; }; }
   var a = [], b = [];
   (items || []).forEach(function (x) { (isB(x) ? b : a).push(x); });
   var inList = (items || []).indexOf(current) !== -1;
