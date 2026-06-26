@@ -52,6 +52,25 @@
   .msg, .linkbtn { font-size: 15px; }
   .rowdate, .who { font-size: 14px; }
   .email-row input { min-width: 55%; }
+  /* ── 桌機（≥768px）：加寬版面＋再放大字，年長人事友善；手機不受影響 ────────── */
+  @media (min-width: 768px) {
+    body { max-width: 760px; padding: 32px 24px 60px; font-size: 19px; }
+    h1 { font-size: 26px; }
+    .who { font-size: 16px; }
+    .card { padding: 28px 32px; }
+    .rowdate { font-size: 15px; }
+    label { font-size: 17px; }
+    input, select { font-size: 18px; padding: 12px 14px; }
+    .email-row .suffix { font-size: 16px; }
+    .btn { font-size: 19px; padding: 15px; }
+    .sec { font-size: 19px; }
+    .empty { font-size: 18px; }
+    .done-item { padding: 16px 20px; }
+    .done-name { font-size: 19px; }
+    .done-meta { font-size: 16px; }
+    .done-date { font-size: 15px; }
+    .linkbtn { font-size: 16px; }
+  }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <h1>新人報到・核准看板</h1>
