@@ -103,6 +103,7 @@
     #ob-birth {
       width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
       font-size: 15px; font-family: inherit; background: #fafafa; margin-bottom: 14px; box-sizing: border-box;
+      -webkit-appearance: none; appearance: none;  /* iOS date input 不加這行不吃 width:100%，會比其他欄窄 */
     }
   </style>
 </head>
@@ -185,9 +186,9 @@
       <select id="ob-title"><option value="">── 請選擇 ──</option></select>
       <label for="ob-birth">生日</label>
       <input type="date" id="ob-birth">
-      <label for="ob-acct">希望的公司帳號</label>
+      <label for="ob-acct">公司信箱帳號</label>
       <div class="email-row">
-        <input type="text" id="ob-acct" placeholder="請輸入希望的帳號" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+        <input type="text" id="ob-acct" placeholder="請輸入帳號" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
         <span class="suffix">@jdc-corpn.com.tw</span>
       </div>
       <p class="hint" style="margin-top:-8px">此為您希望的公司信箱帳號，最終以人事核定為準。</p>
@@ -464,28 +465,23 @@
       var h1 = document.querySelector('#main > h1'); if (h1) h1.style.display = 'none';
       birth.max = new Date().toISOString().slice(0, 10); // 生日不可晚於今天
       if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
-      // 單位／職稱 用下拉，一次抓 getCheckinOptions
-      function fillSelect(sel, arr) {
-        (arr || []).forEach(function (v) {
-          var o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+      // 單位/職稱下拉分群好掃描（同源 roster.json，秒顯免打 GAS；定時更新跑 update-roster.sh）
+      // 本部單位固定這 6 個、支店專有職稱固定這 6 個，其餘自動歸另一群（新單位/職稱免維護）
+      var HQ_UNITS = { '支店主管': 1, '管理部': 1, '施工部': 1, '工務管理': 1, '技術報價組': 1, '施工圖組': 1 };
+      var BRANCH_TITLES = { '支店長': 1, '部長': 1, '經理': 1, '事務員': 1, '估算': 1, '建築繪圖人員': 1 };
+      // items 依 isB() 分兩群：false→A 群(在前)、true→B 群，各包一個 optgroup
+      function fillGrouped(sel, items, isB, labelA, labelB) {
+        var a = [], b = [];
+        (items || []).forEach(function (x) { (isB(x) ? b : a).push(x); });
+        [[labelA, a], [labelB, b]].forEach(function (pair) {
+          if (!pair[1].length) return;
+          var og = document.createElement('optgroup'); og.label = pair[0];
+          pair[1].forEach(function (x) { var o = document.createElement('option'); o.value = x; o.textContent = x; og.appendChild(o); });
+          sel.appendChild(og);
         });
       }
-      // 單位分兩群好掃描：本部單位固定這 6 個，其餘自動歸工地專案（新工地免維護）
-      var HQ_UNITS = { '支店主管': 1, '管理部': 1, '施工部': 1, '工務管理': 1, '技術報價組': 1, '施工圖組': 1 };
-      function fillUnitGrouped(sel, units) {
-        var hq = [], site = [];
-        (units || []).forEach(function (u) { (HQ_UNITS[u] ? hq : site).push(u); });
-        function grp(label, arr) {
-          if (!arr.length) return;
-          var og = document.createElement('optgroup'); og.label = label;
-          arr.forEach(function (u) { var o = document.createElement('option'); o.value = u; o.textContent = u; og.appendChild(o); });
-          sel.appendChild(og);
-        }
-        grp('本部單位', hq); grp('工地專案', site);
-      }
-      // 單位／職稱都從同源 roster.json 讀（秒顯、免打 GAS）；定時更新跑 update-roster.sh
-      fillUnitGrouped(unit, Object.keys(gNamesByUnit));
-      fillSelect(title, gTitles);
+      fillGrouped(unit, Object.keys(gNamesByUnit), function (u) { return !HQ_UNITS[u]; }, '本部單位', '工地專案');
+      fillGrouped(title, gTitles, function (t) { return BRANCH_TITLES[t]; }, '共通職稱', '支店專有');
       // 職稱清單沒有自己的職稱→選這個，人事核准時補（後端會擋人事忘了改）
       var optHR = document.createElement('option');
       optHR.value = '（找不到，由人事填寫）'; optHR.textContent = '（找不到，由人事填寫）';
