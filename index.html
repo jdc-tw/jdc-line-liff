@@ -104,8 +104,11 @@
     #ob-birth {
       width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
       font-size: 15px; font-family: inherit; background: #fafafa; margin-bottom: 14px; box-sizing: border-box;
-      -webkit-appearance: none; appearance: none;  /* iOS date input 不加這行不吃 width:100%，會比其他欄窄 */
+      min-height: 44px;  /* 與其他欄同高、避免被壓扁 */
+      /* 不可加 -webkit-appearance:none——iOS 上會吃掉「年/月/日」placeholder 與日曆圖示，欄位變空白框（2026-06-27 修，原為了吃滿寬反害變空白） */
     }
+    /* iOS 上讓日期值/placeholder 靠左並撐滿寬度（取代 appearance:none 的吃寬作用，又不吃掉原生顯示） */
+    #ob-birth::-webkit-date-and-time-value { text-align: left; }
     /* ── 長者友善：放大預設字級（2026-06-26，集中於此方便日後調整）────────────── */
     body { font-size: 17px; }
     select, textarea, #ob-birth, .email-row input { font-size: 16px; }
