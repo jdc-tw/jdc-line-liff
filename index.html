@@ -102,14 +102,16 @@
     .brand img { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
     .mascot { display: block; width: 116px; height: auto; margin: 2px auto 12px; }
     #ob-birth {
-      display: block; width: 100%; max-width: 100%; min-width: 0;  /* iOS 日期欄固有寬度會撐破容器→鎖回容器寬 */
+      /* 必須 appearance:none——iOS 原生日期欄會用固有寬度撐破容器(width/max-width 都壓不住)。
+         代價：空值時不顯示「年/月/日」(欄位看似空白)→ 下方補 #ob-birth-hint 提示文字。有值時仍正常顯示日期。 */
+      -webkit-appearance: none; appearance: none;
+      display: block; width: 100%; box-sizing: border-box;
       padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
-      font-size: 15px; font-family: inherit; background: #fafafa; margin-bottom: 14px; box-sizing: border-box;
-      min-height: 44px;  /* 與其他欄同高、避免被壓扁 */
-      /* 不可加 -webkit-appearance:none——iOS 上會吃掉「年/月/日」placeholder 與日曆圖示，欄位變空白框（2026-06-27 修，原為了吃滿寬反害變空白） */
+      font-size: 15px; font-family: inherit; background: #fafafa; color: #333;
+      margin-bottom: 4px; min-height: 44px;
     }
-    /* iOS 上讓日期值/placeholder 靠左，與其他欄一致 */
-    #ob-birth::-webkit-date-and-time-value { text-align: left; }
+    #ob-birth::-webkit-date-and-time-value { text-align: left; }  /* 有值時日期靠左，與其他欄一致 */
+    #ob-birth-hint { font-size: 13px; color: #888; margin: 0 0 14px; }
     /* ── 長者友善：放大預設字級（2026-06-26，集中於此方便日後調整）────────────── */
     body { font-size: 17px; }
     select, textarea, #ob-birth, .email-row input { font-size: 16px; }
@@ -201,6 +203,7 @@
       <select id="ob-title"><option value="">── 請選擇 ──</option></select>
       <label for="ob-birth">生日</label>
       <input type="date" id="ob-birth">
+      <p id="ob-birth-hint">點欄位選擇出生日期</p>
       <label for="ob-acct">公司信箱帳號</label>
       <div class="email-row">
         <input type="text" id="ob-acct" placeholder="請輸入帳號" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
