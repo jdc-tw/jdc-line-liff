@@ -198,6 +198,7 @@
         <p class="hint" style="font-size:16px;color:#444;line-height:1.7">完成報到前，請先加入公司官方帳號為好友 🙇<br><b>① 點綠色鈕加入　② 加好友後回到此頁（會自動繼續）</b></p>
         <button class="btn btn-primary" type="button" id="btn-addfriend">① 加入官方帳號好友</button>
         <button class="btn btn-secondary" type="button" id="btn-friend-recheck" style="margin-top:10px">② 我已加入，點此重新整理</button>
+        <p id="ob-gate-dbg" style="font-size:12px;color:#b00;margin-top:8px;word-break:break-all"></p>
       </div>
       <div id="ob-body">
       <p class="hint">歡迎加入！請填寫以下資料完成報到登記，送出後待人事確認。</p>
@@ -500,11 +501,13 @@
       if (!gVisBound) { gVisBound = 1; document.addEventListener('visibilitychange', function () {
         if (gAddTapped && document.visibilityState === 'visible') { gAddTapped = false; location.reload(); }
       }); }
-      if (!(window.liff && typeof liff.getFriendship === 'function')) { showObGate(false); setupOnboard(); return; }
+      var setDbg = function (t) { var e = document.getElementById('ob-gate-dbg'); if (e) e.textContent = t; };
+      if (!(window.liff && typeof liff.getFriendship === 'function')) { setDbg('[診斷] 此環境無 getFriendship → 放行'); showObGate(false); setupOnboard(); return; }
+      setDbg('[診斷] 查詢好友狀態中…');
       liff.getFriendship().then(function (fs) {
         if (fs && fs.friendFlag) { gFriendOk = true; showObGate(false); setupOnboard(); }
-        else { showObGate(true); }
-      }).catch(function () { showObGate(true); });
+        else { setDbg('[診斷] getFriendship 回傳 friendFlag=' + (fs && fs.friendFlag) + '（判定非好友→擋）'); showObGate(true); }
+      }).catch(function (e) { setDbg('[診斷] getFriendship 出錯：' + (e && e.message ? e.message : e) + '（暫擋）'); showObGate(true); });
     }
 
     function setupOnboard() {
