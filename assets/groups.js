@@ -41,8 +41,8 @@ function jdcGroupedOptions(items, kind, current) {
     html += grp('其他', items.filter(function (t) { return !used[t]; }));   // 未分類(新職稱)→其他
     return html;
   }
-  // unit：兩組
+  // unit：兩組（總公司＝JDC_HQ_UNITS、工地＝其餘）。單位本就是地點屬性，群名用語意標籤不會講錯（職稱才需中性群名）。
   var a = [], b = [];
   items.forEach(function (x) { (JDC_HQ_UNITS[x] ? a : b).push(x); });
-  return html + grp('分組一', a) + grp('分組二', b);
+  return html + grp('總公司', a) + grp('工地', b);
 }
