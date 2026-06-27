@@ -195,9 +195,9 @@
       <h2>新人報到</h2>
       <img class="mascot" src="assets/mascot.png" alt="">
       <div id="ob-gate" style="display:none">
-        <p class="hint" style="font-size:16px;color:#444;line-height:1.7">完成報到前，請先<b>加入公司官方帳號</b>為好友 🙇<br>加入後點下方按鈕繼續填寫報到資料。</p>
-        <button class="btn btn-primary" type="button" id="btn-addfriend">加入官方帳號好友</button>
-        <button class="btn btn-secondary" type="button" id="btn-friend-recheck" style="margin-top:10px">我已加入，點此繼續</button>
+        <p class="hint" style="font-size:16px;color:#444;line-height:1.7">完成報到前，請先加入公司官方帳號為好友 🙇<br><b>① 點綠色鈕加入　② 加好友後回到此頁（會自動繼續）</b></p>
+        <button class="btn btn-primary" type="button" id="btn-addfriend">① 加入官方帳號好友</button>
+        <button class="btn btn-secondary" type="button" id="btn-friend-recheck" style="margin-top:10px">② 我已加入，點此重新整理</button>
       </div>
       <div id="ob-body">
       <p class="hint">歡迎加入！請填寫以下資料完成報到登記，送出後待人事確認。</p>
@@ -478,7 +478,7 @@
 
     // 官方帳號「日本國土開發 台灣分公司」加好友連結
     var ADD_FRIEND_URL = 'https://line.me/R/ti/p/@829mbuku';
-    var gFriendOk = false;
+    var gFriendOk = false, gAddTapped = false, gVisBound = 0;
     function showObGate(on) {
       var g = document.getElementById('ob-gate'), b = document.getElementById('ob-body');
       if (g) g.style.display = on ? '' : 'none';
@@ -490,11 +490,16 @@
       if (gFriendOk) { showObGate(false); setupOnboard(); return; }
       var add = document.getElementById('btn-addfriend');
       if (add && !add._b) { add._b = 1; add.addEventListener('click', function () {
+        gAddTapped = true;  // 回到本頁時自動重整、重抓好友狀態（getFriendship 同 session 會給舊值，必須整頁 reload）
         if (window.liff && liff.openWindow) liff.openWindow({ url: ADD_FRIEND_URL, external: false });
         else window.open(ADD_FRIEND_URL, '_blank');
       }); }
       var re = document.getElementById('btn-friend-recheck');
-      if (re && !re._b) { re._b = 1; re.addEventListener('click', ensureFriendThenOnboard); }
+      if (re && !re._b) { re._b = 1; re.addEventListener('click', function () { location.reload(); }); }
+      // 從加好友畫面回到本 LIFF（頁面再度可見）→ 自動重整重抓好友狀態
+      if (!gVisBound) { gVisBound = 1; document.addEventListener('visibilitychange', function () {
+        if (gAddTapped && document.visibilityState === 'visible') { gAddTapped = false; location.reload(); }
+      }); }
       if (!(window.liff && typeof liff.getFriendship === 'function')) { showObGate(false); setupOnboard(); return; }
       liff.getFriendship().then(function (fs) {
         if (fs && fs.friendFlag) { gFriendOk = true; showObGate(false); setupOnboard(); }
