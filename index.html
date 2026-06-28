@@ -66,10 +66,6 @@
     .msg-info { background: #e8f0fe; color: #1a56c4; }
     #loading { text-align: center; padding: 40px 0; color: #888; font-size: 15px; }
     #main { display: none; }
-    .birth-row { display: flex; gap: 8px; margin-bottom: 14px; }
-    .birth-row select { margin-bottom: 0; padding-left: 10px; padding-right: 6px; }
-    .birth-row #sel-birth-y { flex: 2; }
-    .birth-row #sel-birth-m, .birth-row #sel-birth-d { flex: 1; }
     .email-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
     .email-row input {
       margin-bottom: 0; flex: 1; min-width: 0;
@@ -101,20 +97,20 @@
     .brand { text-align: center; margin: 4px 0 14px; }
     .brand img { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
     .mascot { display: block; width: 116px; height: auto; margin: 2px auto 12px; }
-    #ob-birth {
+    #ob-birth, #bind-birth {
       /* 必須 appearance:none——iOS 原生日期欄會用固有寬度撐破容器(width/max-width 都壓不住)。
-         代價：空值時不顯示「年/月/日」(欄位看似空白)→ 下方補 #ob-birth-hint 提示文字。有值時仍正常顯示日期。 */
+         代價：空值時不顯示「年/月/日」(欄位看似空白)→ 下方補提示文字。有值時仍正常顯示日期。 */
       -webkit-appearance: none; appearance: none;
       display: block; width: 100%; box-sizing: border-box;
       padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
       font-size: 15px; font-family: inherit; background: #fafafa; color: #333;
       margin-bottom: 4px; min-height: 44px;
     }
-    #ob-birth::-webkit-date-and-time-value { text-align: left; }  /* 有值時日期靠左，與其他欄一致 */
-    #ob-birth-hint { font-size: 13px; color: #888; margin: 0 0 14px; }
+    #ob-birth::-webkit-date-and-time-value, #bind-birth::-webkit-date-and-time-value { text-align: left; }  /* 有值時日期靠左，與其他欄一致 */
+    #ob-birth-hint, #bind-birth-hint { font-size: 13px; color: #888; margin: 0 0 14px; }
     /* ── 長者友善：放大預設字級（2026-06-26，集中於此方便日後調整）────────────── */
     body { font-size: 17px; }
-    select, textarea, #ob-birth, .email-row input { font-size: 16px; }
+    select, textarea, #ob-birth, #bind-birth, .email-row input { font-size: 16px; }
     label { font-size: 15px; }
     .hint { font-size: 14px; }
     .btn { font-size: 17px; }
@@ -143,12 +139,9 @@
       <select id="sel-name" disabled>
         <option value="">── 請先選單位 ──</option>
       </select>
-      <label>出生年月日（西元）</label>
-      <div class="birth-row">
-        <select id="sel-birth-y"><option value="">年</option></select>
-        <select id="sel-birth-m"><option value="">月</option></select>
-        <select id="sel-birth-d"><option value="">日</option></select>
-      </div>
+      <label for="bind-birth">出生年月日（西元）</label>
+      <input type="date" id="bind-birth">
+      <p id="bind-birth-hint">點欄位選擇出生日期</p>
       <div id="bind-msg"></div>
       <button class="btn btn-primary" id="btn-bind" disabled>送出驗證</button>
     </div>
@@ -329,13 +322,9 @@
     function hide(id) { document.getElementById(id).style.display = 'none'; }
 
     function populateUnitSelect(selUnit, namesByUnit) {
-      selUnit.innerHTML = '<option value="">── 請選擇 ──</option>';
-      Object.keys(namesByUnit).forEach(function (unit) {
-        var opt = document.createElement('option');
-        opt.value = unit;
-        opt.textContent = unit;
-        selUnit.appendChild(opt);
-      });
+      // 與報到頁共用 groups.js 的 jdcGroupedOptions：單位分「總公司／工地」兩組 <optgroup>，分類唯一來源不分歧。
+      selUnit.innerHTML = '<option value="">── 請選擇 ──</option>'
+        + jdcGroupedOptions(Object.keys(namesByUnit), 'unit', '');
     }
 
     function onUnitChange(selUnit, selName, namesByUnit) {
@@ -435,7 +424,9 @@
       populateUnitSelect(selUnit, gNamesByUnit);
       selUnit.addEventListener('change', function () { onUnitChange(selUnit, selName, gNamesByUnit); updateBindBtn(); });
       selName.addEventListener('change', updateBindBtn);
-      populateBirthSelects();
+      var bindBirth = document.getElementById('bind-birth');
+      bindBirth.max = new Date().toISOString().slice(0, 10);   // 生日不可晚於今天
+      bindBirth.addEventListener('change', updateBindBtn);
       // 活動：不參加時隱藏葷素欄
       document.querySelectorAll('input[name="attend"]').forEach(function (r) {
         r.addEventListener('change', function () {
@@ -560,40 +551,28 @@
         '</div><button class="btn btn-secondary" onclick="location.reload()">重新整理</button>';
     }
 
-    // ─── 生日下拉 ──────────────────────────────────────────────────────────────
-    function populateBirthSelects() {
-      var y = document.getElementById('sel-birth-y');
-      var m = document.getElementById('sel-birth-m');
-      var d = document.getElementById('sel-birth-d');
-      if (y.options.length > 1) return; // 已填過
-      var thisYear = new Date().getFullYear();
-      for (var yy = thisYear - 16; yy >= 1945; yy--) {
-        y.appendChild(new Option(yy + ' 年', yy));
-      }
-      for (var mm = 1; mm <= 12; mm++) m.appendChild(new Option(mm + ' 月', mm));
-      for (var dd = 1; dd <= 31; dd++) d.appendChild(new Option(dd + ' 日', dd));
-      [y, m, d].forEach(function (s) { s.addEventListener('change', updateBindBtn); });
+    // ─── 綁定送出 ──────────────────────────────────────────────────────────────
+    // 原生 date 欄回傳 "YYYY-MM-DD"；拆成 by/bm/bd（去前導零）給後端，後端介面不變。
+    function bindBirthParts() {
+      var v = document.getElementById('bind-birth').value;   // YYYY-MM-DD 或空字串
+      var p = v.split('-');
+      return v ? { by: String(+p[0]), bm: String(+p[1]), bd: String(+p[2]) } : null;
     }
 
-    // ─── 綁定送出 ──────────────────────────────────────────────────────────────
     function updateBindBtn() {
       var unit = document.getElementById('sel-unit').value;
       var name = document.getElementById('sel-name').value;
-      var by = document.getElementById('sel-birth-y').value;
-      var bm = document.getElementById('sel-birth-m').value;
-      var bd = document.getElementById('sel-birth-d').value;
-      document.getElementById('btn-bind').disabled = !(unit && name && by && bm && bd);
+      document.getElementById('btn-bind').disabled = !(unit && name && bindBirthParts());
     }
 
     document.getElementById('btn-bind').addEventListener('click', function () {
       var btn = this;
       var unit = document.getElementById('sel-unit').value;
       var name = document.getElementById('sel-name').value;
-      var by = document.getElementById('sel-birth-y').value;
-      var bm = document.getElementById('sel-birth-m').value;
-      var bd = document.getElementById('sel-birth-d').value;
+      var birth = bindBirthParts();
+      var by = birth && birth.by, bm = birth && birth.bm, bd = birth && birth.bd;
       var msgEl = document.getElementById('bind-msg');
-      if (!unit || !name || !by || !bm || !bd) return;
+      if (!unit || !name || !birth) return;
       btn.disabled = true;
       showMsg(msgEl, '送出中…', 'info');
       jsonp('submitBinding', { userId: gUserId, displayName: gDisplayName, unit: unit, name: name, birthYear: by, birthMonth: bm, birthDay: bd })
