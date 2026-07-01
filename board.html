@@ -177,10 +177,10 @@ function addDoneItem(o, prepend){
 
 function load(){
   document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';
-  jsonp('getCheckinOptions',{}).then(function(opt){
+  // options 與 pending 彼此不相依 → 並行發送，等待時間由「相加」降為「較慢的那個」
+  Promise.all([jsonp('getCheckinOptions',{}), jsonp('getCheckinPending',{token:TOKEN})]).then(function(rs){
+    var opt=rs[0], r=rs[1];
     if(opt&&(opt.units||opt.titles))gOpts=opt;
-    return jsonp('getCheckinPending',{token:TOKEN});
-  }).then(function(r){
     var box=document.getElementById('pending');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
     document.getElementById('who').textContent='核准人：'+r.who;
