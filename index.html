@@ -511,7 +511,7 @@
       // 已有公司 logo，報到頁不重複顯示平台標題
       var h1 = document.querySelector('#main > h1'); if (h1) h1.style.display = 'none';
       birth.max = new Date().toISOString().slice(0, 10); // 生日不可晚於今天
-      if (gDisplayName) nameI.value = gDisplayName; // 預填 LINE 顯示名，可改
+      // 姓名不預填 LINE 暱稱（暱稱常是綽號/英文名/表情）→ 留空強制同仁自己輸入真名
       // 單位/職稱下拉分群好掃描（分類在共用 assets/groups.js，與人事看板同一份、永不分歧）
       unit.insertAdjacentHTML('beforeend', jdcGroupedOptions(Object.keys(gNamesByUnit), 'unit', ''));
       title.insertAdjacentHTML('beforeend', jdcGroupedOptions(gTitles, 'title', ''));
