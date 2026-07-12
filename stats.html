@@ -31,7 +31,10 @@
   .p { padding: 4px 0; border-bottom: 1px solid #f2f2f2; }
   .p:last-child { border-bottom: none; }
   .p .n { font-weight: 600; }
-  .p .op { font-size: 14px; color: #666; margin-left: 8px; }
+  .p .att { font-size: 12px; padding: 1px 7px; border-radius: 10px; margin-left: 8px; }
+  .att-y { background: #e6f9ee; color: #1a7d44; }
+  .att-n { background: #fdecea; color: #b71c1c; }
+  .p .op { font-size: 14px; color: #444; display: block; margin-top: 2px; }
   .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
   @media (min-width: 768px) {
     body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
@@ -57,18 +60,29 @@ function jsonp(action,params){return new Promise(function(res){
   document.body.appendChild(s);});}
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
 
-function listHtml(arr, withOpinion){
+// 依單位收納（保留原順序）；bodyFn(items) 決定每組內容。單位旁顯示人數。
+function groupHtml(arr, bodyFn){
   if(!arr.length) return '<div class="empty">（無）</div>';
-  // 依單位收納成摺疊選單（保留名單原順序），單位旁顯示人數
   var m={},order=[];
   arr.forEach(function(o){if(!m[o.unit]){m[o.unit]=[];order.push(o.unit);}m[o.unit].push(o);});
   return order.map(function(u){
-    var items=m[u];
-    var body=withOpinion
-      ? items.map(function(o){return '<div class="p"><span class="n">'+esc(o.name)+'</span>'+(o.opinion?'<span class="op">'+esc(o.opinion)+'</span>':'')+'</div>';}).join('')
-      : '<div class="names">'+items.map(function(o){return '<span>'+esc(o.name)+'</span>';}).join('')+'</div>';
-    return '<details class="grp"><summary>'+esc(u)+'<span class="cnt">'+items.length+' 人</span></summary><div class="body">'+body+'</div></details>';
+    return '<details class="grp"><summary>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span></summary><div class="body">'+bodyFn(m[u])+'</div></details>';
   }).join('');
+}
+// 純名字（橫排流式）
+function listHtml(arr){
+  return groupHtml(arr, function(items){
+    return '<div class="names">'+items.map(function(o){return '<span>'+esc(o.name)+'</span>';}).join('')+'</div>';
+  });
+}
+// 意見清單：每人一列，姓名＋參加/不參加標記＋意見
+function opinionsHtml(arr){
+  return groupHtml(arr, function(items){
+    return items.map(function(o){
+      var att=o.attend==='參加' ? '<span class="att att-y">參加</span>' : '<span class="att att-n">不參加</span>';
+      return '<div class="p"><span class="n">'+esc(o.name)+'</span>'+att+'<span class="op">'+esc(o.opinion)+'</span></div>';
+    }).join('');
+  });
 }
 
 jsonp('getActivityStats',{token:q('t'),act:q('act')}).then(function(r){
@@ -84,7 +98,8 @@ jsonp('getActivityStats',{token:q('t'),act:q('act')}).then(function(r){
       +'<div><div class="num red">'+c.absent+'</div><div class="cap">不參加</div></div>'
       +'<div><div class="num grey">'+noReply+'</div><div class="cap">未填</div></div>'
     +'</div><div class="sub">全員 '+c.total+'・已回覆 '+c.replied+'・葷 '+c.meat+'／素 '+c.veg+'</div></div>'
-    +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList,true)
+    +'<div class="sec">意見（'+(r.opinions||[]).length+'）— 參加與不參加者填的意見</div>'+opinionsHtml(r.opinions||[])
+    +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList)
     +'<div class="sec">已綁定未填（'+c.boundNoReply+'）— 催填問卷連結即可</div>'+listHtml(r.boundNoReply)
     +'<div class="sec">未綁定（'+c.notBound+'）— 要先完成身分綁定才能填</div>'+listHtml(r.notBound);
 });
