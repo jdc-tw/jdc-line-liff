@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>活動出席統計</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    padding: 20px 16px 40px; font-size: 17px; line-height: 1.6; color: #333;
+    background: #f7f7f7; max-width: 480px; margin: 0 auto;
+  }
+  .brand { text-align: center; margin: 0 0 14px; }
+  .brand img { width: 100%; max-width: 240px; height: auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #1a1a1a; }
+  .meta { font-size: 14px; color: #888; margin-bottom: 18px; }
+  .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; }
+  .num { font-size: 26px; font-weight: 700; color: #1a1a1a; }
+  .num.green { color: #06a04a; } .num.red { color: #c62828; } .num.grey { color: #888; }
+  .cap { font-size: 13px; color: #888; }
+  .sub { font-size: 14px; color: #666; margin-top: 12px; text-align: center; }
+  .sec { font-size: 16px; color: #666; margin: 24px 0 10px; font-weight: 600; }
+  .list { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+  .item { padding: 10px 14px; border-bottom: 1px solid #eee; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+  .item:last-child { border-bottom: none; }
+  .item .n { font-weight: 600; }
+  .item .u { font-size: 14px; color: #999; }
+  .item .op { font-size: 14px; color: #666; width: 100%; }
+  .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
+  @media (min-width: 768px) {
+    body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
+    h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
+    .card { padding: 26px 30px; } .sec { font-size: 18px; }
+  }
+</style></head><body>
+<div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<h1 id="title">活動出席統計</h1>
+<div id="meta" class="meta">載入中…</div>
+<div id="content"><div class="empty">載入中…</div></div>
+<script>
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+function jsonp(action,params){return new Promise(function(res){
+  var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+  var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  var s=document.createElement('script');
+  s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
+  s.onerror=function(){res({ok:false,msg:'連線失敗，請重新整理。'});cleanup();};
+  function cleanup(){delete window[cb];s.remove();}
+  window[cb]=function(d){res(d);cleanup();};
+  document.body.appendChild(s);});}
+function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
+
+function listHtml(arr, withOpinion){
+  if(!arr.length) return '<div class="empty">（無）</div>';
+  return '<div class="list">'+arr.map(function(o){
+    return '<div class="item"><span class="n">'+esc(o.name)+'</span><span class="u">'+esc(o.unit)+'</span>'
+      +(withOpinion&&o.opinion?'<span class="op">意見：'+esc(o.opinion)+'</span>':'')+'</div>';
+  }).join('')+'</div>';
+}
+
+jsonp('getActivityStats',{token:q('t'),act:q('act')}).then(function(r){
+  var meta=document.getElementById('meta'), box=document.getElementById('content');
+  if(!r||!r.ok){meta.textContent='';box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
+  var a=r.activity, c=r.counts;
+  document.getElementById('title').textContent=a.name||'活動出席統計';
+  meta.textContent=[a.eventDate?'活動日期：'+a.eventDate:'', a.deadlineText?'回覆截止：'+a.deadlineText:'', '狀態：'+a.status, '（'+r.who+'）'].filter(Boolean).join('　');
+  var noReply=c.boundNoReply+c.notBound;
+  box.innerHTML=
+    '<div class="card"><div class="grid">'
+      +'<div><div class="num green">'+c.attend+'</div><div class="cap">參加</div></div>'
+      +'<div><div class="num red">'+c.absent+'</div><div class="cap">不參加</div></div>'
+      +'<div><div class="num grey">'+noReply+'</div><div class="cap">未填</div></div>'
+    +'</div><div class="sub">全員 '+c.total+'・已回覆 '+c.replied+'・葷 '+c.meat+'／素 '+c.veg+'</div></div>'
+    +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList,true)
+    +'<div class="sec">已綁定未填（'+c.boundNoReply+'）— 催填問卷連結即可</div>'+listHtml(r.boundNoReply)
+    +'<div class="sec">未綁定（'+c.notBound+'）— 要先完成身分綁定才能填</div>'+listHtml(r.notBound);
+});
+</script></body></html>
