@@ -370,6 +370,13 @@
       else if (cached.verified) optState = cached;
       else optState = null;
 
+      // 待驗證等待態（optState=null＝剛綁定、去點驗證信回來）：GAS 回來前會空等 ~2s，
+      // 把空白「載入中」換成有感訊息，讓等待像在做事、不像卡住。
+      if (optState === null) {
+        var ld = document.getElementById('loading');
+        if (ld) ld.textContent = '驗證確認中，馬上好…';
+      }
+
       // (1) 名單回來(同源,快) → 有可信狀態就立刻渲染
       lg('④ 載入 roster.json（樂觀渲染）');
       fetch('roster.json?v=' + Date.now()).then(function (r) {
