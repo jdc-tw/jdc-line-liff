@@ -124,8 +124,7 @@
   <div id="loading">載入中，請稍候…</div>
   <div id="main">
     <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
-    <h1>日本國土開發<br>LINE 平台</h1>
-    <p id="greeting" style="display:none; font-size:16px; color:#06c755; font-weight:700; margin:-8px 0 16px"></p>
+    <p id="greeting" style="display:none; font-size:16px; color:#06c755; font-weight:700; margin:6px 0 16px"></p>
 
     <!-- 未綁定：綁定表單 -->
     <div id="section-bind" class="card" style="display:none">
@@ -158,6 +157,7 @@
     <!-- 已驗證：活動問卷 -->
     <div id="section-activity" class="card" style="display:none">
       <h2 id="act-title">活動出席回覆</h2>
+      <p id="act-dates" class="hint" style="display:none; margin-bottom:6px; color:#555"></p>
       <p id="act-question" class="hint"></p>
       <label>出席狀況</label>
       <div class="radio-group" id="rg-attend">
@@ -452,6 +452,14 @@
         if (state.activity) {
           gActivityId = state.activity.id;
           document.getElementById('act-title').textContent = state.activity.name || '活動出席回覆';
+          var _ev = state.activity.eventDate || '';
+          var _dl = state.activity.deadlineText || '';
+          var _dp = [];
+          if (_ev) _dp.push('活動日期：' + _ev);
+          if (_dl) _dp.push('回覆截止：' + _dl);
+          var _de = document.getElementById('act-dates');
+          _de.textContent = _dp.join('　');
+          _de.style.display = _dp.length ? '' : 'none';
           document.getElementById('act-question').textContent = state.activity.question || '';
           var ea = state.existingAnswer;
           if (ea) {
@@ -508,8 +516,6 @@
       var btn = document.getElementById('btn-onboard');
       var msg = document.getElementById('ob-msg');
       var EMAIL_DOMAIN = '@jdc-corpn.com.tw';
-      // 已有公司 logo，報到頁不重複顯示平台標題
-      var h1 = document.querySelector('#main > h1'); if (h1) h1.style.display = 'none';
       birth.max = new Date().toISOString().slice(0, 10); // 生日不可晚於今天
       // 姓名不預填 LINE 暱稱（暱稱常是綽號/英文名/表情）→ 留空強制同仁自己輸入真名
       // 單位/職稱下拉分群好掃描（分類在共用 assets/groups.js，與人事看板同一份、永不分歧）
