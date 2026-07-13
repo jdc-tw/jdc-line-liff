@@ -147,8 +147,8 @@
 
     <!-- 已綁定未驗證 -->
     <div id="section-pending" class="card" style="display:none">
-      <h2>驗證信已送出</h2>
-      <p>已將驗證信寄到您的公司信箱，請點開信中連結完成驗證。</p>
+      <h2>請收信完成驗證</h2>
+      <p>身分核對完成，驗證信將稍後寄達您的公司信箱，請點開信中連結完成驗證。</p>
       <p class="hint">完成後<b>日後就不需再驗證</b>，即可直接填寫活動調查。（驗證完請點該頁的按鈕回 LINE；若沒有，重開此頁即可。）</p>
       <div id="pending-msg"></div>
       <button class="btn btn-secondary" id="btn-rebind">重新填寫驗證資料</button>
@@ -591,7 +591,7 @@
       jsonp('submitBinding', { userId: gUserId, displayName: gDisplayName, unit: unit, name: name, birthYear: by, birthMonth: bm, birthDay: bd })
         .then(function (res) {
           if (res && res.ok) {
-            showMsg(msgEl, '已送出！請至公司信箱點擊驗證連結。', 'ok');
+            showMsg(msgEl, '已送出！驗證信將稍後寄達您的公司信箱，請留意收信。', 'ok');
             hide('section-bind');
             show('section-pending');
             // 更新樂觀快取為「待驗證」，去收信後回來不會閃綁定首頁
