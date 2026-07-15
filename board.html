@@ -123,6 +123,21 @@
 <div id="tab-hr" style="display:none">
   <h1>人事異動・確認看板</h1>
   <div class="who">系統從人事公告辨識，請逐筆核對後確認；名冊現值為權威、AI 辨識僅供初值</div>
+  <details class="grp" style="margin-bottom:16px"><summary>單位管理（整批轉移／新增工地）</summary>
+    <div style="padding:2px 14px 16px">
+      <label>整批轉移：舊單位（全體在職同仁一起換）</label>
+      <select id="bt-old"><option value="">── 請選擇 ──</option></select>
+      <label>新單位</label>
+      <input id="bt-new" placeholder="輸入新單位名稱">
+      <div class="msg" id="bt-msg"></div>
+      <button class="btn btn-primary" onclick="batchTransfer()">整批轉移</button>
+      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+      <label>新增工地（先建名稱讓報到／調動選得到；第一人進駐後自動歸併）</label>
+      <input id="au-name" placeholder="新工地名稱">
+      <div class="msg" id="au-msg"></div>
+      <button class="btn" style="background:#f0f0f0;color:#333" onclick="addUnitGo()">＋ 新增工地</button>
+    </div>
+  </details>
   <div id="hr-pending"><div class="empty">載入中…</div></div>
 </div>
 <div id="tab-roster" style="display:none">
@@ -384,11 +399,34 @@ function renderHrRow(o){
   };
   return d;
 }
+// 單位管理（T10）
+function batchTransfer(){
+  var msg=document.getElementById('bt-msg');
+  var oldU=document.getElementById('bt-old').value, newU=document.getElementById('bt-new').value.trim();
+  if(!oldU||!newU){setMsg(msg,'請選舊單位並輸入新單位。','err');return;}
+  if(!confirm('確定把「'+oldU+'」全體在職同仁整批轉到「'+newU+'」？\n此動作立即寫入名冊並通知佳岑改 LINE 標籤。'))return;
+  setMsg(msg,'處理中…','info');
+  jsonp('batchTransferUnit',{token:TOKEN,oldUnit:oldU,newUnit:newU}).then(function(r){
+    if(r&&r.ok){setMsg(msg,'已轉移 '+r.moved+' 人 ✅','ok');document.getElementById('bt-new').value='';setTimeout(loadHr,800);}
+    else setMsg(msg,(r&&r.msg)||'失敗','err');
+  });
+}
+function addUnitGo(){
+  var msg=document.getElementById('au-msg');
+  var name=document.getElementById('au-name').value.trim();
+  if(!name){setMsg(msg,'請輸入名稱。','err');return;}
+  jsonp('addUnit',{token:TOKEN,name:name}).then(function(r){
+    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('au-name').value='';setTimeout(loadHr,400);}
+    else setMsg(msg,(r&&r.msg)||'失敗','err');
+  });
+}
 function loadHr(){
   jsonp('getHrPending',{token:TOKEN}).then(function(r){
     var box=document.getElementById('hr-pending');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     hrData={units:r.units||[],namesByUnit:r.namesByUnit||{}};
+    document.getElementById('bt-old').innerHTML='<option value="">── 請選擇 ──</option>'
+      +hrData.units.map(function(u){return '<option>'+esc(u)+'</option>';}).join('');
     var actionable=r.rows.filter(function(o){return String(o['狀態']).trim()!=='待生效';}).length;
     updateHrBadge(actionable);
     box.innerHTML='';
