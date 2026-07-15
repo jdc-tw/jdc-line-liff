@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>活動出席統計</title>
+<title>活動紀錄看板</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
   *, *::before, *::after { box-sizing: border-box; }
@@ -70,7 +70,7 @@
   <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
 </div>
 <div id="tab-stats">
-  <h1 id="title">活動出席統計</h1>
+  <h1 id="title">活動紀錄看板</h1>
   <div id="meta" class="meta">載入中…</div>
   <div id="content"><div class="empty">載入中…</div></div>
 </div>
@@ -239,7 +239,7 @@ jsonp('getActivityStats',{token:q('t'),act:q('act')}).then(function(r){
   var meta=document.getElementById('meta'), box=document.getElementById('content');
   if(!r||!r.ok){meta.textContent='';box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
   var a=r.activity, c=r.counts;
-  document.getElementById('title').textContent=a.name||'活動出席統計';
+  document.getElementById('title').textContent=a.name||'活動紀錄看板';
   meta.textContent=[a.eventDate?'活動日期：'+a.eventDate:'', a.deadlineText?'回覆截止：'+a.deadlineText:'', '狀態：'+a.status, '（'+r.who+'）'].filter(Boolean).join('　');
   var noReply=c.boundNoReply+c.notBound;
   box.innerHTML=
