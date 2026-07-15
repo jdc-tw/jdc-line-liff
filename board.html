@@ -168,6 +168,15 @@ var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL
 var EMAIL_DOMAIN='@jdc-corpn.com.tw';
 var SENTINEL='（找不到，由人事填寫）';   // 新人「找不到」哨兵 → 看板停在請選擇
 function getToken(){var m=location.search.match(/[?&]t=([^&]+)/);return m?decodeURIComponent(m[1]):'';}
+// 管理者專屬跨看板切換（只有洪炫佑的 token 顯示；受眾分離維持：佳岑/雅慧看不到）
+function showAdminSwitch(who){
+  if(who!=='洪炫佑'||document.getElementById('adm-switch'))return;
+  var a=document.createElement('a');
+  a.id='adm-switch';a.textContent='⇄ 活動紀錄看板';
+  a.href='stats.html?t='+encodeURIComponent(TOKEN);
+  a.style.cssText='position:fixed;top:10px;right:10px;z-index:99;background:#fff;border:1px solid #ddd;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;color:#333;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.12)';
+  document.body.appendChild(a);
+}
 function jsonp(action,params){return new Promise(function(res){
   var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
   var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
@@ -591,6 +600,7 @@ function load(){
     var box=document.getElementById('pending');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
     document.getElementById('who').textContent='核准人：'+r.who;
+    showAdminSwitch(r.who);
     box.innerHTML='';
     if(!r.rows.length) box.innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
     else r.rows.forEach(function(o){box.appendChild(renderRow(o));});
