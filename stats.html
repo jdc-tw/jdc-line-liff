@@ -172,6 +172,7 @@ function actCard(a){
     +'<div class="act-h"><span class="nm">'+esc(a.name)+'</span>'+st+'</div>'
     +'<div class="act-meta">截止 '+esc(a.deadline)+(a.eventDate?'　活動日 '+esc(a.eventDate):'')+'　回覆 '+a.replies+' 筆　<span style="color:#bbb">'+esc(a.id)+'</span></div>'
     +(a.question?'<div class="act-meta">說明：'+esc(a.question)+'</div>':'')
+    +(a.replies>0?'<div class="act-meta" style="color:#b26a00">※ 已有 '+a.replies+' 筆回覆，不可刪除（避免回覆資料遺失）；不再使用請按「關閉填寫」</div>':'')
     +'<div>'+btns+'</div><div class="msg" data-msg></div><div class="rep" style="display:none" data-rep></div></div>';
 }
 function cardMsg(id,text,cls){var c=document.getElementById('act-'+id);if(!c)return;var el=c.querySelector('[data-msg]');el.textContent=text;el.className='msg '+(cls||'');}
