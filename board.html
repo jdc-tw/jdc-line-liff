@@ -38,8 +38,8 @@
   .empty { text-align: center; color: #888; padding: 40px 0; font-size: 15px; }
   .sec { font-size: 15px; color: #666; margin: 28px 0 10px; }
   /* tabs（2026-07-15 員工名冊分頁） */
-  .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
-  .tabs button { flex: 1; padding: 11px 0; font-size: 16px; font-weight: 700; color: #666;
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+  .tabs button { flex: 1 1 28%; padding: 11px 0; font-size: 16px; font-weight: 700; color: #666;
     background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; cursor: pointer; font-family: inherit; }
   .tabs button.on { background: #06c755; border-color: #06c755; color: #fff; }
   .r-count { font-size: 15px; color: #666; margin-bottom: 10px; }
@@ -110,6 +110,7 @@
   <button id="tabbtn-hr" onclick="showTab('hr')">人事異動</button>
   <button id="tabbtn-roster" onclick="showTab('roster')">員工名冊</button>
   <button id="tabbtn-log" onclick="showTab('log')">異動紀錄</button>
+  <button id="tabbtn-rec" onclick="showTab('rec')">名單對帳</button>
 </div>
 <div id="tab-checkin">
   <h1>新人報到・核准看板</h1>
@@ -150,6 +151,17 @@
   <h1>異動紀錄</h1>
   <div class="who">公告異動與資料修正都在這裡，最新在上</div>
   <div id="log-list"></div>
+</div>
+<div id="tab-rec" style="display:none">
+  <h1>名單對帳</h1>
+  <div class="who">上傳人事全量名單（Excel），系統比對員工名冊後列出差異——只報告、不會改任何資料</div>
+  <div class="card">
+    <label>人事全量名單檔（.xlsx / .xls / .csv）</label>
+    <input id="rec-file" type="file" accept=".xlsx,.xls,.csv">
+    <div class="msg" id="rec-msg"></div>
+    <button class="btn btn-primary" onclick="runReconcile()">開始對帳</button>
+  </div>
+  <div id="rec-report"></div>
 </div>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -255,12 +267,14 @@ function requeueMail(row,btn){
 // ── 員工名冊分頁（2026-07-15；唯讀窄表，生日/信箱刻意不出）───────────────────
 var rosterLoaded=false, rosterRows=[], logLoaded=false;
 function showTab(t){
-  ['checkin','hr','roster','log'].forEach(function(k){
+  ['checkin','hr','roster','log','rec'].forEach(function(k){
     document.getElementById('tab-'+k).style.display = t===k?'':'none';
     document.getElementById('tabbtn-'+k).className = t===k?'on':'';
   });
   if(t==='roster'&&!rosterLoaded){rosterLoaded=true;loadRoster();}
   if(t==='log'&&!logLoaded){logLoaded=true;loadLog();}
+  if(t==='rec'&&!window.XLSX&&!window._xlsxLoading){window._xlsxLoading=true;   // SheetJS 只在用到才載（~930KB）
+    var s=document.createElement('script');s.src='assets/xlsx.full.min.js';document.body.appendChild(s);}
 }
 
 // ── 異動紀錄分頁（公告異動＋資料修正，最新在上）──────────────────────────
@@ -434,6 +448,95 @@ function loadHr(){
     r.rows.forEach(function(o){box.appendChild(renderHrRow(o));});
     logLoaded=false;   // 異動紀錄可能已變，下次切過去重抓
   });
+}
+
+// ── 名單對帳分頁（P2-5 2026-07-16；SheetJS 前端解析，GAS 只收乾淨名單、只報不改）──
+function extractPeople(grid){
+  // 平表：前 10 列內找同時有「姓名」與「部門/單位」欄的表頭列
+  for(var r=0;r<Math.min(10,grid.length);r++){
+    var row=(grid[r]||[]).map(function(c){return String(c==null?'':c).trim();});
+    var iN=-1,iU=-1;
+    row.forEach(function(c,i){
+      if(iN<0&&/^(員工)?姓名$/.test(c))iN=i;
+      if(iU<0&&/(部門|單位)/.test(c))iU=i;
+    });
+    if(iN>=0&&iU>=0){
+      var out=[];
+      for(var q=r+1;q<grid.length;q++){
+        var name=String((grid[q]||[])[iN]==null?'':grid[q][iN]).trim();
+        if(!name)continue;
+        out.push({n:name,u:String((grid[q]||[])[iU]==null?'':grid[q][iU]).trim()});
+      }
+      return {mode:'平表',people:out};
+    }
+  }
+  // 寬表：表頭=單位、人往下（同員工名單格式），col 0 序號跳過、濾 metadata 欄
+  var hdr=grid[0]||[],out2=[];
+  var BAD=/日期|更新|人數|總計|合計|GMT|\d{4}[\/-]\d{1,2}/;
+  for(var c=1;c<hdr.length;c++){
+    var unit=String(hdr[c]==null?'':hdr[c]).trim();
+    if(!unit||BAD.test(unit))continue;
+    for(var r2=1;r2<grid.length;r2++){
+      var nm=String((grid[r2]||[])[c]==null?'':grid[r2][c]).trim();
+      if(!nm||/^\d+$/.test(nm)||/^(合計|總計|總人數)$/.test(nm))continue;
+      out2.push({n:nm,u:unit});
+    }
+  }
+  return {mode:'寬表',people:out2};
+}
+function runReconcile(){
+  var msg=document.getElementById('rec-msg'),box=document.getElementById('rec-report');
+  var f=document.getElementById('rec-file').files[0];
+  if(!f){setMsg(msg,'請先選擇檔案。','err');return;}
+  if(!window.XLSX){setMsg(msg,'解析元件載入中，請稍候再按一次。','info');return;}
+  box.innerHTML='';
+  setMsg(msg,'解析檔案中…','info');
+  var fr=new FileReader();
+  fr.onload=function(){
+    var people,mode;
+    try{
+      var wb=XLSX.read(new Uint8Array(fr.result),{type:'array'});
+      var grid=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+      var ex=extractPeople(grid);
+      people=ex.people;mode=ex.mode;
+    }catch(e){setMsg(msg,'檔案解析失敗：'+e,'err');return;}
+    if(!people||!people.length){setMsg(msg,'檔案裡找不到姓名資料（第一個工作表需有「姓名＋部門/單位」欄，或單位為欄的寬表）。','err');return;}
+    setMsg(msg,'解析出 '+people.length+' 人（'+mode+'），上傳比對中…','info');
+    jsonp('reconcileBegin',{token:TOKEN}).then(function(r0){
+      if(!r0||!r0.ok){setMsg(msg,(r0&&r0.msg)||'開始失敗','err');return;}
+      var chunks=[];for(var i=0;i<people.length;i+=30)chunks.push(people.slice(i,i+30));
+      (function next(i){
+        if(i>=chunks.length){
+          jsonp('reconcileCommit',{token:TOKEN}).then(function(r){
+            if(!r||!r.ok){setMsg(msg,(r&&r.msg)||'比對失敗','err');return;}
+            renderReconcile(r.report);
+            setMsg(msg,'完成 ✅ 結果也已同步發到 Slack','ok');
+          });return;
+        }
+        jsonp('reconcileChunk',{token:TOKEN,data:JSON.stringify(chunks[i])}).then(function(r){
+          if(!r||!r.ok){setMsg(msg,(r&&r.msg)||'上傳失敗','err');return;}
+          setMsg(msg,'上傳中… '+r.staged+'/'+people.length,'info');
+          next(i+1);
+        });
+      })(0);
+    });
+  };
+  fr.readAsArrayBuffer(f);
+}
+function renderReconcile(rep){
+  var box=document.getElementById('rec-report');
+  var s=rep.summary;
+  function sec(title,rows,fmt){
+    if(!rows.length)return '';
+    return '<h2 class="sec">'+title+'（'+rows.length+'）</h2><div class="done-list">'
+      +rows.map(function(l){return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(l.name)+'</span></div><div class="done-meta">'+fmt(l)+(l.note?'<br>💡 '+esc(l.note):'')+'</div></div>';}).join('')+'</div>';
+  }
+  var clean=!(s.missingInRoster||s.missingInHr||s.unitMismatch);
+  box.innerHTML='<div class="card"><div class="done-head"><span class="done-name">'+(clean?'✅ 全綠——無差異':'共 '+(s.missingInRoster+s.missingInHr+s.unitMismatch)+' 筆差異（只報告，未改任何資料）')+'</span></div>'
+    +'<div class="done-meta">HR 名單 '+s.hr+' 人 vs 名冊在職 '+s.roster+' 人'+(s.dupNames?'　⚠️ HR 內同名 '+s.dupNames+' 組（姓名比對不可靠，請人工核）':'')+'</div></div>'
+    +sec('HR 有、名冊無（漏新進／回鍋？）',rep.missingInRoster,function(l){return 'HR 單位：'+esc(l.unit);})
+    +sec('名冊在職、HR 無（漏離職？）',rep.missingInHr,function(l){return '名冊單位：'+esc(l.unit);})
+    +sec('單位不符',rep.unitMismatch,function(l){return 'HR「'+esc(l.hrUnit)+'」 vs 名冊「'+esc(l.rosterUnit)+'」';});
 }
 
 // （名冊每列編輯已於 2026-07-15 拿掉：等真實需求再開，維持名冊真實性。後端 action 路由同步下架。）
