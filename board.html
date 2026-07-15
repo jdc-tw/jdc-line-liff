@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>新人報到・核准看板</title>
+<title>人事異動看板</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <script src="assets/groups.js"></script>
 <style>
@@ -258,44 +258,7 @@ function loadLog(){
   });
 }
 
-// ── 名冊編輯卡（萬不得已的更正通道；離職/調動/晉升走人事異動流程）──────────
-function openEdit(row,itemEl){
-  if(itemEl.querySelector('.editbox')){itemEl.querySelector('.editbox').remove();return;} // 再點收合
-  var box=document.createElement('div');box.className='editbox';
-  box.innerHTML='<div class="empty" style="padding:12px 0">載入中…</div>';
-  itemEl.appendChild(box);
-  jsonp('getRosterRow',{token:TOKEN,row:row}).then(function(r){
-    if(!r||!r.ok){box.innerHTML='<div class="resend-msg err">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    var o=r.rec;
-    box.innerHTML=
-      '<div style="border-top:1px dashed #ddd;margin-top:10px;padding-top:10px">'
-      +'<div class="resend-msg err" style="margin-bottom:8px">⚠️ 僅供更正錯誤資料；離職／調動／晉升請走人事異動流程，勿在此修改。</div>'
-      +'<label>姓名</label><input data-k="姓名" value="'+esc(o['員工姓名'])+'">'
-      +'<label>單位</label>'+unitSelectHtml(o['部門'])
-      +'<label>職稱</label><div class="titlefield" data-tf></div>'
-      +'<label>生日（西元）</label><input type="date" data-k="生日" value="'+esc(o['西元生日'])+'">'
-      +'<label>信箱</label><input data-k="信箱" value="'+esc(o['信箱'])+'">'
-      +'<label>員工編號</label><input data-k="員編" value="'+esc(o['員工編號'])+'">'
-      +'<div class="msg"></div>'
-      +'<button class="btn btn-primary" data-save>儲存更正</button>'
-      +'<button type="button" class="linkbtn" data-cancel>取消</button></div>';
-    buildTitleField(box.querySelector('[data-tf]'), o['職稱']);
-    function val(k){var el=box.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
-    var msg=box.querySelector('.msg');
-    box.querySelector('[data-cancel]').onclick=function(){box.remove();};
-    box.querySelector('[data-save]').onclick=function(){
-      if(!confirm('確定套用這筆更正？（會同步 UserList 並記入異動紀錄）'))return;
-      setMsg(msg,'處理中…','info');
-      jsonp('updateRosterRow',{token:TOKEN,row:row,name:val('姓名'),unit:val('單位'),title:val('職稱'),birth:val('生日'),email:val('信箱'),empno:val('員編')})
-        .then(function(res){
-          if(!res||!res.ok){setMsg(msg,(res&&res.msg)||'失敗','err');return;}
-          setMsg(msg,'✅ 已更正：'+(res.note||''),'ok');
-          rosterLoaded=false;logLoaded=false; // 下次進分頁重載
-          setTimeout(function(){loadRoster();},800);
-        });
-    };
-  });
-}
+// （名冊每列編輯已於 2026-07-15 拿掉：等真實需求再開，維持名冊真實性。後端 action 路由同步下架。）
 function loadRoster(){
   document.getElementById('r-list').innerHTML='<div class="empty">載入中…</div>';
   jsonp('getRosterList',{token:TOKEN}).then(function(r){
@@ -313,8 +276,7 @@ function loadRoster(){
 function rosterItemHtml(o){
   var badge=o.status==='離職'?'<span class="st-off">離職</span>':'';
   var upd=o._recent?'<span class="upd">更新 '+esc(o.updatedAt)+'</span>':'';
-  var edit=o.row?'<button type="button" class="resend" style="margin-top:0;margin-left:8px" onclick="openEdit('+o.row+',this.closest(\'.done-item\'))">✏️</button>':'';
-  return '<div class="done-item"><div class="done-head"><span class="done-name'+(o._recent?' hot':'')+'">'+esc(o.name)+'</span>'+upd+badge+'<span class="done-date" style="margin-left:auto">'+esc(o.empNo)+'</span>'+edit+'</div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
+  return '<div class="done-item"><div class="done-head"><span class="done-name'+(o._recent?' hot':'')+'">'+esc(o.name)+'</span>'+upd+badge+'<span class="done-date" style="margin-left:auto">'+esc(o.empNo)+'</span></div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
 }
 // 依單位收合（同統計看板）；搜尋時自動展開所有命中組
 function renderRoster(rows, openAll){
