@@ -122,7 +122,7 @@
 </div>
 <div id="tab-hr" style="display:none">
   <h1>人事異動・確認看板</h1>
-  <div class="who">系統從人事公告辨識，請逐筆核對後確認；名冊現值為權威、AI 辨識僅供初值</div>
+  <div class="who">系統從人事公告整理出待確認清單，請逐筆核對後確認；以名冊資訊為準，公告資訊僅供參考</div>
   <details class="grp" style="margin-bottom:16px"><summary>單位管理（整批轉移／新增工地）</summary>
     <div style="padding:2px 14px 16px">
       <label>整批轉移：舊單位（全體在職同仁一起換）</label>
@@ -340,7 +340,7 @@ function renderHrRow(o){
               (o['新部門單位']||o['新職稱'])&&((o['新部門單位']||'')+(o['新職稱']?' '+o['新職稱']:''))]
              .filter(Boolean).join(' → ');
   var rosterLine=o.roster
-    ? '名冊現值：'+esc(o.roster.unit)+(o.roster.title?'・'+esc(o.roster.title):'')
+    ? '名冊資訊：'+esc(o.roster.unit)+(o.roster.title?'・'+esc(o.roster.title):'')
     : (o.matchCount>1?'⚠️ 名冊有 '+o.matchCount+' 位在職同名':'⚠️ 名冊查無此人');
   var diffMark=(o.roster&&o['原部門單位']&&String(o['原部門單位']).trim()!==o.roster.unit)
     ? ' <span style="color:#b26a00;font-size:13px">（與公告原單位不同，以名冊為準）</span>':'';
@@ -359,7 +359,7 @@ function renderHrRow(o){
         +'<label>核定對象</label><div data-namefield></div>'
       : '<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span></div>'
         +'<div class="done-meta" style="margin-bottom:12px">'+rosterLine+diffMark+'</div>')
-    +(aiLine?'<div class="done-meta" style="margin-bottom:12px">公告辨識：'+esc(aiLine)+'</div>':'')
+    +(aiLine?'<div class="done-meta" style="margin-bottom:12px">公告資訊：'+esc(aiLine)+'</div>':'')
     +(cat==='調動'?'<label>新單位（核定）</label><div data-unitfield></div>':'')
     +(cat==='晉升'?'<label>新職稱（核定）</label><input data-k="title" value="'+esc(o['新職稱'])+'" placeholder="請輸入職稱">'
       +'<label>新單位（若單位同時異動才填）</label><div data-unitfield></div>':'')
@@ -367,7 +367,7 @@ function renderHrRow(o){
     +'<div class="done-meta" style="margin-bottom:12px">'+esc(o.effTag)+'</div>'
     +'<div class="msg"></div>'
     +'<button class="btn btn-primary">確認</button>'
-    +'<button type="button" class="linkbtn" data-reject style="display:block;margin:8px auto 0;color:#b71c1c">✕ 駁回這筆（辨識有誤等）</button>';
+    +'<button type="button" class="linkbtn" data-reject style="display:block;margin:8px auto 0;color:#b71c1c">✕ 駁回這筆（資料有誤等）</button>';
   if(isFail) hrNameField(d.querySelector('[data-namefield]'));
   var uf=d.querySelector('[data-unitfield]');
   if(uf) hrUnitField(uf, cat==='調動'?o['新部門單位']:(o['新部門單位']||''));
