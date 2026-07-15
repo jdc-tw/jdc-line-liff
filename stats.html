@@ -147,10 +147,22 @@ function loadActs(){
     box.innerHTML=r.rows.slice().reverse().map(actCard).join('');
   });
 }
+var LIFF_URL='https://liff.line.me/2010451233-a781rqsm';
+function copyLink(id,btn){
+  var url=LIFF_URL+'?act='+encodeURIComponent(id);
+  function done(ok){btn.textContent=ok?'✅ 已複製':'複製失敗';setTimeout(function(){btn.textContent='📋 複製問卷網址';},2000);}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(function(){done(true);},function(){fallback();});}
+  else fallback();
+  function fallback(){
+    var ta=document.createElement('textarea');ta.value=url;document.body.appendChild(ta);ta.select();
+    try{done(document.execCommand('copy'));}catch(e){done(false);}ta.remove();
+  }
+}
 function actCard(a){
   var st = a.status==='開放' ? (a.open?'<span class="st st-open">開放中</span>':'<span class="st st-due">已截止</span>')
                              : '<span class="st st-closed">已關閉</span>';
-  var btns = (a.status==='開放'
+  var btns = '<button class="btn btn-sm" onclick="copyLink(\''+esc(a.id)+'\',this)">📋 複製問卷網址</button>'
+    +(a.status==='開放'
       ? '<button class="btn btn-sm warn" onclick="setSt(\''+esc(a.id)+'\',\'關閉\')">關閉填寫</button>'
       : '<button class="btn btn-sm" onclick="setSt(\''+esc(a.id)+'\',\'開放\')">重新開放</button>')
     +'<button class="btn btn-sm" onclick="chgDl(\''+esc(a.id)+'\')">改截止日</button>'
@@ -200,13 +212,16 @@ function toggleRep(btn,id){
   jsonp('getActivityReplies',{token:q('t'),actId:id}).then(function(r){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     if(!r.rows.length){box.innerHTML='<div class="empty">還沒有回覆</div>';return;}
-    box.innerHTML=r.rows.map(function(x){
-      var att=x.attend==='參加'?'<span class="att att-y">參加</span>':'<span class="att att-n">'+esc(x.attend||'—')+'</span>';
-      return '<div class="p"><span class="n">'+esc(x.name)+'</span><span style="color:#999;font-size:13px">（'+esc(x.unit)+'）</span>'+att
-        +(x.diet?'<span style="font-size:13px;color:#666">　'+esc(x.diet)+'</span>':'')
-        +'<span style="font-size:12px;color:#bbb">　'+esc(x.time)+'</span>'
-        +(x.opinion?'<span class="op">'+esc(x.opinion)+'</span>':'')+'</div>';
-    }).join('');
+    // 依單位收納（同出席統計），單位旁顯示人數
+    box.innerHTML=groupHtml(r.rows,function(items){
+      return items.map(function(x){
+        var att=x.attend==='參加'?'<span class="att att-y">參加</span>':'<span class="att att-n">'+esc(x.attend||'—')+'</span>';
+        return '<div class="p"><span class="n">'+esc(x.name)+'</span>'+att
+          +(x.diet?'<span style="font-size:13px;color:#666">　'+esc(x.diet)+'</span>':'')
+          +'<span style="font-size:12px;color:#bbb">　'+esc(x.time)+'</span>'
+          +(x.opinion?'<span class="op">'+esc(x.opinion)+'</span>':'')+'</div>';
+      }).join('');
+    });
   });
 }
 
