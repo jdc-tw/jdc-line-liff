@@ -50,6 +50,14 @@
     padding: 4px 10px; cursor: pointer; font-family: inherit; margin-top: 6px; -webkit-appearance: none; }
   .resend-msg { font-size: 13px; margin-top: 4px; }
   .resend-msg.ok { color: #1a7d44; } .resend-msg.err { color: #b71c1c; }
+  /* 名冊：依單位收合（同統計看板樣式） */
+  .grp { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 8px; overflow: hidden; }
+  .grp summary { padding: 13px 14px; cursor: pointer; font-weight: 700; list-style: none; display: flex; align-items: baseline; gap: 8px; font-size: 16px; }
+  .grp summary::-webkit-details-marker { display: none; }
+  .grp summary::before { content: '▸'; color: #bbb; font-size: 13px; transition: transform .15s; }
+  .grp[open] summary::before { transform: rotate(90deg); }
+  .grp .cnt { color: #888; font-weight: 400; font-size: 14px; }
+  .grp .done-item { padding-left: 30px; }
   .done-list { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
   .done-item { padding: 12px 14px; border-bottom: 1px solid #eee; }
   .done-item:last-child { border-bottom: none; }
@@ -110,7 +118,7 @@
   <h1>員工名冊</h1>
   <div id="r-count" class="r-count">載入中…</div>
   <input id="r-search" class="r-search" type="search" placeholder="搜尋姓名／單位／員編…" oninput="filterRoster()">
-  <div id="r-list" class="done-list"></div>
+  <div id="r-list"></div>
 </div>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -228,15 +236,23 @@ function loadRoster(){
 }
 function rosterItemHtml(o){
   var badge=o.status==='離職'?'<span class="st-off">離職</span>':'';
-  return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o.name)+badge+'</span><span class="done-date">'+esc(o.empNo)+'</span></div><div class="done-meta">'+[o.unit,o.title].filter(Boolean).map(esc).join('・')+'</div></div>';
+  return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o.name)+badge+'</span><span class="done-date">'+esc(o.empNo)+'</span></div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
 }
-function renderRoster(rows){
-  document.getElementById('r-list').innerHTML = rows.length ? rows.map(rosterItemHtml).join('') : '<div class="empty">（無符合）</div>';
+// 依單位收合（同統計看板）；搜尋時自動展開所有命中組
+function renderRoster(rows, openAll){
+  var box=document.getElementById('r-list');
+  if(!rows.length){box.innerHTML='<div class="empty">（無符合）</div>';return;}
+  var m={},order=[];
+  rows.forEach(function(o){var u=o.unit||'（未填單位）';if(!m[u]){m[u]=[];order.push(u);}m[u].push(o);});
+  box.innerHTML=order.map(function(u){
+    return '<details class="grp"'+(openAll?' open':'')+'><summary>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span></summary>'
+      +m[u].map(rosterItemHtml).join('')+'</details>';
+  }).join('');
 }
 function filterRoster(){
   var kw=document.getElementById('r-search').value.trim();
-  if(!kw){renderRoster(rosterRows);return;}
-  renderRoster(rosterRows.filter(function(o){return (o.name+o.unit+o.title+o.empNo).indexOf(kw)>=0;}));
+  if(!kw){renderRoster(rosterRows,false);return;}
+  renderRoster(rosterRows.filter(function(o){return (o.name+o.unit+o.title+o.empNo).indexOf(kw)>=0;}),true);
 }
 function addDoneItem(o, prepend){
   document.getElementById('doneWrap').style.display='';
