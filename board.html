@@ -37,6 +37,19 @@
   .msg-info { background: #e8f0fe; color: #1a56c4; }
   .empty { text-align: center; color: #888; padding: 40px 0; font-size: 15px; }
   .sec { font-size: 15px; color: #666; margin: 28px 0 10px; }
+  /* tabs（2026-07-15 員工名冊分頁） */
+  .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
+  .tabs button { flex: 1; padding: 11px 0; font-size: 16px; font-weight: 700; color: #666;
+    background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; cursor: pointer; font-family: inherit; }
+  .tabs button.on { background: #06c755; border-color: #06c755; color: #fff; }
+  .r-count { font-size: 15px; color: #666; margin-bottom: 10px; }
+  .r-count b { color: #1a1a1a; font-size: 20px; }
+  .r-search { margin-bottom: 12px; }
+  .st-off { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fdecea; color: #b71c1c; margin-left: 8px; }
+  .resend { background: none; border: 1px solid #ddd; border-radius: 8px; color: #555; font-size: 13px;
+    padding: 4px 10px; cursor: pointer; font-family: inherit; margin-top: 6px; -webkit-appearance: none; }
+  .resend-msg { font-size: 13px; margin-top: 4px; }
+  .resend-msg.ok { color: #1a7d44; } .resend-msg.err { color: #b71c1c; }
   .done-list { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
   .done-item { padding: 12px 14px; border-bottom: 1px solid #eee; }
   .done-item:last-child { border-bottom: none; }
@@ -80,12 +93,24 @@
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
-<h1>新人報到・核准看板</h1>
-<div id="who" class="who"></div>
-<div id="pending"><div class="empty">載入中…</div></div>
-<div id="doneWrap" style="display:none">
-  <h2 class="sec">已核准（近一年）</h2>
-  <div id="donelist" class="done-list"></div>
+<div class="tabs">
+  <button id="tabbtn-checkin" class="on" onclick="showTab('checkin')">新人報到</button>
+  <button id="tabbtn-roster" onclick="showTab('roster')">員工名冊</button>
+</div>
+<div id="tab-checkin">
+  <h1>新人報到・核准看板</h1>
+  <div id="who" class="who"></div>
+  <div id="pending"><div class="empty">載入中…</div></div>
+  <div id="doneWrap" style="display:none">
+    <h2 class="sec">已核准（近一年）</h2>
+    <div id="donelist" class="done-list"></div>
+  </div>
+</div>
+<div id="tab-roster" style="display:none">
+  <h1>員工名冊</h1>
+  <div id="r-count" class="r-count">載入中…</div>
+  <input id="r-search" class="r-search" type="search" placeholder="搜尋姓名／單位／員編…" oninput="filterRoster()">
+  <div id="r-list" class="done-list"></div>
 </div>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -167,7 +192,51 @@ function renderRow(o){
 
 function doneItemHtml(o){
   var meta=[o['單位'],o['職稱'],o['員編']].filter(Boolean).map(esc).join('・');
-  return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span><span class="done-date">'+esc(o['報到日期']||'')+'</span></div><div class="done-meta">'+meta+'</div></div>';
+  var mail=String(o['留存信狀態']||'').trim();
+  var badge=mail==='退件終止'?'<span class="st-off">留存信退件終止</span>':'';
+  // 重寄留存信：只有帶 _row 的列（載入時來的）才給按鈕；剛核准的列本來就在待寄佇列不需要
+  var resend=o._row?'<div><button type="button" class="resend" onclick="requeueMail('+o._row+',this)">↻ 重寄留存信</button><div class="resend-msg"></div></div>':'';
+  return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o['姓名'])+badge+'</span><span class="done-date">'+esc(o['報到日期']||'')+'</span></div><div class="done-meta">'+meta+'</div>'+resend+'</div>';
+}
+function requeueMail(row,btn){
+  var msg=btn.parentNode.querySelector('.resend-msg');
+  if(!confirm('把這位同仁的留存信重新排入寄送？（今日 17:00 自動寄出）'))return;
+  msg.textContent='處理中…';msg.className='resend-msg';
+  jsonp('requeueCheckinMail',{token:TOKEN,row:row}).then(function(r){
+    msg.textContent=(r&&r.msg)||(r&&r.ok?'已排入待寄':'失敗');
+    msg.className='resend-msg '+(r&&r.ok?'ok':'err');
+  });
+}
+
+// ── 員工名冊分頁（2026-07-15；唯讀窄表，生日/信箱刻意不出）───────────────────
+var rosterLoaded=false, rosterRows=[];
+function showTab(t){
+  document.getElementById('tab-checkin').style.display = t==='checkin'?'':'none';
+  document.getElementById('tab-roster').style.display = t==='roster'?'':'none';
+  document.getElementById('tabbtn-checkin').className = t==='checkin'?'on':'';
+  document.getElementById('tabbtn-roster').className = t==='roster'?'on':'';
+  if(t==='roster'&&!rosterLoaded){rosterLoaded=true;loadRoster();}
+}
+function loadRoster(){
+  document.getElementById('r-list').innerHTML='<div class="empty">載入中…</div>';
+  jsonp('getRosterList',{token:TOKEN}).then(function(r){
+    if(!r||!r.ok){document.getElementById('r-count').textContent='';document.getElementById('r-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    rosterRows=r.rows||[];
+    document.getElementById('r-count').innerHTML='在職 <b>'+r.activeCount+'</b> 人（名冊共 '+r.total+' 筆）';
+    renderRoster(rosterRows);
+  });
+}
+function rosterItemHtml(o){
+  var badge=o.status==='離職'?'<span class="st-off">離職</span>':'';
+  return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o.name)+badge+'</span><span class="done-date">'+esc(o.empNo)+'</span></div><div class="done-meta">'+[o.unit,o.title].filter(Boolean).map(esc).join('・')+'</div></div>';
+}
+function renderRoster(rows){
+  document.getElementById('r-list').innerHTML = rows.length ? rows.map(rosterItemHtml).join('') : '<div class="empty">（無符合）</div>';
+}
+function filterRoster(){
+  var kw=document.getElementById('r-search').value.trim();
+  if(!kw){renderRoster(rosterRows);return;}
+  renderRoster(rosterRows.filter(function(o){return (o.name+o.unit+o.title+o.empNo).indexOf(kw)>=0;}));
 }
 function addDoneItem(o, prepend){
   document.getElementById('doneWrap').style.display='';
