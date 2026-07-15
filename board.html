@@ -105,7 +105,6 @@
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
-<div style="text-align:right;margin:-8px 0 8px"><a id="xlink" style="font-size:13px;color:#1a56c4;text-decoration:none" href="#">⇄ 活動紀錄看板</a></div>
 <div class="tabs">
   <button id="tabbtn-checkin" class="on" onclick="showTab('checkin')">新人報到</button>
   <button id="tabbtn-roster" onclick="showTab('roster')">員工名冊</button>
@@ -147,7 +146,6 @@ function jsonp(action,params){return new Promise(function(res){
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 var TOKEN=getToken();
-document.getElementById('xlink').href='stats.html?t='+encodeURIComponent(TOKEN);
 function updateBadge(n){
   document.getElementById('tabbtn-checkin').textContent = n>0 ? '新人報到（'+n+'）' : '新人報到';
 }
