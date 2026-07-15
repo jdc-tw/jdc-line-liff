@@ -36,7 +36,6 @@
   .att-n { background: #fdecea; color: #b71c1c; }
   .p .op { font-size: 14px; color: #444; display: block; margin-top: 2px; }
   .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
-  .xlink { font-size: 13px; color: #1a56c4; text-decoration: none; }
   /* tabs */
   .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
   .tabs button { flex: 1; padding: 10px 0; font-size: 15px; font-weight: 600; color: #666;
@@ -70,7 +69,6 @@
   <button id="tabbtn-stats" class="on" onclick="showTab('stats')">出席統計</button>
   <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
 </div>
-<div style="text-align:right;margin:-8px 0 8px"><a id="xlink" class="xlink" href="#">⇄ 人事異動看板</a></div>
 <div id="tab-stats">
   <h1 id="title">活動紀錄看板</h1>
   <select id="act-picker" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;display:none" onchange="loadStats(this.value)"></select>
@@ -238,9 +236,6 @@ function toggleRep(btn,id){
     });
   });
 }
-
-// 互連（同一把 token 帶過去）
-document.getElementById('xlink').href='board.html?t='+encodeURIComponent(q('t'));
 
 // 活動切換下拉（歷史場次也能回看統計）
 jsonp('listActivities',{token:q('t')}).then(function(r){
