@@ -124,7 +124,7 @@
 <div id="tab-hr" style="display:none">
   <h1>人事異動・確認看板</h1>
   <div class="who">系統從人事公告整理出待確認清單，請逐筆核對後確認；以名冊資訊為準，公告資訊僅供參考</div>
-  <details class="grp" style="margin-bottom:16px"><summary>單位管理（整批轉移／新增工地）</summary>
+  <details class="grp" style="margin-bottom:16px"><summary>單位／職稱管理（整批轉移・新增工地・新增職稱）</summary>
     <div style="padding:2px 14px 16px">
       <label>整批轉移：舊單位（全體在職同仁一起換）</label>
       <select id="bt-old"><option value="">── 請選擇 ──</option></select>
@@ -137,6 +137,11 @@
       <input id="au-name" placeholder="新工地名稱">
       <div class="msg" id="au-msg"></div>
       <button class="btn" style="background:#f0f0f0;color:#333" onclick="addUnitGo()">＋ 新增工地</button>
+      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
+      <label>新增職稱（人事異動核定與新人報到的職稱下拉共用；第一人掛上後自動歸併）</label>
+      <input id="at-name" placeholder="新職稱名稱">
+      <div class="msg" id="at-msg"></div>
+      <button class="btn" style="background:#f0f0f0;color:#333" onclick="addTitleGo()">＋ 新增職稱</button>
     </div>
   </details>
   <div id="hr-pending"><div class="empty">載入中…</div></div>
@@ -308,7 +313,7 @@ function loadLog(){
 }
 
 // ── 人事異動分頁（2026-07-15 T8；確認閘＝寫入前的人工核定，名冊現值為權威）──────
-var hrData={units:[],namesByUnit:{}};
+var hrData={units:[],namesByUnit:{},titles:[]};
 function updateHrBadge(n){
   document.getElementById('tabbtn-hr').textContent = n>0 ? '人事異動（'+n+'）' : '人事異動';
 }
@@ -316,23 +321,13 @@ function catBadge(cat){
   var col=CAT_COLOR[cat]||'#666';
   return '<span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(cat)+'</span>';
 }
-// 單位欄：窄表在職 distinct 下拉＋「＋ 手動輸入」（新單位可能名單還沒有，如新工地）
-function hrUnitField(box, cur){
-  function toSelect(val){
-    var inList=hrData.units.indexOf(val)>=0;
-    box.innerHTML='<select data-k="unit"><option value=""'+(val?'':' selected')+'>── 請選擇 ──</option>'
-      +hrData.units.map(function(u){return '<option'+(u===val?' selected':'')+'>'+esc(u)+'</option>';}).join('')
-      +'<option value="__manual__">＋ 手動輸入單位…</option></select>';
-    var sel=box.querySelector('select');
-    sel.onchange=function(){ if(sel.value==='__manual__') toInput(''); };
-    if(val&&!inList) toInput(val);   // AI 辨識出名單沒有的單位 → 直接進手動框讓人事核
-  }
-  function toInput(val){
-    box.innerHTML='<input data-k="unit" type="text" value="'+esc(val||'')+'" placeholder="請輸入單位">'
-      +'<button type="button" class="linkbtn" data-back>↩ 改用清單選</button>';
-    box.querySelector('[data-back]').onclick=function(){ toSelect(''); };
-  }
-  toSelect(cur||'');
+// 單位/職稱欄：嚴格下拉（公告可能寫兼任等複合字串，由核定人選一個主要值；
+// 清單沒有的選項先到上方「單位／職稱管理」新增，不開放自由輸入以維持名冊乾淨）
+function hrPickField(box, key, list, cur, label){
+  var inList=list.indexOf(cur)>=0;
+  box.innerHTML='<select data-k="'+key+'"><option value=""'+(inList?'':' selected')+'>── 請選擇 ──</option>'
+    +list.map(function(v){return '<option'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('')+'</select>'
+    +(cur&&!inList?'<div class="done-meta" style="margin:-8px 0 12px">公告寫「'+esc(cur)+'」不在清單；請核定一個，或先到上方管理區新增'+label+'</div>':'');
 }
 // 比對失敗補救：單位→姓名 串聯下拉＋手動輸入
 function hrNameField(box){
@@ -383,9 +378,9 @@ function renderHrRow(o){
       : '<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span></div>'
         +'<div class="done-meta" style="margin-bottom:12px">'+rosterLine+diffMark+'</div>')
     +(aiLine?'<div class="done-meta" style="margin-bottom:12px">公告資訊：'+esc(aiLine)+'</div>':'')
-    +(cat==='調動'?'<label>新單位（核定）</label><div data-unitfield></div>':'')
-    +(cat==='晉升'?'<label>新職稱（核定）</label><input data-k="title" value="'+esc(o['新職稱'])+'" placeholder="請輸入職稱">'
-      +'<label>新單位（若單位同時異動才填）</label><div data-unitfield></div>':'')
+    +(cat==='調動'?'<label>新單位（核定，選一個主要工作地）</label><div data-unitfield></div>':'')
+    +(cat==='晉升'?'<label>新職稱（核定）</label><div data-titlefield></div>'
+      +'<label>新單位（若單位同時異動才選，選一個主要工作地）</label><div data-unitfield></div>':'')
     +'<label>生效日（核定）</label><input type="date" data-k="eff" value="'+esc(o.effIso)+'">'
     +'<div class="done-meta" style="margin-bottom:12px">'+esc(o.effTag)+'</div>'
     +'<div class="msg"></div>'
@@ -393,7 +388,9 @@ function renderHrRow(o){
     +'<button type="button" class="linkbtn" data-reject style="display:block;margin:8px auto 0;color:#b71c1c">✕ 駁回這筆（資料有誤等）</button>';
   if(isFail) hrNameField(d.querySelector('[data-namefield]'));
   var uf=d.querySelector('[data-unitfield]');
-  if(uf) hrUnitField(uf, cat==='調動'?o['新部門單位']:(o['新部門單位']||''));
+  if(uf) hrPickField(uf,'unit',hrData.units,String(o['新部門單位']||'').trim(),'工地');
+  var tf=d.querySelector('[data-titlefield]');
+  if(tf) hrPickField(tf,'title',hrData.titles,String(o['新職稱']||'').trim(),'職稱');
   var msg=d.querySelector('.msg');
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value.trim():'';}
   d.querySelector('.btn').onclick=function(){
@@ -443,11 +440,20 @@ function addUnitGo(){
     else setMsg(msg,(r&&r.msg)||'失敗','err');
   });
 }
+function addTitleGo(){
+  var msg=document.getElementById('at-msg');
+  var name=document.getElementById('at-name').value.trim();
+  if(!name){setMsg(msg,'請輸入名稱。','err');return;}
+  jsonp('addTitle',{token:TOKEN,name:name}).then(function(r){
+    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('at-name').value='';setTimeout(loadHr,400);}
+    else setMsg(msg,(r&&r.msg)||'失敗','err');
+  });
+}
 function loadHr(){
   jsonp('getHrPending',{token:TOKEN}).then(function(r){
     var box=document.getElementById('hr-pending');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    hrData={units:r.units||[],namesByUnit:r.namesByUnit||{}};
+    hrData={units:r.units||[],namesByUnit:r.namesByUnit||{},titles:r.titles||[]};
     document.getElementById('bt-old').innerHTML='<option value="">── 請選擇 ──</option>'
       +hrData.units.map(function(u){return '<option>'+esc(u)+'</option>';}).join('');
     var actionable=r.rows.filter(function(o){return String(o['狀態']).trim()!=='待生效';}).length;
