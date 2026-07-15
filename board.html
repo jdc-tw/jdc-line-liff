@@ -107,6 +107,7 @@
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <div class="tabs">
   <button id="tabbtn-checkin" class="on" onclick="showTab('checkin')">新人報到</button>
+  <button id="tabbtn-hr" onclick="showTab('hr')">人事異動</button>
   <button id="tabbtn-roster" onclick="showTab('roster')">員工名冊</button>
   <button id="tabbtn-log" onclick="showTab('log')">異動紀錄</button>
 </div>
@@ -118,6 +119,11 @@
     <h2 class="sec">已核准（近一年）</h2>
     <div id="donelist" class="done-list"></div>
   </div>
+</div>
+<div id="tab-hr" style="display:none">
+  <h1>人事異動・確認看板</h1>
+  <div class="who">系統從人事公告辨識，請逐筆核對後確認；名冊現值為權威、AI 辨識僅供初值</div>
+  <div id="hr-pending"><div class="empty">載入中…</div></div>
 </div>
 <div id="tab-roster" style="display:none">
   <h1>員工名冊</h1>
@@ -234,7 +240,7 @@ function requeueMail(row,btn){
 // ── 員工名冊分頁（2026-07-15；唯讀窄表，生日/信箱刻意不出）───────────────────
 var rosterLoaded=false, rosterRows=[], logLoaded=false;
 function showTab(t){
-  ['checkin','roster','log'].forEach(function(k){
+  ['checkin','hr','roster','log'].forEach(function(k){
     document.getElementById('tab-'+k).style.display = t===k?'':'none';
     document.getElementById('tabbtn-'+k).className = t===k?'on':'';
   });
@@ -260,6 +266,135 @@ function loadLog(){
         +'<span class="done-date">'+esc(x.status)+'</span></div>'
         +'<div class="done-meta">'+meta+'<span style="color:#bbb">　'+esc(x.doc)+'</span></div></div>';
     }).join('')+'</div>';
+  });
+}
+
+// ── 人事異動分頁（2026-07-15 T8；確認閘＝寫入前的人工核定，名冊現值為權威）──────
+var hrData={units:[],namesByUnit:{}};
+function updateHrBadge(n){
+  document.getElementById('tabbtn-hr').textContent = n>0 ? '人事異動（'+n+'）' : '人事異動';
+}
+function catBadge(cat){
+  var col=CAT_COLOR[cat]||'#666';
+  return '<span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(cat)+'</span>';
+}
+// 單位欄：窄表在職 distinct 下拉＋「＋ 手動輸入」（新單位可能名單還沒有，如新工地）
+function hrUnitField(box, cur){
+  function toSelect(val){
+    var inList=hrData.units.indexOf(val)>=0;
+    box.innerHTML='<select data-k="unit"><option value=""'+(val?'':' selected')+'>── 請選擇 ──</option>'
+      +hrData.units.map(function(u){return '<option'+(u===val?' selected':'')+'>'+esc(u)+'</option>';}).join('')
+      +'<option value="__manual__">＋ 手動輸入單位…</option></select>';
+    var sel=box.querySelector('select');
+    sel.onchange=function(){ if(sel.value==='__manual__') toInput(''); };
+    if(val&&!inList) toInput(val);   // AI 辨識出名單沒有的單位 → 直接進手動框讓人事核
+  }
+  function toInput(val){
+    box.innerHTML='<input data-k="unit" type="text" value="'+esc(val||'')+'" placeholder="請輸入單位">'
+      +'<button type="button" class="linkbtn" data-back>↩ 改用清單選</button>';
+    box.querySelector('[data-back]').onclick=function(){ toSelect(''); };
+  }
+  toSelect(cur||'');
+}
+// 比對失敗補救：單位→姓名 串聯下拉＋手動輸入
+function hrNameField(box){
+  function toSelect(){
+    box.innerHTML='<select data-k="nunit"><option value="" selected>── 先選單位 ──</option>'
+      +hrData.units.map(function(u){return '<option>'+esc(u)+'</option>';}).join('')+'</select>'
+      +'<select data-k="name" style="margin-top:2px"><option value="" selected>── 再選姓名 ──</option></select>'
+      +'<button type="button" class="linkbtn" data-manual>＋ 名單沒有這位，手動輸入姓名…</button>';
+    box.querySelector('[data-k="nunit"]').onchange=function(){
+      var names=hrData.namesByUnit[this.value]||[];
+      box.querySelector('[data-k="name"]').innerHTML='<option value="" selected>── 再選姓名 ──</option>'
+        +names.map(function(n){return '<option>'+esc(n)+'</option>';}).join('');
+    };
+    box.querySelector('[data-manual]').onclick=toInput;
+  }
+  function toInput(){
+    box.innerHTML='<input data-k="name" type="text" placeholder="請輸入姓名">'
+      +'<button type="button" class="linkbtn" data-back>↩ 改用名單選</button>';
+    box.querySelector('[data-back]').onclick=toSelect;
+    box.querySelector('input').focus();
+  }
+  toSelect();
+}
+function renderHrRow(o){
+  var d=document.createElement('div');d.className='card';
+  var cat=String(o['類別']||'').trim();
+  var aiLine=[o['原部門單位']&&(o['原部門單位']+(o['原職稱']?' '+o['原職稱']:'')),
+              (o['新部門單位']||o['新職稱'])&&((o['新部門單位']||'')+(o['新職稱']?' '+o['新職稱']:''))]
+             .filter(Boolean).join(' → ');
+  var rosterLine=o.roster
+    ? '名冊現值：'+esc(o.roster.unit)+(o.roster.title?'・'+esc(o.roster.title):'')
+    : (o.matchCount>1?'⚠️ 名冊有 '+o.matchCount+' 位在職同名':'⚠️ 名冊查無此人');
+  var diffMark=(o.roster&&o['原部門單位']&&String(o['原部門單位']).trim()!==o.roster.unit)
+    ? ' <span style="color:#b26a00;font-size:13px">（與公告原單位不同，以名冊為準）</span>':'';
+  var head='<div class="rowdate">'+catBadge(cat)+esc(o['文號'])+(o['公告日']?'・公告 '+esc(o['公告日']):'')+'</div>';
+  // 待生效＝已核定唯讀卡
+  if(String(o['狀態']).trim()==='待生效'){
+    d.innerHTML=head
+      +'<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span><span class="done-date">'+esc(o.effTag)+'</span></div>'
+      +'<div class="done-meta">'+(aiLine?esc(aiLine)+'　':'')+'已確認，到期自動套用</div>';
+    return d;
+  }
+  var isFail=String(o['狀態']).trim()==='比對失敗';
+  d.innerHTML=head
+    +(isFail
+      ? '<div class="msg show msg-err">'+rosterLine+'——公告姓名「'+esc(o['姓名'])+'」，請指定名冊中的正確同仁</div>'
+        +'<label>核定對象</label><div data-namefield></div>'
+      : '<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span></div>'
+        +'<div class="done-meta" style="margin-bottom:12px">'+rosterLine+diffMark+'</div>')
+    +(aiLine?'<div class="done-meta" style="margin-bottom:12px">公告辨識：'+esc(aiLine)+'</div>':'')
+    +(cat==='調動'?'<label>新單位（核定）</label><div data-unitfield></div>':'')
+    +(cat==='晉升'?'<label>新職稱（核定）</label><input data-k="title" value="'+esc(o['新職稱'])+'" placeholder="請輸入職稱">'
+      +'<label>新單位（若單位同時異動才填）</label><div data-unitfield></div>':'')
+    +'<label>生效日（核定）</label><input type="date" data-k="eff" value="'+esc(o.effIso)+'">'
+    +'<div class="done-meta" style="margin-bottom:12px">'+esc(o.effTag)+'</div>'
+    +'<div class="msg"></div>'
+    +'<button class="btn btn-primary">確認</button>'
+    +'<button type="button" class="linkbtn" data-reject style="display:block;margin:8px auto 0;color:#b71c1c">✕ 駁回這筆（辨識有誤等）</button>';
+  if(isFail) hrNameField(d.querySelector('[data-namefield]'));
+  var uf=d.querySelector('[data-unitfield]');
+  if(uf) hrUnitField(uf, cat==='調動'?o['新部門單位']:(o['新部門單位']||''));
+  var msg=d.querySelector('.msg');
+  function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value.trim():'';}
+  d.querySelector('.btn').onclick=function(){
+    if(!val('eff')){setMsg(msg,'請核定生效日。','err');return;}
+    if(isFail&&!val('name')){setMsg(msg,'請先指定名冊中的同仁（或手動輸入姓名）。','err');return;}
+    if(cat==='調動'&&!val('unit')){setMsg(msg,'請核定新單位。','err');return;}
+    if(cat==='晉升'&&!val('title')){setMsg(msg,'請核定新職稱。','err');return;}
+    var p={token:TOKEN,row:o._row,effDate:val('eff')};
+    if(isFail)p.name=val('name');
+    if(val('unit'))p.newUnit=val('unit');
+    if(cat==='晉升')p.newTitle=val('title');
+    setMsg(msg,'處理中…','info');
+    jsonp('confirmHrChange',p).then(function(r){
+      if(r&&r.ok){setMsg(msg,r.applied?'已確認並套用名冊 ✅':'已確認，'+(r.effTag||'到期自動套用')+' ☑️','ok');setTimeout(loadHr,800);}
+      else setMsg(msg,(r&&r.msg)||'失敗','err');
+    });
+  };
+  d.querySelector('[data-reject]').onclick=function(){
+    var reason=prompt('駁回原因（選填，會記在備註與 Slack）：');
+    if(reason===null)return;
+    setMsg(msg,'處理中…','info');
+    jsonp('rejectHrChange',{token:TOKEN,row:o._row,reason:reason}).then(function(r){
+      if(r&&r.ok){setMsg(msg,'已駁回','ok');setTimeout(loadHr,800);}
+      else setMsg(msg,(r&&r.msg)||'失敗','err');
+    });
+  };
+  return d;
+}
+function loadHr(){
+  jsonp('getHrPending',{token:TOKEN}).then(function(r){
+    var box=document.getElementById('hr-pending');
+    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    hrData={units:r.units||[],namesByUnit:r.namesByUnit||{}};
+    var actionable=r.rows.filter(function(o){return String(o['狀態']).trim()!=='待生效';}).length;
+    updateHrBadge(actionable);
+    box.innerHTML='';
+    if(!r.rows.length){box.innerHTML='<div class="empty">目前沒有待確認的人事異動 🎉</div>';return;}
+    r.rows.forEach(function(o){box.appendChild(renderHrRow(o));});
+    logLoaded=false;   // 異動紀錄可能已變，下次切過去重抓
   });
 }
 
@@ -324,4 +459,5 @@ function load(){
   });
 }
 load();
+loadHr();   // 人事異動與報到互不相依 → 並行載入（徽章也一起到位）
 </script></body></html>
