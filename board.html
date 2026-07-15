@@ -105,6 +105,7 @@
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<div style="text-align:right;margin:-8px 0 8px"><a id="xlink" style="font-size:13px;color:#1a56c4;text-decoration:none" href="#">⇄ 活動紀錄看板</a></div>
 <div class="tabs">
   <button id="tabbtn-checkin" class="on" onclick="showTab('checkin')">新人報到</button>
   <button id="tabbtn-roster" onclick="showTab('roster')">員工名冊</button>
@@ -140,11 +141,16 @@ function jsonp(action,params){return new Promise(function(res){
   var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
   var s=document.createElement('script');
   s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
+  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時（伺服器喚醒中），請重新整理再試。'});cleanup();},15000);
   s.onerror=function(){res({ok:false,msg:'連線失敗'});cleanup();};
-  function cleanup(){delete window[cb];s.remove();}
+  function cleanup(){clearTimeout(timer);window[cb]=function(){};s.remove();}
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 var TOKEN=getToken();
+document.getElementById('xlink').href='stats.html?t='+encodeURIComponent(TOKEN);
+function updateBadge(n){
+  document.getElementById('tabbtn-checkin').textContent = n>0 ? '新人報到（'+n+'）' : '新人報到';
+}
 var gOpts={titles:[],units:[]};
 function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function emailPrefix(full){full=(full||'').toString();var i=full.indexOf('@');return i>=0?full.slice(0,i):full;}
@@ -201,6 +207,7 @@ function renderRow(o){
         if(r&&r.ok){
           addDoneItem({'報到日期':o['報到日期'],'姓名':val('姓名'),'單位':val('單位'),'職稱':title,'員編':val('員編')}, true);
           d.remove();
+          updateBadge(document.querySelectorAll('#pending .card').length);
           if(!document.querySelector('#pending .card')) document.getElementById('pending').innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
         } else setMsg(msg,(r&&r.msg)||'失敗','err');
       });
@@ -313,6 +320,7 @@ function load(){
     box.innerHTML='';
     if(!r.rows.length) box.innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
     else r.rows.forEach(function(o){box.appendChild(renderRow(o));});
+    updateBadge(r.rows.length);
     var done=r.done||[]; var list=document.getElementById('donelist'); list.innerHTML='';
     if(done.length){ document.getElementById('doneWrap').style.display=''; list.innerHTML=done.map(doneItemHtml).join(''); }
   });
