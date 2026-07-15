@@ -36,6 +36,28 @@
   .att-n { background: #fdecea; color: #b71c1c; }
   .p .op { font-size: 14px; color: #444; display: block; margin-top: 2px; }
   .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
+  /* tabs */
+  .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
+  .tabs button { flex: 1; padding: 10px 0; font-size: 15px; font-weight: 600; color: #666;
+    background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; cursor: pointer; }
+  .tabs button.on { background: #1a5c3a; border-color: #1a5c3a; color: #fff; }
+  /* 活動管理 */
+  .fld { margin-bottom: 12px; }
+  .fld label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+  .fld input, .fld textarea { width: 100%; font-size: 16px; padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
+  .fld textarea { min-height: 56px; resize: vertical; }
+  .btn { display: inline-block; padding: 9px 18px; font-size: 15px; font-weight: 600; border: none; border-radius: 9px; cursor: pointer; }
+  .btn-pri { background: #1a5c3a; color: #fff; width: 100%; }
+  .btn-sm { padding: 5px 12px; font-size: 13px; background: #f1f1f1; color: #333; margin: 4px 6px 0 0; }
+  .btn-sm.warn { background: #fdecea; color: #b71c1c; }
+  .act-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .act-h .nm { font-weight: 700; font-size: 16px; }
+  .st { font-size: 12px; padding: 1px 8px; border-radius: 10px; }
+  .st-open { background: #e6f9ee; color: #1a7d44; } .st-closed { background: #eee; color: #777; } .st-due { background: #fff3e0; color: #b26a00; }
+  .act-meta { font-size: 13px; color: #888; margin-top: 2px; }
+  .msg { font-size: 14px; margin-top: 8px; min-height: 1em; }
+  .msg.ok { color: #1a7d44; } .msg.err { color: #b71c1c; }
+  .rep { border-top: 1px solid #f0f0f0; margin-top: 10px; padding-top: 8px; }
   @media (min-width: 768px) {
     body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
     h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
@@ -43,9 +65,28 @@
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
-<h1 id="title">活動出席統計</h1>
-<div id="meta" class="meta">載入中…</div>
-<div id="content"><div class="empty">載入中…</div></div>
+<div class="tabs">
+  <button id="tabbtn-stats" class="on" onclick="showTab('stats')">出席統計</button>
+  <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
+</div>
+<div id="tab-stats">
+  <h1 id="title">活動出席統計</h1>
+  <div id="meta" class="meta">載入中…</div>
+  <div id="content"><div class="empty">載入中…</div></div>
+</div>
+<div id="tab-manage" style="display:none">
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px">➕ 新增活動</div>
+    <div class="fld"><label>活動名稱（必填）</label><input id="na-name" placeholder="例：2026 尾牙"></div>
+    <div class="fld"><label>調查截止日（必填，系統自動收到當天 23:59）</label><input id="na-deadline" type="date"></div>
+    <div class="fld"><label>活動日期（選填，顯示在問卷上）</label><input id="na-event" type="date"></div>
+    <div class="fld"><label>說明文字（選填，顯示在問卷卡片上）</label><textarea id="na-q" placeholder="例：請於截止日前回覆出席意願"></textarea></div>
+    <button class="btn btn-pri" onclick="createAct()">建立活動（狀態自動＝開放）</button>
+    <div id="na-msg" class="msg"></div>
+  </div>
+  <div class="sec">活動列表</div>
+  <div id="act-list"><div class="empty">載入中…</div></div>
+</div>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
@@ -81,6 +122,90 @@ function opinionsHtml(arr){
     return items.map(function(o){
       var att=o.attend==='參加' ? '<span class="att att-y">參加</span>' : '<span class="att att-n">不參加</span>';
       return '<div class="p"><span class="n">'+esc(o.name)+'</span>'+att+'<span class="op">'+esc(o.opinion)+'</span></div>';
+    }).join('');
+  });
+}
+
+// ── 分頁切換（活動管理 lazy load）──────────────────────────────────────────
+var manageLoaded=false;
+function showTab(t){
+  document.getElementById('tab-stats').style.display = t==='stats'?'':'none';
+  document.getElementById('tab-manage').style.display = t==='manage'?'':'none';
+  document.getElementById('tabbtn-stats').className = t==='stats'?'on':'';
+  document.getElementById('tabbtn-manage').className = t==='manage'?'on':'';
+  if(t==='manage'&&!manageLoaded){manageLoaded=true;loadActs();}
+}
+function setMsg(id,text,cls){var el=document.getElementById(id);el.textContent=text;el.className='msg '+(cls||'');}
+
+// ── 活動管理 ──────────────────────────────────────────────────────────────
+function loadActs(){
+  var box=document.getElementById('act-list');
+  box.innerHTML='<div class="empty">載入中…</div>';
+  jsonp('listActivities',{token:q('t')}).then(function(r){
+    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有活動</div>';return;}
+    box.innerHTML=r.rows.slice().reverse().map(actCard).join('');
+  });
+}
+function actCard(a){
+  var st = a.status==='開放' ? (a.open?'<span class="st st-open">開放中</span>':'<span class="st st-due">已截止</span>')
+                             : '<span class="st st-closed">已關閉</span>';
+  var btns = (a.status==='開放'
+      ? '<button class="btn btn-sm warn" onclick="setSt(\''+esc(a.id)+'\',\'關閉\')">關閉填寫</button>'
+      : '<button class="btn btn-sm" onclick="setSt(\''+esc(a.id)+'\',\'開放\')">重新開放</button>')
+    +'<button class="btn btn-sm" onclick="chgDl(\''+esc(a.id)+'\')">改截止日</button>'
+    +'<button class="btn btn-sm" onclick="toggleRep(this,\''+esc(a.id)+'\')">回覆明細（'+a.replies+'）</button>';
+  return '<div class="card" id="act-'+esc(a.id)+'">'
+    +'<div class="act-h"><span class="nm">'+esc(a.name)+'</span>'+st+'</div>'
+    +'<div class="act-meta">截止 '+esc(a.deadline)+(a.eventDate?'　活動日 '+esc(a.eventDate):'')+'　回覆 '+a.replies+' 筆　<span style="color:#bbb">'+esc(a.id)+'</span></div>'
+    +(a.question?'<div class="act-meta">說明：'+esc(a.question)+'</div>':'')
+    +'<div>'+btns+'</div><div class="msg" data-msg></div><div class="rep" style="display:none" data-rep></div></div>';
+}
+function cardMsg(id,text,cls){var c=document.getElementById('act-'+id);if(!c)return;var el=c.querySelector('[data-msg]');el.textContent=text;el.className='msg '+(cls||'');}
+function createAct(){
+  var name=document.getElementById('na-name').value.trim();
+  var dl=document.getElementById('na-deadline').value;
+  if(!name){setMsg('na-msg','請填活動名稱','err');return;}
+  if(!dl){setMsg('na-msg','請選調查截止日','err');return;}
+  setMsg('na-msg','建立中…','');
+  jsonp('addActivity',{token:q('t'),name:name,deadlineDate:dl,eventDate:document.getElementById('na-event').value,question:document.getElementById('na-q').value.trim()}).then(function(r){
+    if(!r||!r.ok){setMsg('na-msg',(r&&r.msg)||'建立失敗','err');return;}
+    setMsg('na-msg','✅ 已建立（'+r.id+'），截止 '+r.deadline,'ok');
+    document.getElementById('na-name').value='';document.getElementById('na-q').value='';
+    loadActs();
+  });
+}
+function setSt(id,st){
+  if(st==='關閉'&&!confirm('確定關閉「'+id+'」的填寫？（之後可重新開放）'))return;
+  cardMsg(id,'處理中…','');
+  jsonp('setActivityStatus',{token:q('t'),actId:id,status:st}).then(function(r){
+    if(!r||!r.ok){cardMsg(id,(r&&r.msg)||'失敗','err');return;}
+    loadActs();
+  });
+}
+function chgDl(id){
+  var v=prompt('新的調查截止日（YYYY-MM-DD，系統自動收到當天 23:59）：');
+  if(!v)return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())){alert('格式要 YYYY-MM-DD，例如 2026-08-15');return;}
+  cardMsg(id,'處理中…','');
+  jsonp('updateActivity',{token:q('t'),actId:id,deadlineDate:v.trim()}).then(function(r){
+    if(!r||!r.ok){cardMsg(id,(r&&r.msg)||'失敗','err');return;}
+    loadActs();
+  });
+}
+function toggleRep(btn,id){
+  var c=document.getElementById('act-'+id);var box=c.querySelector('[data-rep]');
+  if(box.style.display!=='none'){box.style.display='none';return;}
+  box.style.display='';box.innerHTML='<div class="empty">載入中…</div>';
+  jsonp('getActivityReplies',{token:q('t'),actId:id}).then(function(r){
+    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有回覆</div>';return;}
+    box.innerHTML=r.rows.map(function(x){
+      var att=x.attend==='參加'?'<span class="att att-y">參加</span>':'<span class="att att-n">'+esc(x.attend||'—')+'</span>';
+      return '<div class="p"><span class="n">'+esc(x.name)+'</span><span style="color:#999;font-size:13px">（'+esc(x.unit)+'）</span>'+att
+        +(x.diet?'<span style="font-size:13px;color:#666">　'+esc(x.diet)+'</span>':'')
+        +'<span style="font-size:12px;color:#bbb">　'+esc(x.time)+'</span>'
+        +(x.opinion?'<span class="op">'+esc(x.opinion)+'</span>':'')+'</div>';
     }).join('');
   });
 }
