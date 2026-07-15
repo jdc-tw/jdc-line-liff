@@ -111,6 +111,7 @@
   <button id="tabbtn-roster" onclick="showTab('roster')">員工名冊</button>
   <button id="tabbtn-log" onclick="showTab('log')">異動紀錄</button>
   <button id="tabbtn-rec" onclick="showTab('rec')">名單對帳</button>
+  <button id="tabbtn-maint" onclick="showTab('maint')">資訊維護</button>
 </div>
 <div id="tab-checkin">
   <h1>新人報到・核准看板</h1>
@@ -124,27 +125,31 @@
 <div id="tab-hr" style="display:none">
   <h1>人事異動・確認看板</h1>
   <div class="who">系統從人事公告整理出待確認清單，請逐筆核對後確認；以名冊資訊為準，公告資訊僅供參考</div>
-  <details class="grp" style="margin-bottom:16px"><summary>單位／職稱管理（整批轉移・新增工地・新增職稱）</summary>
-    <div style="padding:2px 14px 16px">
-      <label>整批轉移：舊單位（全體在職同仁一起換）</label>
-      <select id="bt-old"><option value="">── 請選擇 ──</option></select>
-      <label>新單位</label>
-      <input id="bt-new" placeholder="輸入新單位名稱">
-      <div class="msg" id="bt-msg"></div>
-      <button class="btn btn-primary" onclick="batchTransfer()">整批轉移</button>
-      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-      <label>新增工地（先建名稱讓報到／調動選得到；第一人進駐後自動歸併）</label>
-      <input id="au-name" placeholder="新工地名稱">
-      <div class="msg" id="au-msg"></div>
-      <button class="btn" style="background:#f0f0f0;color:#333" onclick="addUnitGo()">＋ 新增工地</button>
-      <hr style="border:none;border-top:1px solid #eee;margin:18px 0">
-      <label>新增職稱（人事異動核定與新人報到的職稱下拉共用；第一人掛上後自動歸併）</label>
-      <input id="at-name" placeholder="新職稱名稱">
-      <div class="msg" id="at-msg"></div>
-      <button class="btn" style="background:#f0f0f0;color:#333" onclick="addTitleGo()">＋ 新增職稱</button>
-    </div>
-  </details>
   <div id="hr-pending"><div class="empty">載入中…</div></div>
+</div>
+<div id="tab-maint" style="display:none">
+  <h1>資訊維護</h1>
+  <div class="who">單位與職稱的統一管理；這裡的清單是各表單（異動核定、新人報到）下拉的來源</div>
+  <div class="card">
+    <label>整批轉移：舊單位（全體在職同仁一起換）</label>
+    <select id="bt-old"><option value="">── 請選擇 ──</option></select>
+    <label>新單位</label>
+    <input id="bt-new" placeholder="輸入新單位名稱">
+    <div class="msg" id="bt-msg"></div>
+    <button class="btn btn-primary" onclick="batchTransfer()">整批轉移</button>
+  </div>
+  <div class="card">
+    <label>新增工地（先建名稱讓報到／調動選得到；第一人進駐後自動歸併）</label>
+    <input id="au-name" placeholder="新工地名稱">
+    <div class="msg" id="au-msg"></div>
+    <button class="btn" style="background:#f0f0f0;color:#333" onclick="addUnitGo()">＋ 新增工地</button>
+  </div>
+  <div class="card">
+    <label>新增職稱（異動核定與新人報到的職稱下拉共用；第一人掛上後自動歸併）</label>
+    <input id="at-name" placeholder="新職稱名稱">
+    <div class="msg" id="at-msg"></div>
+    <button class="btn" style="background:#f0f0f0;color:#333" onclick="addTitleGo()">＋ 新增職稱</button>
+  </div>
 </div>
 <div id="tab-roster" style="display:none">
   <h1>員工名冊</h1>
@@ -281,7 +286,7 @@ function requeueMail(row,btn){
 // ── 員工名冊分頁（2026-07-15；唯讀窄表，生日/信箱刻意不出）───────────────────
 var rosterLoaded=false, rosterRows=[], logLoaded=false;
 function showTab(t){
-  ['checkin','hr','roster','log','rec'].forEach(function(k){
+  ['checkin','hr','roster','log','rec','maint'].forEach(function(k){
     document.getElementById('tab-'+k).style.display = t===k?'':'none';
     document.getElementById('tabbtn-'+k).className = t===k?'on':'';
   });
@@ -321,13 +326,23 @@ function catBadge(cat){
   var col=CAT_COLOR[cat]||'#666';
   return '<span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(cat)+'</span>';
 }
-// 單位/職稱欄：嚴格下拉（公告可能寫兼任等複合字串，由核定人選一個主要值；
-// 清單沒有的選項先到上方「單位／職稱管理」新增，不開放自由輸入以維持名冊乾淨）
+// 單位/職稱欄：嚴格下拉＋系統預選最佳猜測（雅慧只在不對時改；清單沒有的到「資訊維護」分頁新增）。
+// 猜測順位：完全命中 → 部分命中（公告「富貴莊園(兼)春天」→ 清單「富貴莊園」；公告「所長」→「所長/經理」取第一個並列出其他候選）
 function hrPickField(box, key, list, cur, label){
-  var inList=list.indexOf(cur)>=0;
-  box.innerHTML='<select data-k="'+key+'"><option value=""'+(inList?'':' selected')+'>── 請選擇 ──</option>'
-    +list.map(function(v){return '<option'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('')+'</select>'
-    +(cur&&!inList?'<div class="done-meta" style="margin:-8px 0 12px">公告寫「'+esc(cur)+'」不在清單；請核定一個，或先到上方管理區新增'+label+'</div>':'');
+  var pick=(cur&&list.indexOf(cur)>=0)?cur:'';
+  var hint='';
+  if(cur&&!pick){
+    var cand=list.filter(function(v){return v.indexOf(cur)>=0||cur.indexOf(v)>=0;});
+    if(cand.length){
+      pick=cand[0];
+      hint='公告寫「'+esc(cur)+'」→ 已預選「'+esc(cand[0])+'」，請核對'+(cand.length>1?'（其他候選：'+cand.slice(1).map(esc).join('、')+'）':'');
+    }else{
+      hint='公告寫「'+esc(cur)+'」不在清單；請核定一個，或先到「資訊維護」分頁新增'+label;
+    }
+  }
+  box.innerHTML='<select data-k="'+key+'"><option value=""'+(pick?'':' selected')+'>── 請選擇 ──</option>'
+    +list.map(function(v){return '<option'+(v===pick?' selected':'')+'>'+esc(v)+'</option>';}).join('')+'</select>'
+    +(hint?'<div class="done-meta" style="margin:-8px 0 12px">'+hint+'</div>':'');
 }
 // 比對失敗補救：單位→姓名 串聯下拉＋手動輸入
 function hrNameField(box){
