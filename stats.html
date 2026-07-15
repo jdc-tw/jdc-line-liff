@@ -166,7 +166,8 @@ function actCard(a){
       ? '<button class="btn btn-sm warn" onclick="setSt(\''+esc(a.id)+'\',\'關閉\')">關閉填寫</button>'
       : '<button class="btn btn-sm" onclick="setSt(\''+esc(a.id)+'\',\'開放\')">重新開放</button>')
     +'<button class="btn btn-sm" onclick="chgDl(\''+esc(a.id)+'\')">改截止日</button>'
-    +'<button class="btn btn-sm" onclick="toggleRep(this,\''+esc(a.id)+'\')">回覆明細（'+a.replies+'）</button>';
+    +'<button class="btn btn-sm" onclick="toggleRep(this,\''+esc(a.id)+'\')">回覆明細（'+a.replies+'）</button>'
+    +(a.replies===0?'<button class="btn btn-sm warn" onclick="delAct(\''+esc(a.id)+'\',\''+esc(a.name)+'\')">🗑 刪除</button>':'');
   return '<div class="card" id="act-'+esc(a.id)+'">'
     +'<div class="act-h"><span class="nm">'+esc(a.name)+'</span>'+st+'</div>'
     +'<div class="act-meta">截止 '+esc(a.deadline)+(a.eventDate?'　活動日 '+esc(a.eventDate):'')+'　回覆 '+a.replies+' 筆　<span style="color:#bbb">'+esc(a.id)+'</span></div>'
@@ -192,6 +193,14 @@ function setSt(id,st){
   cardMsg(id,'處理中…','');
   jsonp('setActivityStatus',{token:q('t'),actId:id,status:st}).then(function(r){
     if(!r||!r.ok){cardMsg(id,(r&&r.msg)||'失敗','err');return;}
+    loadActs();
+  });
+}
+function delAct(id,name){
+  if(!confirm('確定刪除「'+name+'」？此活動還沒有任何回覆，刪除後問卷連結即失效。'))return;
+  cardMsg(id,'刪除中…','');
+  jsonp('deleteActivity',{token:q('t'),actId:id}).then(function(r){
+    if(!r||!r.ok){cardMsg(id,(r&&r.msg)||'刪除失敗','err');return;}
     loadActs();
   });
 }
