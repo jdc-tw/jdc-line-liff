@@ -58,6 +58,10 @@
   .grp[open] summary::before { transform: rotate(90deg); }
   .grp .cnt { color: #888; font-weight: 400; font-size: 14px; }
   .grp .done-item { padding-left: 30px; }
+  /* 名冊：最近 20 筆更新/異動標紅＋更新日期 */
+  .grp summary.hot { color: #c62828; }
+  .done-name.hot { color: #c62828; }
+  .upd { font-size: 12px; color: #c62828; background: #fdecea; padding: 1px 7px; border-radius: 10px; margin-left: 8px; white-space: nowrap; }
   .done-list { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
   .done-item { padding: 12px 14px; border-bottom: 1px solid #eee; }
   .done-item:last-child { border-bottom: none; }
@@ -230,13 +234,19 @@ function loadRoster(){
   jsonp('getRosterList',{token:TOKEN}).then(function(r){
     if(!r||!r.ok){document.getElementById('r-count').textContent='';document.getElementById('r-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     rosterRows=r.rows||[];
+    // 最近 20 筆更新/異動 → 標紅＋顯示更新日期（有 updatedMs 的列，時間新→舊取前 20）
+    rosterRows.forEach(function(o){o._recent=false;});
+    rosterRows.filter(function(o){return o.updatedMs>0;})
+      .sort(function(a,b){return b.updatedMs-a.updatedMs;})
+      .slice(0,20).forEach(function(o){o._recent=true;});
     document.getElementById('r-count').innerHTML='在職 <b>'+r.activeCount+'</b> 人（名冊共 '+r.total+' 筆）';
     renderRoster(rosterRows);
   });
 }
 function rosterItemHtml(o){
   var badge=o.status==='離職'?'<span class="st-off">離職</span>':'';
-  return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o.name)+badge+'</span><span class="done-date">'+esc(o.empNo)+'</span></div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
+  var upd=o._recent?'<span class="upd">更新 '+esc(o.updatedAt)+'</span>':'';
+  return '<div class="done-item"><div class="done-head"><span class="done-name'+(o._recent?' hot':'')+'">'+esc(o.name)+'</span>'+upd+badge+'<span class="done-date" style="margin-left:auto">'+esc(o.empNo)+'</span></div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
 }
 // 依單位收合（同統計看板）；搜尋時自動展開所有命中組
 function renderRoster(rows, openAll){
@@ -245,7 +255,8 @@ function renderRoster(rows, openAll){
   var m={},order=[];
   rows.forEach(function(o){var u=o.unit||'（未填單位）';if(!m[u]){m[u]=[];order.push(u);}m[u].push(o);});
   box.innerHTML=order.map(function(u){
-    return '<details class="grp"'+(openAll?' open':'')+'><summary>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span></summary>'
+    var hot=m[u].some(function(o){return o._recent;});
+    return '<details class="grp"'+(openAll?' open':'')+'><summary'+(hot?' class="hot"':'')+'>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span></summary>'
       +m[u].map(rosterItemHtml).join('')+'</details>';
   }).join('');
 }
