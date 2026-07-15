@@ -36,6 +36,7 @@
   .att-n { background: #fdecea; color: #b71c1c; }
   .p .op { font-size: 14px; color: #444; display: block; margin-top: 2px; }
   .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
+  .xlink { font-size: 13px; color: #1a56c4; text-decoration: none; }
   /* tabs */
   .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
   .tabs button { flex: 1; padding: 10px 0; font-size: 15px; font-weight: 600; color: #666;
@@ -69,8 +70,10 @@
   <button id="tabbtn-stats" class="on" onclick="showTab('stats')">出席統計</button>
   <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
 </div>
+<div style="text-align:right;margin:-8px 0 8px"><a id="xlink" class="xlink" href="#">⇄ 人事異動看板</a></div>
 <div id="tab-stats">
   <h1 id="title">活動紀錄看板</h1>
+  <select id="act-picker" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;display:none" onchange="loadStats(this.value)"></select>
   <div id="meta" class="meta">載入中…</div>
   <div id="content"><div class="empty">載入中…</div></div>
 </div>
@@ -95,8 +98,9 @@ function jsonp(action,params){return new Promise(function(res){
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
   var s=document.createElement('script');
   s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
+  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時（伺服器喚醒中），請重新整理再試。'});cleanup();},15000);
   s.onerror=function(){res({ok:false,msg:'連線失敗，請重新整理。'});cleanup();};
-  function cleanup(){delete window[cb];s.remove();}
+  function cleanup(){clearTimeout(timer);window[cb]=function(){};s.remove();}
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
@@ -235,10 +239,30 @@ function toggleRep(btn,id){
   });
 }
 
-jsonp('getActivityStats',{token:q('t'),act:q('act')}).then(function(r){
+// 互連（同一把 token 帶過去）
+document.getElementById('xlink').href='board.html?t='+encodeURIComponent(q('t'));
+
+// 活動切換下拉（歷史場次也能回看統計）
+jsonp('listActivities',{token:q('t')}).then(function(r){
+  if(!r||!r.ok||!r.rows.length)return;
+  var sel=document.getElementById('act-picker');
+  sel.innerHTML=r.rows.slice().reverse().map(function(a){
+    var st=a.status==='開放'?(a.open?'開放中':'已截止'):'已關閉';
+    return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（'+st+'・回覆 '+a.replies+'）</option>';
+  }).join('');
+  if(window._curAct)sel.value=window._curAct;
+  sel.style.display='';
+});
+
+function loadStats(act){
   var meta=document.getElementById('meta'), box=document.getElementById('content');
+  meta.textContent='載入中…';box.innerHTML='<div class="empty">載入中…</div>';
+  jsonp('getActivityStats',{token:q('t'),act:act||''}).then(function(r){
   if(!r||!r.ok){meta.textContent='';box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
   var a=r.activity, c=r.counts;
+  window._curAct=a.id||'';
+  var sel=document.getElementById('act-picker');
+  if(sel.options.length&&a.id)sel.value=a.id;
   document.getElementById('title').textContent=a.name||'活動紀錄看板';
   meta.textContent=[a.eventDate?'活動日期：'+a.eventDate:'', a.deadlineText?'回覆截止：'+a.deadlineText:'', '狀態：'+a.status, '（'+r.who+'）'].filter(Boolean).join('　');
   var noReply=c.boundNoReply+c.notBound;
@@ -252,5 +276,7 @@ jsonp('getActivityStats',{token:q('t'),act:q('act')}).then(function(r){
     +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList)
     +'<div class="sec">已綁定未填（'+c.boundNoReply+'）— 催填問卷連結即可</div>'+listHtml(r.boundNoReply)
     +'<div class="sec">未綁定（'+c.notBound+'）— 要先完成身分綁定才能填</div>'+listHtml(r.notBound);
-});
+  });
+}
+loadStats(q('act'));
 </script></body></html>
