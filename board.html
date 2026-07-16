@@ -330,10 +330,11 @@ function loadLog(){
       var move=x.cat==='資料修正' ? esc(x.note)
         : [x.fromUnit&&(x.fromUnit+(x.fromTitle?' '+x.fromTitle:'')), (x.toUnit||x.toTitle)&&((x.toUnit||'')+(x.toTitle?' '+x.toTitle:''))].filter(Boolean).join(' → ');
       var meta=[move, x.eff?'生效 '+x.eff:'', x.who?'確認人 '+x.who:'', x.appliedAt?'套用 '+x.appliedAt:''].filter(Boolean).join('　');
+      var revive=x.status==='已駁回'?'<div><button type="button" class="linkbtn" style="color:#b26a00" onclick="reviveNotice('+x._row+',this)">↩ 恢復這筆（回到待確認）</button><div class="resend-msg"></div></div>':'';
       return '<div class="done-item"><div class="done-head">'
         +'<span class="done-name"><span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(x.cat)+'</span>'+esc(x.name)+'</span>'
         +'<span class="done-date">'+esc(x.status)+'</span></div>'
-        +'<div class="done-meta">'+meta+'<span style="color:#bbb">　'+esc(x.doc)+'</span></div></div>';
+        +'<div class="done-meta">'+meta+'<span style="color:#bbb">　'+esc(x.doc)+'</span></div>'+revive+'</div>';
     }).join('')+'</div>';
   });
 }
@@ -403,7 +404,18 @@ function renderHrRow(o){
   if(String(o['狀態']).trim()==='待生效'){
     d.innerHTML=head
       +'<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span><span class="done-date">'+esc(o.effTag)+'</span></div>'
-      +'<div class="done-meta">'+(aiLine?esc(aiLine)+'　':'')+'已確認，到期自動套用</div>';
+      +'<div class="done-meta">'+(aiLine?esc(aiLine)+'　':'')+'已確認，到期自動套用</div>'
+      +'<div class="msg"></div>'
+      +'<button type="button" class="linkbtn" data-revert style="color:#b26a00">↩ 撤銷這筆（回到待確認，可重新核定）</button>';
+    var pmsg=d.querySelector('.msg');
+    d.querySelector('[data-revert]').onclick=function(){
+      if(!confirm('撤銷「'+o['姓名']+'」的待生效？會回到待確認，需重新核定。'))return;
+      setMsg(pmsg,'處理中…','info');
+      jsonp('revertHrChange',{token:TOKEN,row:o._row}).then(function(r){
+        if(r&&r.ok){setMsg(pmsg,'已撤銷','ok');setTimeout(loadHr,800);}
+        else setMsg(pmsg,(r&&r.msg)||'失敗','err');
+      });
+    };
     return d;
   }
   var isFail=String(o['狀態']).trim()==='比對失敗';
@@ -633,6 +645,17 @@ function renderReconcile(rep){
     +sec('HR 有、名冊無（漏新進／回鍋？）',rep.missingInRoster,function(l){return 'HR 單位：'+esc(l.unit);})
     +sec('名冊在職、HR 無（漏離職？）',rep.missingInHr,function(l){return '名冊單位：'+esc(l.unit);})
     +sec('單位不符',rep.unitMismatch,function(l){return 'HR「'+esc(l.hrUnit)+'」 vs 名冊「'+esc(l.rosterUnit)+'」';});
+}
+
+function reviveNotice(row,btn){
+  var msg=btn.parentNode.querySelector('.resend-msg');
+  if(!confirm('恢復這筆已駁回的異動？會回到人事異動分頁的待確認清單。'))return;
+  msg.textContent='處理中…';msg.className='resend-msg';
+  jsonp('revertHrChange',{token:TOKEN,row:row}).then(function(r){
+    msg.textContent=(r&&r.ok)?'已恢復，請至「人事異動」分頁核定':(r&&r.msg)||'失敗';
+    msg.className='resend-msg '+(r&&r.ok?'ok':'err');
+    if(r&&r.ok){logLoaded=false;setTimeout(loadHr,400);}
+  });
 }
 
 // （名冊每列編輯已於 2026-07-15 拿掉：等真實需求再開，維持名冊真實性。後端 action 路由同步下架。）
