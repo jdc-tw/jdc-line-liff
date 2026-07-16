@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>管理入口</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang TC','Noto Sans TC',sans-serif;background:#f5f6f8;color:#333;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .wrap{width:100%;max-width:420px}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{font-size:13px;color:#888;margin-bottom:20px}
+  a.card{display:block;background:#fff;border:1px solid #e3e5e8;border-radius:14px;padding:18px 20px;margin-bottom:12px;text-decoration:none;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  a.card:active{background:#f0f1f3}
+  .t{font-size:16px;font-weight:700}
+  .d{font-size:13px;color:#888;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>管理入口</h1>
+  <div class="sub">選擇要進入的看板</div>
+  <a class="card" id="go-board" href="board.html">
+    <div class="t">🗂 人事異動看板</div>
+    <div class="d">新人報到核准・人事異動・員工名冊・資訊維護</div>
+  </a>
+  <a class="card" id="go-stats" href="stats.html">
+    <div class="t">📊 活動紀錄看板</div>
+    <div class="d">活動出席統計・活動管理</div>
+  </a>
+</div>
+<script>
+// 純轉傳：本頁無資料、不打後端；token 帶去的看板自己驗
+var m=location.search.match(/[?&]t=([^&]+)/),t=m?m[1]:'';
+if(t){
+  document.getElementById('go-board').href='board.html?t='+t;
+  document.getElementById('go-stats').href='stats.html?t='+t;
+}
+</script>
+</body>
+</html>
