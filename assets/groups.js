@@ -1,15 +1,21 @@
-// 報到頁與人事看板「共用」的單位/職稱分組分類——只此一份，兩邊永不分歧。改分類只改這裡。
-// 單位：兩組（分組一＝本部 set、分組二＝其餘）。職稱：依功能 4 組，未分類的新職稱自動落「其他」。
-var JDC_HQ_UNITS = { '支店主管': 1, '管理部': 1, '施工部': 1, '工務管理': 1, '技術報價組': 1, '施工圖組': 1 };
+// 報到頁與人事看板「共用」的單位/職稱分組——分組來源＝選項清單「分類」欄（roster.json / getCheckinOptions
+// 帶下來的 unitGroups/titleGroups，各頁載入後塞進 window.JDC_GROUPS）；沒帶到時退回本檔預設規則。
+// 要調整某單位/職稱的分組：改「選項清單」分頁的「分類」欄即可，不用改程式。
+var JDC_HQ_UNITS = { '支店主管': 1, '管理部': 1, '施工部': 1, '工務管理組': 1, '技術報價組': 1, '施工圖組': 1 };
 
-// 職稱分組（有序；同組內依此順序顯示）。新職稱沒列到的→自動歸「其他」（免維護）。
-// 同組內順序＝低階層→高階層（顯示即此序）
+// 職稱分組預設（後備）＋組內顯示順序（低階層→高階層）；資料層分組進來的未知職稱組內排最後（依筆畫）。
 var JDC_TITLE_GROUPS = [
   { label: '工務／工程', titles: ['領班', '助理工程師', '工程師', '品管工程師', '組長', '副主任', '主任', '安衛主任', '勞安主任', '總工程師'] },
   { label: '機電', titles: ['機電工程師', '機電副主任', '機電主任'] },
   { label: '繪圖／規劃', titles: ['估算人員', '繪圖工程師', '規劃工程師', '繪圖組長', '規劃組長', '繪圖副主任'] },
   { label: '行政／管理', titles: ['事務員', '財務出納', '會計主任', '人事主任'] }
 ];
+var JDC_TITLE_GROUP_ORDER = ['工務／工程', '機電', '繪圖／規劃', '行政／管理', '其他'];
+var JDC_TITLE_RANK = (function () {
+  var m = {}, i = 0;
+  JDC_TITLE_GROUPS.forEach(function (g) { g.titles.forEach(function (t) { m[t] = ++i; }); });
+  return m;
+})();
 
 function jdcEsc(s) {
   return (s == null ? '' : s).toString().replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -31,18 +37,33 @@ function jdcGroupedOptions(items, kind, current) {
     });
     return s + '</optgroup>';
   }
+  var maps = (typeof window !== 'undefined' && window.JDC_GROUPS) || {};
   if (kind === 'title') {
-    var used = {};
-    JDC_TITLE_GROUPS.forEach(function (g) {
-      var arr = g.titles.filter(function (t) { return items.indexOf(t) !== -1; });
-      arr.forEach(function (t) { used[t] = 1; });
-      html += grp(g.label, arr);
+    var tmap = maps.titleGroups || {};
+    function titleGroupOf(t) {
+      if (tmap[t]) return tmap[t];
+      for (var i = 0; i < JDC_TITLE_GROUPS.length; i++) {
+        if (JDC_TITLE_GROUPS[i].titles.indexOf(t) >= 0) return JDC_TITLE_GROUPS[i].label;
+      }
+      return '其他';
+    }
+    var buckets = {};
+    items.forEach(function (t) { var g = titleGroupOf(t); (buckets[g] = buckets[g] || []).push(t); });
+    var labels = JDC_TITLE_GROUP_ORDER.filter(function (l) { return buckets[l]; })
+      .concat(Object.keys(buckets).filter(function (l) { return JDC_TITLE_GROUP_ORDER.indexOf(l) < 0; }));
+    labels.forEach(function (l) {
+      buckets[l].sort(function (a, b) { return (JDC_TITLE_RANK[a] || 999) - (JDC_TITLE_RANK[b] || 999) || a.localeCompare(b, 'zh-Hant'); });
+      html += grp(l, buckets[l]);
     });
-    html += grp('其他', items.filter(function (t) { return !used[t]; }));   // 未分類(新職稱)→其他
     return html;
   }
-  // unit：兩組（總公司＝JDC_HQ_UNITS、工地＝其餘）。單位本就是地點屬性，群名用語意標籤不會講錯（職稱才需中性群名）。
-  var a = [], b = [];
-  items.forEach(function (x) { (JDC_HQ_UNITS[x] ? a : b).push(x); });
-  return html + grp('總公司', a) + grp('工地', b);
+  // unit：總公司／工地（＋主檔自訂的其他分類附於其後）。
+  var umap = maps.unitGroups || {};
+  function unitGroupOf(x) { return umap[x] || (JDC_HQ_UNITS[x] ? '總公司' : '工地'); }
+  var ub = {};
+  items.forEach(function (x) { var g = unitGroupOf(x); (ub[g] = ub[g] || []).push(x); });
+  var uLabels = ['總公司', '工地'].filter(function (l) { return ub[l]; })
+    .concat(Object.keys(ub).filter(function (l) { return l !== '總公司' && l !== '工地'; }));
+  uLabels.forEach(function (l) { html += grp(l, ub[l]); });
+  return html;
 }
