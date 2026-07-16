@@ -385,6 +385,7 @@
       }).then(function (roster) {
         gNamesByUnit = roster.namesByUnit || {};
         gTitles = roster.titles || [];
+        window.JDC_GROUPS = { unitGroups: roster.unitGroups, titleGroups: roster.titleGroups };   // 分組吃選項主檔「分類」欄
         setupForm();
         gRosterReady = true;
         if (getMode() === 'onboard') renderState({}); // 報到模式：roster 一到就顯示，不等 GAS
