@@ -139,16 +139,36 @@
     <button class="btn btn-primary" onclick="batchTransfer()">整批轉移</button>
   </div>
   <div class="card">
-    <label>新增工地（先建名稱讓報到／調動選得到；第一人進駐後自動歸併）</label>
-    <input id="au-name" placeholder="新工地名稱">
+    <label>新增單位（先建名稱讓報到／調動選得到）</label>
+    <input id="au-name" placeholder="新單位名稱">
+    <label>分類</label>
+    <select id="au-group"><option selected>工地</option><option>總公司</option></select>
     <div class="msg" id="au-msg"></div>
-    <button class="btn" style="background:#f0f0f0;color:#333" onclick="addUnitGo()">＋ 新增工地</button>
+    <button class="btn" style="background:#f0f0f0;color:#333" onclick="addUnitGo()">＋ 新增單位</button>
   </div>
   <div class="card">
-    <label>新增職稱（異動核定與新人報到的職稱下拉共用；第一人掛上後自動歸併）</label>
+    <label>新增職稱（異動核定與新人報到的職稱下拉共用）</label>
     <input id="at-name" placeholder="新職稱名稱">
+    <label>分類</label>
+    <select id="at-group"><option>工務／工程</option><option>機電</option><option>繪圖／規劃</option><option>行政／管理</option><option selected>其他</option></select>
+    <label>開放新人報到時自選</label>
+    <select id="at-self"><option selected>是</option><option>否</option></select>
     <div class="msg" id="at-msg"></div>
     <button class="btn" style="background:#f0f0f0;color:#333" onclick="addTitleGo()">＋ 新增職稱</button>
+  </div>
+  <div class="card">
+    <label>調整既有選項（改分類／是否開放新人自選／停用）</label>
+    <select id="eo-pick" onchange="editOptionPick()"><option value="" selected>── 請選擇 ──</option></select>
+    <div id="eo-fields" style="display:none">
+      <label>分類</label>
+      <select id="eo-group"></select>
+      <div id="eo-self-wrap" style="display:none"><label>開放新人報到時自選</label>
+        <select id="eo-self"><option>是</option><option>否</option></select></div>
+      <label>狀態（停用＝從所有下拉消失，歷史資料不動）</label>
+      <select id="eo-status"><option>啟用</option><option>停用</option></select>
+      <div class="msg" id="eo-msg"></div>
+      <button class="btn btn-primary" onclick="saveOptionGo()">儲存調整</button>
+    </div>
   </div>
 </div>
 <div id="tab-roster" style="display:none">
@@ -294,6 +314,7 @@ function showTab(t){
   if(t==='log'&&!logLoaded){logLoaded=true;loadLog();}
   if(t==='rec'&&!window.XLSX&&!window._xlsxLoading){window._xlsxLoading=true;   // SheetJS 只在用到才載（~930KB）
     var s=document.createElement('script');s.src='assets/xlsx.full.min.js';document.body.appendChild(s);}
+  if(t==='maint'&&!optLoaded)loadOptionsAdmin();
 }
 
 // ── 異動紀錄分頁（公告異動＋資料修正，最新在上）──────────────────────────
@@ -450,8 +471,8 @@ function addUnitGo(){
   var msg=document.getElementById('au-msg');
   var name=document.getElementById('au-name').value.trim();
   if(!name){setMsg(msg,'請輸入名稱。','err');return;}
-  jsonp('addUnit',{token:TOKEN,name:name}).then(function(r){
-    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('au-name').value='';setTimeout(loadHr,400);}
+  jsonp('addUnit',{token:TOKEN,name:name,group:document.getElementById('au-group').value}).then(function(r){
+    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('au-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
     else setMsg(msg,(r&&r.msg)||'失敗','err');
   });
 }
@@ -459,8 +480,53 @@ function addTitleGo(){
   var msg=document.getElementById('at-msg');
   var name=document.getElementById('at-name').value.trim();
   if(!name){setMsg(msg,'請輸入名稱。','err');return;}
-  jsonp('addTitle',{token:TOKEN,name:name}).then(function(r){
-    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('at-name').value='';setTimeout(loadHr,400);}
+  jsonp('addTitle',{token:TOKEN,name:name,group:document.getElementById('at-group').value,self:document.getElementById('at-self').value}).then(function(r){
+    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('at-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
+    else setMsg(msg,(r&&r.msg)||'失敗','err');
+  });
+}
+// 調整既有選項（分類/自選/啟停）
+var optRows=[], optLoaded=false;
+var UNIT_GROUPS=['工地','總公司'];
+var TITLE_GROUPS_OPT=['工務／工程','機電','繪圖／規劃','行政／管理','其他'];
+function loadOptionsAdmin(){
+  jsonp('listOptions',{token:TOKEN}).then(function(r){
+    if(!r||!r.ok)return;
+    optRows=r.rows||[];optLoaded=true;
+    var units=optRows.filter(function(o){return o.type==='單位';});
+    var titles=optRows.filter(function(o){return o.type==='職稱';});
+    function opts(arr){return arr.map(function(o){
+      var mark=(o.status==='停用'?'（停用）':'');
+      return '<option value="'+esc(o.type+'|'+o.name)+'">'+esc(o.name)+mark+'</option>';}).join('');}
+    document.getElementById('eo-pick').innerHTML='<option value="" selected>── 請選擇 ──</option>'
+      +'<optgroup label="單位">'+opts(units)+'</optgroup><optgroup label="職稱">'+opts(titles)+'</optgroup>';
+    document.getElementById('eo-fields').style.display='none';
+  });
+}
+function editOptionPick(){
+  var v=document.getElementById('eo-pick').value;
+  var box=document.getElementById('eo-fields');
+  if(!v){box.style.display='none';return;}
+  var t=v.split('|')[0], n=v.split('|')[1];
+  var o=optRows.filter(function(x){return x.type===t&&x.name===n;})[0];
+  if(!o){box.style.display='none';return;}
+  var groups=t==='單位'?UNIT_GROUPS:TITLE_GROUPS_OPT;
+  document.getElementById('eo-group').innerHTML=groups.map(function(g){return '<option'+(g===o.group?' selected':'')+'>'+esc(g)+'</option>';}).join('');
+  document.getElementById('eo-self-wrap').style.display=t==='職稱'?'':'none';
+  if(t==='職稱')document.getElementById('eo-self').value=(o.self==='否'?'否':'是');
+  document.getElementById('eo-status').value=o.status==='停用'?'停用':'啟用';
+  box.style.display='';
+}
+function saveOptionGo(){
+  var msg=document.getElementById('eo-msg');
+  var v=document.getElementById('eo-pick').value;
+  if(!v)return;
+  var t=v.split('|')[0], n=v.split('|')[1];
+  var p={token:TOKEN,type:t,name:n,group:document.getElementById('eo-group').value,status:document.getElementById('eo-status').value};
+  if(t==='職稱')p.self=document.getElementById('eo-self').value;
+  setMsg(msg,'處理中…','info');
+  jsonp('updateOption',p).then(function(r){
+    if(r&&r.ok){setMsg(msg,'已儲存 ✅','ok');loadOptionsAdmin();setTimeout(loadHr,400);}
     else setMsg(msg,(r&&r.msg)||'失敗','err');
   });
 }
