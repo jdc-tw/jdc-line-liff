@@ -72,13 +72,17 @@
 <div class="tabs">
   <button id="tabbtn-stats" class="on" onclick="showTab('stats')">出席統計</button>
   <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
+  <button id="tabbtn-anniv" onclick="showTab('anniv')">年資里程碑</button>
 </div>
-<div id="anniv-box" style="display:none"></div>
 <div id="tab-stats">
   <h1 id="title">活動紀錄看板</h1>
   <select id="act-picker" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;display:none" onchange="loadStats(this.value)"></select>
   <div id="meta" class="meta">載入中…</div>
   <div id="content"><div class="empty">載入中…</div></div>
+</div>
+<div id="tab-anniv" style="display:none">
+  <h1>年資里程碑</h1>
+  <div id="anniv-box"><div class="empty">載入中…</div></div>
 </div>
 <div id="tab-manage" style="display:none">
   <div class="card">
@@ -158,10 +162,10 @@ function opinionsHtml(arr){
 // ── 分頁切換（活動管理 lazy load）──────────────────────────────────────────
 var manageLoaded=false;
 function showTab(t){
-  document.getElementById('tab-stats').style.display = t==='stats'?'':'none';
-  document.getElementById('tab-manage').style.display = t==='manage'?'':'none';
-  document.getElementById('tabbtn-stats').className = t==='stats'?'on':'';
-  document.getElementById('tabbtn-manage').className = t==='manage'?'on':'';
+  ['stats','manage','anniv'].forEach(function(k){
+    document.getElementById('tab-'+k).style.display = t===k?'':'none';
+    document.getElementById('tabbtn-'+k).className = t===k?'on':'';
+  });
   if(t==='manage'&&!manageLoaded){manageLoaded=true;loadActs();}
 }
 function setMsg(id,text,cls){var el=document.getElementById(id);el.textContent=text;el.className='msg '+(cls||'');}
@@ -302,7 +306,7 @@ function loadStats(act){
   });
 }
 loadStats(q('act'));
-annivInit(jsonp, q('t'));   // 年資里程碑提示卡（逢5週年·空名單不顯示）
+annivInit(jsonp, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁
 rosterDlInit({ jsonp: jsonp, token: q('t'), leaversId: 's-dl-leavers',
   msg: function (t, ty) { setMsg('s-dl-msg', t, ty === 'info' ? '' : ty); } });
 </script></body></html>

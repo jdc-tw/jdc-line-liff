@@ -122,7 +122,6 @@
   <button id="tabbtn-log" onclick="showTab('log')">異動紀錄</button>
   <button id="tabbtn-maint" onclick="showTab('maint')">資訊維護</button>
 </div>
-<div id="anniv-box" style="display:none"></div>
 <div id="tab-checkin">
   <h1>新人報到・核准看板</h1>
   <div id="who" class="who"></div>
@@ -184,6 +183,7 @@
 <div id="tab-roster" style="display:none">
   <h1>員工名冊</h1>
   <div id="r-count" class="r-count">載入中…</div>
+  <div id="anniv-box" style="display:none"></div>
   <input id="r-search" class="r-search" type="search" placeholder="搜尋姓名／單位／員編…" oninput="filterRoster()">
   <div style="margin:8px 0">
     <button class="btn btn-primary" onclick="downloadRoster()">📥 下載員工名冊（單位總表）</button>
