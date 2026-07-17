@@ -199,6 +199,7 @@ function showAdminSwitch(who){
   a.id='adm-switch';a.textContent='⇄ 活動紀錄看板';
   a.href='stats.html?t='+encodeURIComponent(TOKEN);
   a.style.cssText='position:fixed;top:10px;right:10px;z-index:99;background:#fff;border:1px solid #ddd;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;color:#333;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.12)';
+  a.addEventListener('click',function(e){e.preventDefault();location.href=a.href;}); // iOS standalone：<a> 會彈內嵌 Safari，JS 導頁留在 App 內
   document.body.appendChild(a);
 }
 function jsonp(action,params){return new Promise(function(res){

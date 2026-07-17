@@ -36,6 +36,11 @@ if(t){
   document.getElementById('go-board').href='board.html?t='+t;
   document.getElementById('go-stats').href='stats.html?t='+t;
 }
+// iOS「加到主畫面」standalone 模式：<a> 導頁會彈出帶網址列的內嵌 Safari，
+// 改用 JS 導頁就留在 App 視窗內（桌機瀏覽器行為不變）
+document.querySelectorAll('a.card').forEach(function(a){
+  a.addEventListener('click',function(e){e.preventDefault();location.href=this.href;});
+});
 </script>
 </body>
 </html>
