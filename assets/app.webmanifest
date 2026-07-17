@@ -1,0 +1,8 @@
+{
+  "name": "JDC 管理看板",
+  "short_name": "JDC看板",
+  "display": "standalone",
+  "scope": "/",
+  "background_color": "#f5f6f8",
+  "theme_color": "#f5f6f8"
+}
