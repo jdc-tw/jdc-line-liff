@@ -182,7 +182,7 @@
     <button class="btn btn-primary" onclick="downloadRoster()">📥 下載員工名冊（單位總表）</button>
     <button class="btn btn-primary" style="margin-top:8px" onclick="downloadRosterFlat()">📥 下載員工名冊（逐人明細）</button>
     <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:400;color:#555">
-      <input type="checkbox" id="r-dl-leavers" style="width:auto;margin:0">含離職者（姓名標註「離職」）
+      <input type="checkbox" id="r-dl-leavers" style="width:auto;margin:0">逐人明細含離職者（單位總表恆只列在職）
     </label>
     <div class="msg" id="r-dl-msg"></div>
   </div>
@@ -615,12 +615,10 @@ function downloadRosterAs_(build,label){
     var r=rs[0],o=rs[1];
     if(!r||!r.ok){setMsg(msg,(r&&r.msg)||'名冊載入失敗','err');return;}
     if(!o||!o.ok){setMsg(msg,(o&&o.msg)||'選項載入失敗','err');return;}
-    var incl=inclLeavers_();
-    var aoa=build(r.rows||[],o.rows||[],todayStr_(),{includeLeavers:incl});
+    var aoa=build(r.rows||[],o.rows||[],todayStr_());   // 單位總表恆只列在職（使用者拍板；含離職只在逐人明細）
     if(aoa.length<2){setMsg(msg,'名冊沒有在職資料，暫不產檔。','err');return;}
     writeStyledXlsx_(aoa,label,{headerRow:true});
-    var total=(r.rows||[]).filter(function(x){return incl||x.status!=='離職';}).length;
-    setMsg(msg,dlDoneMsg_(aoa[1][aoa[1].length-1],total),'ok');
+    setMsg(msg,'已下載 ✅（在職 '+(aoa[1][aoa[1].length-1])+' 人）','ok');
   });
 }
 function downloadRoster(){downloadRosterAs_(buildRosterWide,'單位總表');}

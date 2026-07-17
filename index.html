@@ -145,14 +145,16 @@
       <button class="btn btn-primary" id="btn-bind" disabled>送出驗證</button>
     </div>
 
-    <!-- 已綁定未驗證 -->
+    <!-- 已綁定未驗證：顯示既有資料＋一鍵重寄（免重填）；重新填寫降為資料有誤時的備援 -->
     <div id="section-pending" class="card" style="display:none">
       <h2>請收信完成驗證</h2>
+      <p id="pending-who" style="display:none;font-weight:700"></p>
       <p>身分核對完成，驗證信將稍後寄達您的公司信箱，請點開信中連結完成驗證。</p>
       <p id="pending-email" style="display:none;color:#c62828;font-weight:700;word-break:break-all"></p>
       <p class="hint">完成後<b>日後就不需再驗證</b>，即可直接填寫活動調查。（驗證完請點該頁的按鈕回 LINE；若沒有，重開此頁即可。）</p>
       <div id="pending-msg"></div>
-      <button class="btn btn-secondary" id="btn-rebind">重新填寫驗證資料</button>
+      <button class="btn btn-primary" id="btn-resend">重新寄送驗證信（連結過期時按這裡）</button>
+      <button class="btn btn-secondary" id="btn-rebind" style="margin-top:8px">資料有誤，重新填寫</button>
     </div>
 
     <!-- 已驗證：活動問卷 -->
@@ -454,6 +456,17 @@
         show('section-bind');
       } else if (!state.verified) {
         greet.style.display = 'none';
+        // 顯示他當初選的資料＋驗證信箱（免重填；重寄一鍵搞定）
+        if (state.name) {
+          var pw = document.getElementById('pending-who');
+          pw.textContent = '您的驗證資料：' + state.name + (state.unit ? '（' + state.unit + '）' : '');
+          pw.style.display = '';
+        }
+        if (state.pendingEmail) {
+          var pe0 = document.getElementById('pending-email');
+          pe0.textContent = '驗證信寄送信箱：' + state.pendingEmail + '，請到這個信箱收信，點開信中連結完成驗證。';
+          pe0.style.display = '';
+        }
         show('section-pending');
       } else {
         if (state.name) { greet.textContent = '您好，' + state.name; greet.style.display = ''; }
@@ -624,6 +637,23 @@
     document.getElementById('btn-rebind').addEventListener('click', function () {
       hide('section-pending');
       show('section-bind');
+    });
+
+    // ─── 重新寄送驗證信（連結過期/沒收到；免重填——後端簽新連結、24 小時重新起算）──
+    document.getElementById('btn-resend').addEventListener('click', function () {
+      var btn = this;
+      var msgEl = document.getElementById('pending-msg');
+      btn.disabled = true;
+      showMsg(msgEl, '重寄中…', 'info');
+      jsonp('resendVerifyMail', { userId: gUserId }).then(function (res) {
+        if (res && res.ok) {
+          showMsg(msgEl, '已重寄！新驗證信稍後寄達' + (res.email ? '：' + res.email : '您的公司信箱') + '，連結 24 小時內有效。', 'ok');
+          setTimeout(function () { btn.disabled = false; }, 60000);   // 60 秒冷卻防連點重複排信
+        } else {
+          showMsg(msgEl, (res && res.msg) || '重寄失敗，請稍後再試。', 'err');
+          btn.disabled = false;
+        }
+      }).catch(function () { showMsg(msgEl, '網路錯誤，請稍後再試。', 'err'); btn.disabled = false; });
     });
 
     // ─── 活動送出 ──────────────────────────────────────────────────────────────
