@@ -30,7 +30,11 @@
   </a>
   <a class="card" id="go-stats" href="stats.html">
     <div class="t">📊 活動紀錄看板</div>
-    <div class="d">活動出席統計・活動管理</div>
+    <div class="d">活動出席統計・活動管理・年資里程碑</div>
+  </a>
+  <a class="card" id="go-hr" href="hr-stats.html">
+    <div class="t">📈 人事資訊看板</div>
+    <div class="d">年資／年齡分佈・單位結構・退休預警</div>
   </a>
 </div>
 <script>
@@ -39,6 +43,7 @@ var m=location.search.match(/[?&]t=([^&]+)/),t=m?m[1]:'';
 if(t){
   document.getElementById('go-board').href='board.html?t='+t;
   document.getElementById('go-stats').href='stats.html?t='+t;
+  document.getElementById('go-hr').href='hr-stats.html?t='+t;
 }
 // iOS「加到主畫面」standalone 模式：<a> 導頁會彈出帶網址列的內嵌 Safari，
 // 改用 JS 導頁就留在 App 視窗內（桌機瀏覽器行為不變）
