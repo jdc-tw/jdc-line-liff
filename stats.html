@@ -73,6 +73,7 @@
   <button id="tabbtn-stats" class="on" onclick="showTab('stats')">出席統計</button>
   <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
 </div>
+<div id="anniv-box" style="display:none"></div>
 <div id="tab-stats">
   <h1 id="title">活動紀錄看板</h1>
   <select id="act-picker" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;display:none" onchange="loadStats(this.value)"></select>
@@ -103,6 +104,7 @@
 </div>
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
+<script src="assets/anniv.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
@@ -300,6 +302,7 @@ function loadStats(act){
   });
 }
 loadStats(q('act'));
+annivInit(jsonp, q('t'));   // 年資里程碑提示卡（逢5週年·空名單不顯示）
 rosterDlInit({ jsonp: jsonp, token: q('t'), leaversId: 's-dl-leavers',
   msg: function (t, ty) { setMsg('s-dl-msg', t, ty === 'info' ? '' : ty); } });
 </script></body></html>
