@@ -157,7 +157,8 @@ jsonp('getHrStats',{token:q('t')}).then(function(r){
   if(jys.length){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
-    html+='<div class="card"><div class="sec-h"><b>⑦ 入社年度趨勢</b><small>每年新進人數（現仍在職者）；橫軸＝年份</small></div>'+colChart(trend)+'</div>';
+    html+='<div class="card"><div class="sec-h"><b>⑦ 入社年度趨勢</b><small>每年新進人數（現仍在職者）；手機可左右滑動</small></div>'
+        +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div style="min-width:'+Math.max(trend.labels.length*30,320)+'px">'+colChart(trend)+'</div></div></div>';
   }
   // 8 年齡×年資散點（右上=高齡資深·經驗集中風險）
   if(s.agePairs&&s.agePairs.length){
