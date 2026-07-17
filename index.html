@@ -149,6 +149,7 @@
     <div id="section-pending" class="card" style="display:none">
       <h2>請收信完成驗證</h2>
       <p>身分核對完成，驗證信將稍後寄達您的公司信箱，請點開信中連結完成驗證。</p>
+      <p id="pending-email" style="display:none;color:#c62828;font-weight:700;word-break:break-all"></p>
       <p class="hint">完成後<b>日後就不需再驗證</b>，即可直接填寫活動調查。（驗證完請點該頁的按鈕回 LINE；若沒有，重開此頁即可。）</p>
       <div id="pending-msg"></div>
       <button class="btn btn-secondary" id="btn-rebind">重新填寫驗證資料</button>
@@ -593,6 +594,11 @@
         .then(function (res) {
           if (res && res.ok) {
             showMsg(msgEl, '已送出！驗證信將稍後寄達您的公司信箱，請留意收信。', 'ok');
+            if (res.email) {
+              var pe = document.getElementById('pending-email');
+              pe.textContent = '驗證信將寄送到您的公司信箱：' + res.email + '，請到這個信箱收信，點開信中連結完成驗證。';
+              pe.style.display = '';
+            }
             hide('section-bind');
             show('section-pending');
             // 更新樂觀快取為「待驗證」，去收信後回來不會閃綁定首頁
