@@ -181,6 +181,9 @@
   <div style="margin:8px 0">
     <button class="btn btn-primary" onclick="downloadRoster()">📥 下載員工名冊（單位總表）</button>
     <button class="btn btn-primary" style="margin-top:8px" onclick="downloadRosterFlat()">📥 下載員工名冊（逐人明細）</button>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:400;color:#555">
+      <input type="checkbox" id="r-dl-leavers" style="width:auto;margin:0">含離職者（姓名標註「離職」）
+    </label>
     <div class="msg" id="r-dl-msg"></div>
   </div>
   <div id="r-list"></div>
@@ -602,6 +605,8 @@ function filterRoster(){
 }
 // 下載員工名冊 .xlsx（只列在職·單位序=選項主檔；每次下載=名冊即時快照）
 // 兩種格式共用同一份資料：單位總表（buildRosterWide·單位當欄）／逐人明細（buildRosterFlat·每人一列）
+function inclLeavers_(){return document.getElementById('r-dl-leavers').checked;}
+function dlDoneMsg_(active,total){return '已下載 ✅（在職 '+active+' 人'+(total>active?'，含離職 '+(total-active)+' 人':'')+'）';}
 function downloadRosterAs_(build,label){
   var msg=document.getElementById('r-dl-msg');
   if(!window.XLSX){setMsg(msg,'產檔元件載入中，請稍候再按一次。','info');return;}
@@ -610,24 +615,28 @@ function downloadRosterAs_(build,label){
     var r=rs[0],o=rs[1];
     if(!r||!r.ok){setMsg(msg,(r&&r.msg)||'名冊載入失敗','err');return;}
     if(!o||!o.ok){setMsg(msg,(o&&o.msg)||'選項載入失敗','err');return;}
-    var aoa=build(r.rows||[],o.rows||[],todayStr_());
+    var incl=inclLeavers_();
+    var aoa=build(r.rows||[],o.rows||[],todayStr_(),{includeLeavers:incl});
     if(aoa.length<2){setMsg(msg,'名冊沒有在職資料，暫不產檔。','err');return;}
     writeStyledXlsx_(aoa,label,{headerRow:true});
-    setMsg(msg,'已下載 ✅（在職 '+(aoa[1][aoa[1].length-1])+' 人）','ok');
+    var total=(r.rows||[]).filter(function(x){return incl||x.status!=='離職';}).length;
+    setMsg(msg,dlDoneMsg_(aoa[1][aoa[1].length-1],total),'ok');
   });
 }
 function downloadRoster(){downloadRosterAs_(buildRosterWide,'單位總表');}
-// 逐人明細：吃 getRosterExport（名冊分頁顯示值原樣·只列在職），欄位與系統名冊 Sheet 一致
+// 逐人明細：吃 getRosterExport（名冊分頁顯示值原樣·預設只列在職·勾「含離職」帶 include=leavers），欄位與系統名冊 Sheet 一致
 function downloadRosterFlat(){
   var msg=document.getElementById('r-dl-msg');
   if(!window.XLSX){setMsg(msg,'產檔元件載入中，請稍候再按一次。','info');return;}
   setMsg(msg,'產生中…','info');
-  jsonp('getRosterExport',{token:TOKEN}).then(function(r){
+  var params={token:TOKEN};
+  if(inclLeavers_())params.include='leavers';
+  jsonp('getRosterExport',params).then(function(r){
     if(!r||!r.ok){setMsg(msg,(r&&r.msg)||'名冊載入失敗','err');return;}
     if(!r.rows||!r.rows.length){setMsg(msg,'名冊沒有在職資料，暫不產檔。','err');return;}
     var aoa=[r.hdr].concat(r.rows);
     writeStyledXlsx_(aoa,'逐人明細',{leftAlign:['信箱'],headerRow:true});
-    setMsg(msg,'已下載 ✅（在職 '+r.active+' 人）','ok');
+    setMsg(msg,dlDoneMsg_(r.active,r.rows.length),'ok');
   });
 }
 // 產檔共用：格線＋置中（指定欄靠左）＋欄寬自適應＋表頭粗體

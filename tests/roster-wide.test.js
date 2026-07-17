@@ -41,3 +41,10 @@ test('單位空白歸「（未填單位）」欄', () => {
   assert.strictEqual(aoa[0][1], '（未填單位）');
   assert.strictEqual(aoa[1][1], '甲');
 });
+
+test('includeLeavers=true：離職者列入並加（離職）標記、總人數仍只數在職', () => {
+  const rows = [p('甲一', '管理部'), p('離人', '管理部', '離職')];
+  const aoa = buildRosterWide(rows, OPTS, '2026/07/17', { includeLeavers: true });
+  assert.deepStrictEqual([aoa[1][1], aoa[2][1]], ['甲一', '離人（離職）']);
+  assert.deepStrictEqual(aoa[1].slice(-2), ['員工總人數', 1]);
+});
