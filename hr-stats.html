@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<title>人事資訊看板</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans TC",sans-serif;
+    margin:0 auto;padding:20px 16px 48px;max-width:760px;background:#fff;color:#413b31;font-size:15px;line-height:1.6}
+  .brand{text-align:center;margin:0 0 14px}.brand img{width:100%;max-width:240px;height:auto}
+  h1{font-size:22px;margin:0 0 2px}
+  .sub{font-size:13px;color:#a59a8a;margin-bottom:18px}
+  .card{background:#fffefb;border:1px solid #ece5d8;border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+  .sec-h{display:flex;align-items:baseline;gap:8px;margin:0 0 12px;border-left:5px solid #bd9670;padding-left:10px}
+  .sec-h b{font-size:16px}
+  .sec-h small{color:#a59a8a;font-size:12px}
+  /* KPI row */
+  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .kpi{flex:1 1 30%;background:#fffefb;border:1px solid #ece5d8;border-radius:14px;padding:14px 16px;text-align:center}
+  .kpi .v{font-size:30px;font-weight:800}
+  .kpi .k{font-size:12px;color:#a59a8a}
+  /* 直方圖（縱向柱） */
+  .cols{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px}
+  .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .col .bar{width:100%;max-width:46px;background:#b9863f;border-radius:4px 4px 0 0;min-height:2px}
+  .col .n{font-size:12px;color:#413b31;margin-bottom:2px}
+  .col .lb{font-size:10.5px;color:#a59a8a;margin-top:4px;white-space:nowrap}
+  /* 橫條 */
+  .hrow{display:flex;align-items:center;gap:8px;margin:5px 0}
+  .hrow .nm{flex:0 0 88px;font-size:13px;text-align:right;color:#413b31;white-space:nowrap;overflow:hidden}
+  .hrow .trk{flex:1;display:flex;gap:2px;align-items:center}
+  .hrow .seg{height:16px;border-radius:0}
+  .hrow .seg:first-child{border-radius:4px 0 0 4px}
+  .hrow .seg:last-child{border-radius:0 4px 4px 0}
+  .hrow .seg.only{border-radius:4px}
+  .hrow .cnt{font-size:12px;color:#a59a8a;margin-left:6px;white-space:nowrap}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 10px;font-size:12px;color:#413b31}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  details.tbl{margin-top:8px}
+  details.tbl summary{font-size:12px;color:#a59a8a;cursor:pointer}
+  details.tbl table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}
+  details.tbl th,details.tbl td{border:1px solid #ece5d8;padding:3px 8px;text-align:right}
+  details.tbl th:first-child,details.tbl td:first-child{text-align:left}
+  .names{font-size:12.5px;color:#413b31;margin:2px 0 8px}
+  .names b{font-weight:700}
+  .empty{text-align:center;color:#a59a8a;padding:40px 0}
+  .foot{font-size:11.5px;color:#a59a8a;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<h1>人事資訊看板</h1>
+<div class="sub" id="sub">載入中…</div>
+<div id="main"></div>
+<script>
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+function jsonp(action,params){return new Promise(function(res){
+  var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+  var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  var s=document.createElement('script');
+  s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
+  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時，請重新整理。'});cleanup();},30000);
+  function cleanup(){clearTimeout(timer);delete window[cb];s.remove();}
+  window[cb]=function(d){res(d);cleanup();};
+  s.onerror=function(){res({ok:false,msg:'連線失敗'});cleanup();};
+  document.body.appendChild(s);
+});}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// 色票（dataviz 驗證過：#3d8f63/#b9863f 全項通過；序列段=同色深淺、非彩虹）
+var C_HQ='#3d8f63', C_SITE='#b9863f';
+var RAMP4=['#dcc39c','#b9863f','#8a5a33','#6f4526'];                 // 年資段
+var RAMP5=['#e8d5b6','#c8a37b','#a9794f','#8a5a33','#6f4526'];       // 年齡段
+var C_RET=['#b0694a','#b9863f','#dcc39c'];                            // 已滿65 / 5年內 / 10年內
+
+function colChart(bins){
+  var max=Math.max.apply(null,bins.counts.concat([1]));
+  return '<div class="cols">'+bins.labels.map(function(lb,i){
+    var h=Math.round(bins.counts[i]/max*118);
+    return '<div class="col"><div class="n">'+bins.counts[i]+'</div>'
+      +'<div class="bar" style="height:'+h+'px" title="'+esc(lb)+'：'+bins.counts[i]+' 人"></div>'
+      +'<div class="lb">'+esc(lb)+'</div></div>';
+  }).join('')+'</div>';
+}
+function stackRows(order,units,key,ramp,segLabels,maxCount){
+  return order.map(function(nm){
+    var u=units[nm], segs=u[key], total=u.count;
+    var w=Math.max(total/maxCount*100,2);
+    var inner=segs.map(function(c,i){
+      if(!c)return '';
+      var pct=c/total*100;
+      return '<div class="seg'+(segs.filter(Boolean).length===1?' only':'')+'" style="flex:'+c+';background:'+ramp[i]+'" title="'+esc(nm)+'・'+esc(segLabels[i])+'：'+c+' 人"></div>';
+    }).join('');
+    return '<div class="hrow"><div class="nm">'+esc(nm)+'</div>'
+      +'<div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+total+'</div></div>';
+  }).join('');
+}
+function legend(labels,colors){
+  return '<div class="legend">'+labels.map(function(lb,i){return '<span><i style="background:'+colors[i]+'"></i>'+esc(lb)+'</span>';}).join('')+'</div>';
+}
+function numTable(order,units,key,segLabels){
+  var head='<tr><th>單位</th>'+segLabels.map(function(l){return '<th>'+esc(l)+'</th>';}).join('')+'<th>計</th></tr>';
+  var rows=order.map(function(nm){
+    var u=units[nm];
+    return '<tr><td>'+esc(nm)+'</td>'+u[key].map(function(c){return '<td>'+(c||'')+'</td>';}).join('')+'<td>'+u.count+'</td></tr>';
+  }).join('');
+  return '<details class="tbl"><summary>數字表</summary><table>'+head+rows+'</table></details>';
+}
+
+jsonp('getHrStats',{token:q('t')}).then(function(r){
+  var main=document.getElementById('main');
+  if(!r||!r.ok){document.getElementById('sub').textContent='';main.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  var s=r.stats;
+  document.getElementById('sub').textContent='資料來源：員工名冊即時快照（在職 '+s.total+' 人）';
+  var maxCount=Math.max.apply(null,s.unitOrder.map(function(n){return s.units[n].count;}).concat([1]));
+
+  var html='';
+  // KPI
+  html+='<div class="kpis"><div class="kpi"><div class="v">'+s.total+'</div><div class="k">在職人數</div></div>'
+      +'<div class="kpi"><div class="v">'+s.avgTenure+'</div><div class="k">平均年資（年）</div></div>'
+      +'<div class="kpi"><div class="v">'+s.avgAge+'</div><div class="k">平均年齡（歲）</div></div></div>';
+  // 1 年資分佈
+  html+='<div class="card"><div class="sec-h"><b>① 全公司年資分佈</b><small>看資深/資淺結構與斷層</small></div>'+colChart(s.tenureBins)
+      +(s.noJoin?'<div class="foot">※ '+s.noJoin+' 人無入社日未計入</div>':'')+'</div>';
+  // 2 年齡分佈
+  html+='<div class="card"><div class="sec-h"><b>② 全公司年齡分佈</b><small>看年齡結構與退休高峰</small></div>'+colChart(s.ageBins)
+      +(s.noBirth?'<div class="foot">※ '+s.noBirth+' 人無生日未計入</div>':'')+'</div>';
+  // 3 各單位人數（降冪·雙色）
+  var byCount=s.unitOrder.slice().sort(function(a,b){return s.units[b].count-s.units[a].count;});
+  html+='<div class="card"><div class="sec-h"><b>③ 各單位人數</b><small>總公司 vs 工地</small></div>'
+      +legend(['總公司','工地'],[C_HQ,C_SITE])
+      +byCount.map(function(nm){
+        var u=s.units[nm], w=Math.max(u.count/maxCount*100,2), c=u.group==='總公司'?C_HQ:C_SITE;
+        return '<div class="hrow"><div class="nm">'+esc(nm)+'</div>'
+          +'<div class="trk" style="max-width:'+w+'%"><div class="seg only" style="flex:1;background:'+c+'" title="'+esc(nm)+'：'+u.count+' 人"></div></div>'
+          +'<div class="cnt">'+u.count+'</div></div>';
+      }).join('')+'</div>';
+  // 4 單位×年資
+  html+='<div class="card"><div class="sec-h"><b>④ 各單位年資結構</b><small>色越深越資深；條長＝人數</small></div>'
+      +legend(s.tenureSegLabels,RAMP4)+stackRows(s.unitOrder,s.units,'tenure',RAMP4,s.tenureSegLabels,maxCount)
+      +numTable(s.unitOrder,s.units,'tenure',s.tenureSegLabels)+'</div>';
+  // 5 單位×年齡
+  html+='<div class="card"><div class="sec-h"><b>⑤ 各單位年齡結構</b><small>色越深越年長；條長＝人數</small></div>'
+      +legend(s.ageSegLabels,RAMP5)+stackRows(s.unitOrder,s.units,'age',RAMP5,s.ageSegLabels,maxCount)
+      +numTable(s.unitOrder,s.units,'age',s.ageSegLabels)+'</div>';
+  // 6 退休預警
+  var retUnits=s.unitOrder.filter(function(nm){var R=s.units[nm].retire;return R.now.length+R.y5.length+R.y10.length>0;});
+  html+='<div class="card"><div class="sec-h"><b>⑥ 退休預警</b><small>已滿 65／5 年內滿 65（60-64 歲）／10 年內（55-59 歲）</small></div>'
+      +legend(['已滿 65','5 年內','10 年內'],C_RET);
+  if(!retUnits.length) html+='<div class="empty" style="padding:16px 0">目前沒有 55 歲以上的在職同仁</div>';
+  retUnits.forEach(function(nm){
+    var R=s.units[nm].retire, total=R.now.length+R.y5.length+R.y10.length;
+    var segs=[R.now.length,R.y5.length,R.y10.length];
+    var w=Math.max(total/maxCount*100,2);
+    var inner=segs.map(function(c,i){ if(!c)return '';
+      return '<div class="seg" style="flex:'+c+';background:'+C_RET[i]+'"></div>';}).join('');
+    html+='<div class="hrow"><div class="nm">'+esc(nm)+'</div><div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+total+'</div></div>'
+        +'<div class="names" style="margin-left:96px">'
+        +(R.now.length?'<b>已滿65：</b>'+R.now.map(esc).join('、')+'　':'')
+        +(R.y5.length?'<b>5年內：</b>'+R.y5.map(esc).join('、')+'　':'')
+        +(R.y10.length?'<b>10年內：</b>'+R.y10.map(esc).join('、'):'')+'</div>';
+  });
+  html+='</div>';
+  main.innerHTML=html;
+});
+</script>
+</body>
+</html>
