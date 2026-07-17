@@ -88,17 +88,16 @@ function colChart(bins){
       +'<div class="lb">'+esc(lb)+'</div></div>';
   }).join('')+'</div>';
 }
-function stackRows(order,units,key,ramp,segLabels,maxCount){
+function stackRows(order,units,key,ramp,segLabels,maxCount,noteFn){
   return order.map(function(nm){
     var u=units[nm], segs=u[key], total=u.count;
     var w=Math.max(total/maxCount*100,2);
     var inner=segs.map(function(c,i){
       if(!c)return '';
-      var pct=c/total*100;
       return '<div class="seg'+(segs.filter(Boolean).length===1?' only':'')+'" style="flex:'+c+';background:'+ramp[i]+'" title="'+esc(nm)+'・'+esc(segLabels[i])+'：'+c+' 人"></div>';
     }).join('');
     return '<div class="hrow"><div class="nm">'+esc(nm)+'</div>'
-      +'<div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+total+'</div></div>';
+      +'<div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+(noteFn?noteFn(u):total)+'</div></div>';
   }).join('');
 }
 function legend(labels,colors){
@@ -141,14 +140,18 @@ jsonp('getHrStats',{token:q('t')}).then(function(r){
           +'<div class="trk" style="max-width:'+w+'%"><div class="seg only" style="flex:1;background:'+c+'" title="'+esc(nm)+'：'+u.count+' 人"></div></div>'
           +'<div class="cnt">'+u.count+'</div></div>';
       }).join('')+'</div>';
-  // 4 單位×年資（人數降冪）
-  html+='<div class="card"><div class="sec-h"><b>④ 各單位年資結構</b><small>色越深越資深；條長＝人數·降冪</small></div>'
-      +legend(s.tenureSegLabels,RAMP4)+stackRows(byCount,s.units,'tenure',RAMP4,s.tenureSegLabels,maxCount)
-      +numTable(byCount,s.units,'tenure',s.tenureSegLabels)+'</div>';
-  // 5 單位×年齡（人數降冪）
-  html+='<div class="card"><div class="sec-h"><b>⑤ 各單位年齡結構</b><small>色越深越年長；條長＝人數·降冪</small></div>'
-      +legend(s.ageSegLabels,RAMP5)+stackRows(byCount,s.units,'age',RAMP5,s.ageSegLabels,maxCount)
-      +numTable(byCount,s.units,'age',s.ageSegLabels)+'</div>';
+  // 4 單位×年資（主題排序：平均年資高→低）
+  var byTenure=s.unitOrder.slice().sort(function(a,b){return s.units[b].avgTenure-s.units[a].avgTenure;});
+  html+='<div class="card"><div class="sec-h"><b>④ 各單位年資結構</b><small>依平均年資排序（資深→資淺）；色越深越資深、條長＝人數</small></div>'
+      +legend(s.tenureSegLabels,RAMP4)
+      +stackRows(byTenure,s.units,'tenure',RAMP4,s.tenureSegLabels,maxCount,function(u){return '均 '+u.avgTenure+' 年・'+u.count+' 人';})
+      +numTable(byTenure,s.units,'tenure',s.tenureSegLabels)+'</div>';
+  // 5 單位×年齡（主題排序：平均年齡高→低）
+  var byAge=s.unitOrder.slice().sort(function(a,b){return s.units[b].avgAge-s.units[a].avgAge;});
+  html+='<div class="card"><div class="sec-h"><b>⑤ 各單位年齡結構</b><small>依平均年齡排序（年長→年輕）；色越深越年長、條長＝人數</small></div>'
+      +legend(s.ageSegLabels,RAMP5)
+      +stackRows(byAge,s.units,'age',RAMP5,s.ageSegLabels,maxCount,function(u){return '均 '+u.avgAge+' 歲・'+u.count+' 人';})
+      +numTable(byAge,s.units,'age',s.ageSegLabels)+'</div>';
   // 7 入社年度趨勢（時間軸·不排序）
   var jys=Object.keys(s.joinYears).map(Number).sort(function(a,b){return a-b;});
   if(jys.length){
@@ -188,7 +191,8 @@ jsonp('getHrStats',{token:q('t')}).then(function(r){
   }
   // 6 退休預警
   var retTotal=function(nm){var R=s.units[nm].retire;return R.now.length+R.y5.length+R.y10.length;};
-  var retUnits=s.unitOrder.filter(function(nm){return retTotal(nm)>0;}).sort(function(a,b){return retTotal(b)-retTotal(a);});
+  var retWeight=function(nm){var R=s.units[nm].retire;return R.now.length*100+R.y5.length*10+R.y10.length;};  // 急迫度：已滿65≫5年內≫10年內
+  var retUnits=s.unitOrder.filter(function(nm){return retTotal(nm)>0;}).sort(function(a,b){return retWeight(b)-retWeight(a);});
   html+='<div class="card"><div class="sec-h"><b>⑥ 退休預警</b><small>已滿 65／5 年內滿 65（60-64 歲）／10 年內（55-59 歲）</small></div>'
       +legend(['已滿 65','5 年內','10 年內'],C_RET);
   if(!retUnits.length) html+='<div class="empty" style="padding:16px 0">目前沒有 55 歲以上的在職同仁</div>';
