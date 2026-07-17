@@ -122,6 +122,7 @@
   <button id="tabbtn-log" onclick="showTab('log')">異動紀錄</button>
   <button id="tabbtn-maint" onclick="showTab('maint')">資訊維護</button>
 </div>
+<div id="anniv-box" style="display:none"></div>
 <div id="tab-checkin">
   <h1>新人報到・核准看板</h1>
   <div id="who" class="who"></div>
@@ -201,6 +202,7 @@
 </div>
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
+<script src="assets/anniv.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 var EMAIL_DOMAIN='@jdc-corpn.com.tw';
@@ -227,6 +229,7 @@ function jsonp(action,params){return new Promise(function(res){
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 var TOKEN=getToken();
+annivInit(jsonp, TOKEN);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
 function updateBadge(n){
   document.getElementById('tabbtn-checkin').textContent = n>0 ? '新人報到（'+n+'）' : '新人報到';
 }
