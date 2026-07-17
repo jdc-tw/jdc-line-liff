@@ -129,7 +129,7 @@
     <!-- 未綁定：綁定表單 -->
     <div id="section-bind" class="card" style="display:none">
       <h2>員工身分 LINE 驗證</h2>
-      <p class="hint">為更完善公司 LINE 官方帳號的同仁帳號管理及配合後續活動進行，請先完成一次員工身分驗證、綁定您的 LINE 帳號。<b>僅此一次，完成後日後都不需要再驗證。</b><br>請選擇所屬單位、姓名與出生年月日，核對無誤後，系統會寄驗證信到您的公司信箱。</p>
+      <p class="hint">請選擇所屬單位、姓名與出生年月日，核對無誤後，系統會寄驗證信到您的公司信箱。<b>僅此一次，日後不需再驗證。</b></p>
       <label for="sel-unit">所屬單位</label>
       <select id="sel-unit">
         <option value="">── 請選擇 ──</option>
@@ -149,9 +149,9 @@
     <div id="section-pending" class="card" style="display:none">
       <h2>請收信完成驗證</h2>
       <p id="pending-who" style="display:none;font-weight:700"></p>
-      <p>身分核對完成，驗證信將稍後寄達您的公司信箱，請點開信中連結完成驗證。</p>
+      <p id="pending-generic">驗證信將寄達您的公司信箱，請點開信中連結完成驗證。</p>
       <p id="pending-email" style="display:none;color:#c62828;font-weight:700;word-break:break-all"></p>
-      <p class="hint">完成後<b>日後就不需再驗證</b>，即可直接填寫活動調查。（驗證完請點該頁的按鈕回 LINE；若沒有，重開此頁即可。）</p>
+      <p class="hint">完成後日後不需再驗證。</p>
       <div id="pending-msg"></div>
       <button class="btn btn-primary" id="btn-resend">重新寄送驗證信（連結過期時按這裡）</button>
       <button class="btn btn-secondary" id="btn-rebind" style="margin-top:8px">資料有誤，重新填寫</button>
@@ -464,8 +464,9 @@
         }
         if (state.pendingEmail) {
           var pe0 = document.getElementById('pending-email');
-          pe0.textContent = '驗證信寄送信箱：' + state.pendingEmail + '，請到這個信箱收信，點開信中連結完成驗證。';
+          pe0.textContent = '驗證信將寄至：' + state.pendingEmail;
           pe0.style.display = '';
+          hide('pending-generic');   // 有具體信箱就不重複泛稱句
         }
         show('section-pending');
       } else {
@@ -609,8 +610,9 @@
             showMsg(msgEl, '已送出！驗證信將稍後寄達您的公司信箱，請留意收信。', 'ok');
             if (res.email) {
               var pe = document.getElementById('pending-email');
-              pe.textContent = '驗證信將寄送到您的公司信箱：' + res.email + '，請到這個信箱收信，點開信中連結完成驗證。';
+              pe.textContent = '驗證信將寄至：' + res.email;
               pe.style.display = '';
+              hide('pending-generic');   // 有具體信箱就不重複泛稱句
             }
             hide('section-bind');
             show('section-pending');
