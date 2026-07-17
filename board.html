@@ -73,6 +73,11 @@
   .done-name { font-weight: 700; font-size: 17px; color: #1a1a1a; }
   .done-date { font-size: 14px; color: #999; white-space: nowrap; }
   .done-meta { font-size: 15px; color: #666; margin-top: 3px; word-break: break-word; }
+  .done-move { font-size: 15px; color: #333; margin-top: 4px; word-break: break-word; }
+  .mi { display: inline-block; margin: 2px 16px 0 0; white-space: nowrap; }
+  .mi i { font-style: normal; font-size: 12px; color: #9aa0a6; margin-right: 4px; }
+  .mi b { font-weight: 400; color: #555; }
+  .done-doc { font-size: 12px; color: #bbb; margin-top: 4px; }
   /* ── 長者友善：放大預設字級（2026-06-26）─────────────────────────────────── */
   body { font-size: 17px; }
   input, select { font-size: 16px; }
@@ -97,6 +102,7 @@
     .done-item { padding: 16px 20px; }
     .done-name { font-size: 19px; }
     .done-meta { font-size: 16px; }
+    .done-move { font-size: 16px; }
     .done-date { font-size: 15px; }
     .linkbtn { font-size: 16px; }
     /* 待確認卡：桌機最多兩欄。1 張＝單欄置中；≥2 張＝並排，超過自動換列(2+1…)。
@@ -321,6 +327,10 @@ function showTab(t){
 
 // ── 異動紀錄分頁（公告異動＋資料修正，最新在上）──────────────────────────
 var CAT_COLOR={'離職':'#b71c1c','調動':'#b26a00','晉升':'#1a7d44','新進':'#1a56c4','資料修正':'#666','整批轉移':'#6d28d9'};
+function westEff_(v){
+  var m=String(v||'').match(/^(\d{3})\.(\d{2})\.(\d{2})$/);
+  return m?(+m[1]+1911)+'/'+m[2]+'/'+m[3]:v;
+}
 function loadLog(){
   var box=document.getElementById('log-list');
   box.innerHTML='<div class="empty">載入中…</div>';
@@ -329,14 +339,17 @@ function loadLog(){
     if(!r.rows.length){box.innerHTML='<div class="empty">還沒有任何異動紀錄</div>';return;}
     box.innerHTML='<div class="done-list">'+r.rows.map(function(x){
       var col=CAT_COLOR[x.cat]||'#666';
-      var move=x.cat==='資料修正' ? esc(x.note)
+      var move=x.cat==='資料修正' ? String(x.note||'')
         : [x.fromUnit&&(x.fromUnit+(x.fromTitle?' '+x.fromTitle:'')), (x.toUnit||x.toTitle)&&((x.toUnit||'')+(x.toTitle?' '+x.toTitle:''))].filter(Boolean).join(' → ');
-      var meta=[move, x.eff?'生效 '+x.eff:'', x.who?'確認人 '+x.who:'', x.appliedAt?'套用 '+x.appliedAt:''].filter(Boolean).join('　');
+      var mi=function(lbl,val){return val?'<span class="mi"><i>'+lbl+'</i><b>'+esc(val)+'</b></span>':'';};
+      var info=mi('生效',westEff_(x.eff))+mi('確認',x.who)+mi('套用',x.appliedAt);
       var revive=x.status==='已駁回'?'<div><button type="button" class="linkbtn" style="color:#b26a00" onclick="reviveNotice('+x._row+',this)">↩ 恢復這筆（回到待確認）</button><div class="resend-msg"></div></div>':'';
       return '<div class="done-item"><div class="done-head">'
         +'<span class="done-name"><span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(x.cat)+'</span>'+esc(x.name)+'</span>'
         +'<span class="done-date">'+esc(x.status)+'</span></div>'
-        +'<div class="done-meta">'+meta+'<span style="color:#bbb">　'+esc(x.doc)+'</span></div>'+revive+'</div>';
+        +(move?'<div class="done-move">'+esc(move)+'</div>':'')
+        +(info?'<div class="done-meta">'+info+'</div>':'')
+        +'<div class="done-doc">'+esc(x.doc)+'</div>'+revive+'</div>';
     }).join('')+'</div>';
   });
 }
@@ -402,7 +415,8 @@ function renderHrRow(o){
   if(String(o['狀態']).trim()==='待生效'){
     d.innerHTML=head
       +'<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span><span class="done-date">'+esc(o.effTag)+'</span></div>'
-      +'<div class="done-meta">'+(aiLine?esc(aiLine)+'　':'')+'已確認，到期自動套用</div>'
+      +(aiLine?'<div class="done-move">'+esc(aiLine)+'</div>':'')
+      +'<div class="done-meta"><span class="mi"><i>狀態</i><b>已確認，到期自動套用</b></span></div>'
       +'<div class="msg"></div>'
       +'<button type="button" class="linkbtn" data-revert style="color:#b26a00">↩ 撤銷這筆（回到待確認，可重新核定）</button>';
     var pmsg=d.querySelector('.msg');
@@ -422,7 +436,7 @@ function renderHrRow(o){
       ? '<div class="msg show msg-err">'+rosterLine+'——公告姓名「'+esc(o['姓名'])+'」，請指定名冊中的正確同仁</div>'
         +'<label>核定對象</label><div data-namefield></div>'
       : '<div class="done-head"><span class="done-name">'+esc(o['姓名'])+'</span></div>')
-    +(aiLine?'<div class="done-meta" style="margin-bottom:12px">公告資訊：'+esc(aiLine)+'</div>':'')
+    +(aiLine?'<div class="done-move" style="margin-bottom:12px"><span class="mi"><i>公告資訊</i></span>'+esc(aiLine)+'</div>':'')
     +(cat==='調動'?'<label>新單位（核定，選一個主要工作地）</label><div data-unitfield></div>':'')
     +(cat==='晉升'?'<label>新職稱（核定）</label><div data-titlefield></div>'
       +'<label>新單位（若單位同時異動才選，選一個主要工作地）</label><div data-unitfield></div>':'')
