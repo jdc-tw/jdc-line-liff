@@ -1,0 +1,107 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>報到掃描</title>
+<style>
+  body{margin:0;font-family:-apple-system,"PingFang TC",sans-serif;background:#111;color:#fff}
+  #cam{width:100vw;height:52vh;object-fit:cover;display:block;background:#000}
+  #panel{padding:14px 16px}
+  .card{border-radius:14px;padding:18px;margin-bottom:10px;font-size:22px;line-height:1.5}
+  .ok{background:#0a6b34}.dup{background:#6b5d0a}.bad{background:#7a1f1f}
+  .meta{font-size:14px;opacity:.75}
+  #manual{width:100%;font-size:18px;padding:10px;border-radius:10px;border:0;margin-top:6px;box-sizing:border-box}
+  #stat{font-size:13px;opacity:.6;margin-top:8px}
+</style></head><body>
+<video id="cam" playsinline muted></video>
+<div id="panel">
+  <div id="result" class="card bad" style="display:none"></div>
+  <input id="manual" placeholder="相機不可用時：手動貼碼後按 Enter">
+  <div id="stat"></div>
+</div>
+<canvas id="cv" style="display:none"></canvas>
+<script src="assets/jsQR.min.js"></script>
+<script src="assets/staff-scan.js"></script>
+<script>
+var qs = new URLSearchParams(location.search);
+var DEMO = qs.get('demo') === '1';
+var ACT = qs.get('act') || 'zzdemo2026';
+var state = { seen: {}, queue: [] };
+var snapshot = {};   // {hash: person}
+var lastText = '', lastAt = 0;
+
+var DEMO_CODES = [   // 假快照原始碼（真機測試掃桌面那五張 QR）
+  'CHK|zzdemo2026|00001|sigA', 'CHK|zzdemo2026|00002|sigB',
+  'CHK|zzdemo2026|00003|sigC', 'CHK|zzdemo2026|00004|sigD', 'CHK|zzdemo2026|00005|sigE'];
+var DEMO_PEOPLE = [
+  { empNo:'00001', name:'測試甲', unit:'管理部',   table:'1' },
+  { empNo:'00002', name:'測試乙', unit:'工務管理組', table:'2' },
+  { empNo:'00003', name:'測試丙', unit:'南港玉成', table:'3' },
+  { empNo:'00004', name:'測試丁', unit:'富貴莊園', table:'主桌' },
+  { empNo:'00005', name:'測試戊', unit:'宸實永寧', table:'5' }];
+
+async function buildDemoSnapshot() {
+  for (var i = 0; i < DEMO_CODES.length; i++) {
+    var h = await sha256Hex(DEMO_CODES[i]);
+    snapshot[h] = Object.assign({ checked: false }, DEMO_PEOPLE[i]);
+  }
+}
+
+function show(cls, html) {
+  var el = document.getElementById('result');
+  el.className = 'card ' + cls; el.style.display = 'block'; el.innerHTML = html;
+}
+
+async function handle(text, t0) {
+  var p = parseChkCode(text, ACT);
+  if (!p.ok) {
+    show('bad', p.reason === 'wrongAct' ? '❌ 這是別場活動的碼' : '❌ 無法辨識的碼');
+    return;
+  }
+  var h = await sha256Hex(text);
+  var r = applyScan(state, h, snapshot, Date.now());
+  state = r.state;
+  var ms = Math.round(performance.now() - t0);
+  if (r.verdict.type === 'ok') {
+    var pp = r.verdict.person;
+    show('ok', '✓ ' + pp.name + '<div class="meta">' + pp.unit + '・桌次 ' + pp.table + '・' + ms + 'ms</div>');
+    if (navigator.vibrate) navigator.vibrate(80);
+  } else if (r.verdict.type === 'dup') {
+    show('dup', '⚠ ' + r.verdict.person.name + ' 已報到過');
+  } else {
+    show('bad', '❌ 查無此碼（快照無資料）');
+  }
+  document.getElementById('stat').textContent =
+    '已掃 ' + Object.keys(state.seen).length + ' 人｜佇列 ' + state.queue.length + ' 筆（spike 不回寫）';
+}
+
+function loop(video, ctx, cv) {
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    cv.width = video.videoWidth; cv.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    var img = ctx.getImageData(0, 0, cv.width, cv.height);
+    var t0 = performance.now();
+    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+    if (code && code.data && (code.data !== lastText || Date.now() - lastAt > 2500)) {
+      lastText = code.data; lastAt = Date.now();
+      handle(code.data, t0);
+    }
+  }
+  requestAnimationFrame(function () { loop(video, ctx, cv); });
+}
+
+(async function init() {
+  if (DEMO) await buildDemoSnapshot();
+  document.getElementById('manual').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { handle(this.value.trim(), performance.now()); this.value = ''; }
+  });
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+    var video = document.getElementById('cam');
+    video.srcObject = stream; await video.play();
+    var cv = document.getElementById('cv');
+    loop(video, cv.getContext('2d', { willReadFrequently: true }), cv);
+  } catch (err) {
+    show('bad', '相機無法啟動：' + err.name + '<div class="meta">請確認瀏覽器相機權限，或用下方手動輸入</div>');
+  }
+})();
+</script></body></html>
