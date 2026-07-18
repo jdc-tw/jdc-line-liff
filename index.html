@@ -185,6 +185,15 @@
       <p class="hint">待活動公告後，請重新開啟此頁面填寫。</p>
     </div>
 
+    <!-- 活動已截止：本人回覆唯讀（桌次發布後一併顯示） -->
+    <div id="section-closed" class="card" style="display:none">
+      <h2 id="closed-act-name"></h2>
+      <p id="closed-act-date" class="hint" style="display:none; margin-bottom:6px; color:#555"></p>
+      <p style="margin:8px 0">您的回覆：<b id="closed-attend"></b>　<span id="closed-diet"></span></p>
+      <p id="closed-table-row" style="display:none; margin:8px 0">您的桌次：<b id="closed-table" style="font-size:1.5em"></b></p>
+      <p class="hint">回覆已截止；資料如需異動請洽承辦同仁。</p>
+    </div>
+
     <!-- 新人報到表單 -->
     <div id="section-onboard" class="card" style="display:none">
       <h2>新人報到</h2>
@@ -447,7 +456,7 @@
 
     // 依狀態顯示正確畫面（冪等，可重複套用＝校正）
     function applyState(state) {
-      ['section-bind', 'section-pending', 'section-activity', 'section-no-activity', 'section-onboard'].forEach(hide);
+      ['section-bind', 'section-pending', 'section-activity', 'section-no-activity', 'section-onboard', 'section-closed'].forEach(hide);
       if (getMode() === 'onboard') { show('section-onboard'); ensureFriendThenOnboard(); return; }
       var greet = document.getElementById('greeting');
       if (!state || !state.bound) {
@@ -493,8 +502,31 @@
           show('section-activity');
         } else {
           show('section-no-activity');
+          showClosedIfReplied();
         }
       }
+    }
+
+    // 活動關閉後：帶 ?act= 進來且本人回覆過 → 換成唯讀卡（含已發布桌次）
+    function showClosedIfReplied() {
+      var act = getAct();
+      if (!act || !gUserId) return;
+      jsonp('getMyReply', { userId: gUserId, actId: act }).then(function (r) {
+        if (!r || !r.ok || !r.reply) return;   // 沒回覆過→維持「沒有開放中的活動」
+        document.getElementById('closed-act-name').textContent = r.activity.name || '活動';
+        var d = document.getElementById('closed-act-date');
+        d.textContent = r.activity.eventDate ? '活動日期：' + r.activity.eventDate : '';
+        d.style.display = r.activity.eventDate ? '' : 'none';
+        document.getElementById('closed-attend').textContent = r.reply.attend || '';
+        document.getElementById('closed-diet').textContent =
+          (r.reply.attend === '參加' && r.reply.diet) ? '（' + r.reply.diet + '）' : '';
+        if (r.published && r.table) {
+          document.getElementById('closed-table').textContent = r.table + ' 桌';
+          document.getElementById('closed-table-row').style.display = '';
+        }
+        hide('section-no-activity');
+        show('section-closed');
+      });
     }
 
     // 官方帳號「日本國土開發 台灣分公司」加好友連結
