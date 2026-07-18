@@ -97,6 +97,16 @@
   <div class="sec">活動列表</div>
   <div id="act-list"><div class="empty">載入中…</div></div>
   <div class="card" style="margin-top:16px">
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px">🪑 桌次匯入與發布</div>
+    <div class="fld"><label>活動</label>
+      <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"></select></div>
+    <div class="fld"><label>從 Excel 複製「姓名、桌次」兩欄，直接貼在這裡（一行一人）</label>
+      <textarea id="ti-paste" rows="6" placeholder="王小明&#9;1&#10;李美麗&#9;主桌"></textarea></div>
+    <button class="btn" onclick="tiMatch()">比對名單</button>
+    <div id="ti-result" style="margin-top:10px"></div>
+    <div id="ti-msg" class="msg"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
     <div style="font-weight:700;font-size:16px;margin-bottom:12px">📥 員工名冊下載</div>
     <button class="btn btn-pri" onclick="downloadRoster()">下載員工名冊（單位總表）</button>
     <button class="btn btn-pri" style="margin-top:8px" onclick="downloadRosterFlat()">下載員工名冊（逐人明細）</button>
@@ -109,6 +119,7 @@
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
+<script src="assets/table-import.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
@@ -178,6 +189,73 @@ function loadActs(){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     if(!r.rows.length){box.innerHTML='<div class="empty">還沒有活動</div>';return;}
     box.innerHTML=r.rows.slice().reverse().map(actCard).join('');
+    var sel=document.getElementById('ti-act');
+    sel.innerHTML=r.rows.slice().reverse().map(function(a){
+      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';
+    }).join('');
+  });
+}
+
+// ── 桌次匯入與發布 ────────────────────────────────────────────────────────
+var tiState=null; // {actId, people, autoWrites, unmatched, ambiguous}
+function tiMatch(){
+  var actId=document.getElementById('ti-act').value;
+  var text=document.getElementById('ti-paste').value;
+  if(!actId){setMsg('ti-msg','請先選活動','err');return;}
+  var parsed=parseTablePaste(text);
+  if(!parsed.length){setMsg('ti-msg','貼上內容是空的','err');return;}
+  setMsg('ti-msg','比對中…','');
+  jsonp('listTableBoard',{token:q('t'),actId:actId}).then(function(r){
+    if(!r||!r.ok){setMsg('ti-msg',(r&&r.msg)||'載入失敗','err');return;}
+    var m=matchByName(parsed,r.people);
+    tiState={actId:actId,people:r.people,autoWrites:m.writes,unmatched:m.unmatched,ambiguous:m.ambiguous,published:r.published};
+    var opts='<option value="">— 忽略這筆 —</option>'+r.people.map(function(p){
+      return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'（'+esc(p.unit)+'）</option>';}).join('');
+    var h='<div>對上 <b>'+m.writes.length+'</b> 筆'
+      +(m.unmatched.length?'・<span style="color:#b0694a">查無 '+m.unmatched.length+' 筆</span>':'')
+      +(m.ambiguous.length?'・<span style="color:#b0694a">同名 '+m.ambiguous.length+' 筆</span>':'')+'</div>';
+    m.unmatched.forEach(function(u,i){
+      h+='<div class="fld" style="margin-top:6px"><label>「'+esc(u.name)+'」（桌次 '+esc(u.table)+'）查無此參加者，指定：</label>'
+        +'<select class="ti-fix" data-table="'+esc(u.table)+'">'+opts+'</select></div>';});
+    m.ambiguous.forEach(function(a){
+      var co='<option value="">— 忽略這筆 —</option>'+a.candidates.map(function(p){
+        return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'（'+esc(p.unit)+'）</option>';}).join('');
+      h+='<div class="fld" style="margin-top:6px"><label>「'+esc(a.name)+'」（桌次 '+esc(a.table)+'）有同名多人，選一位：</label>'
+        +'<select class="ti-fix" data-table="'+esc(a.table)+'">'+co+'</select></div>';});
+    h+='<button class="btn btn-pri" style="margin-top:10px" onclick="tiWrite()">寫入桌次</button>'
+      +'<button class="btn" style="margin-top:8px" onclick="tiPublish()">'+(tiState.published?'已發布（再按重新確認）':'發布給同仁看')+'</button>';
+    document.getElementById('ti-result').innerHTML=h;
+    setMsg('ti-msg','','');
+  });
+}
+function tiWrite(){
+  if(!tiState){setMsg('ti-msg','請先比對','err');return;}
+  var writes=tiState.autoWrites.slice();
+  document.querySelectorAll('.ti-fix').forEach(function(sel){
+    if(sel.value)writes.push({userId:sel.value,table:sel.getAttribute('data-table')||''});
+  });
+  var cur={};tiState.people.forEach(function(p){cur[p.userId]=p.table;});
+  var todo=diffWrites(writes,cur);
+  if(!todo.length){setMsg('ti-msg','沒有需要變更的桌次（都和現值相同）','ok');return;}
+  var chunks=[];while(todo.length)chunks.push(todo.splice(0,20));
+  var applied=0;
+  setMsg('ti-msg','寫入中…','');
+  (function next(){
+    var c=chunks.shift();
+    if(!c){setMsg('ti-msg','完成：已寫入 '+applied+' 筆桌次。再按一次「比對名單」可核對結果。','ok');return;}
+    jsonp('setTables',{token:q('t'),actId:tiState.actId,writes:JSON.stringify(c)}).then(function(r){
+      if(!r||!r.ok){setMsg('ti-msg',(r&&r.msg)||'寫入失敗','err');return;}
+      applied+=r.applied;next();
+    });
+  })();
+}
+function tiPublish(){
+  if(!tiState){setMsg('ti-msg','請先比對','err');return;}
+  if(!confirm('發布後，同仁在 LINE 活動頁就看得到自己的桌次。確定發布？'))return;
+  jsonp('publishTables',{token:q('t'),actId:tiState.actId}).then(function(r){
+    if(!r||!r.ok){setMsg('ti-msg',(r&&r.msg)||'發布失敗','err');return;}
+    tiState.published=true;
+    setMsg('ti-msg','已發布。之後再改桌次會即時生效。','ok');
   });
 }
 var LIFF_URL='https://liff.line.me/2010451233-a781rqsm';
