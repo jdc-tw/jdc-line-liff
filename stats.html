@@ -100,31 +100,34 @@
 </div>
 <div id="tab-tables" style="display:none">
   <h1>桌次管理</h1>
-  <div class="fld"><label>活動</label>
-    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadGuests()"></select></div>
+  <div class="fld"><label>活動（歷史活動也可選，供參考前次資料）</label>
+    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadGuests();loadSeatMap()"></select></div>
   <div class="card" style="margin-top:12px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">📤 下載座位排列用檔</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px">❶ 🎩 來賓名單</div>
+    <div id="guest-list"><div class="empty">載入中…</div></div>
+    <button class="btn" style="margin-top:10px" onclick="dlGuestFile()">📥 下載來賓名單（Excel・原格式）</button>
+    <div style="font-size:12.5px;color:#888;margin-top:8px">名單由維護者代灌（把 Excel 傳給維護者）；上方活動切到歷史場次即可下載前次名單參考。</div>
+    <div id="gl-msg" class="msg"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px">❷ 📤 下載座位排列用檔</div>
     <button class="btn btn-pri" onclick="dlSeatingFile()">下載排位用檔（出席同仁依單位＋來賓依負責人）</button>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">上方＝空白座位格；下方＝分類名單，剪下貼到上方排位。排好把檔案傳回給維護者匯入。</div>
+    <div style="font-size:12.5px;color:#888;margin-top:8px">上方＝空白座位格；下方＝分類名單，剪下貼到上方排位。<b>排好把檔案傳回給維護者</b>，由維護者匯入系統。</div>
     <div id="sf-msg" class="msg"></div>
   </div>
   <div class="card" style="margin-top:16px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">🪑 員工桌次（貼上匯入）</div>
-    <div class="fld"><label>從 Excel 複製「姓名、桌次」兩欄，直接貼在這裡（一行一人）</label>
-      <textarea id="ti-paste" rows="6" placeholder="王小明&#9;1&#10;李美麗&#9;主桌"></textarea></div>
-    <button class="btn" onclick="tiMatch()">比對名單</button>
-    <div id="ti-result" style="margin-top:10px"></div>
-    <div id="ti-msg" class="msg"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-weight:700;font-size:16px">❸ 🪑 座位總覽（以桌為單位）</div>
+      <button class="btn" style="width:auto;padding:6px 14px" onclick="seatPublish()" id="seat-pub-btn">發布給同仁看</button>
+    </div>
+    <div id="seat-map"><div class="empty">載入中…</div></div>
+    <div style="font-size:12.5px;color:#888;margin-top:8px">每人可點 🔳 看個人 QR（僅員工）、「移桌」線上改位；<span style="background:#fff3c2;padding:0 6px;border-radius:4px">黃底</span>＝匯入座位表後被變更過的席位。</div>
+    <div id="sm-msg" class="msg"></div>
   </div>
   <div class="card" style="margin-top:16px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">🎩 來賓名單</div>
-    <div id="guest-list"><div class="empty">載入中…</div></div>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">來賓名單由維護者代灌（Excel 傳給維護者）；增減或改桌次＝傳更新後的檔案整批置換。</div>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">🔳 員工 QR 批次下載</div>
-    <button class="btn btn-pri" onclick="dlAllQr()">下載全體在職員工 QR（ZIP・每張標姓名）</button>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">QR＝本活動個人報到碼（含員編簽章、跨活動無效）；不需 LINE 綁定即可產生。</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px">❹ 🔳 員工 QR 批次下載</div>
+    <button class="btn btn-pri" onclick="dlAllQr()">下載本活動確認參加員工的 QR（ZIP・每張標姓名）</button>
+    <div style="font-size:12.5px;color:#888;margin-top:8px">只簽發「本活動回覆＝參加」的在職同仁；之後有人補回覆，重按下載就會包含（同人同活動的碼固定不變）。不需 LINE 綁定。</div>
     <div id="qr-msg" class="msg"></div>
   </div>
   <div class="card" style="margin-top:16px">
@@ -216,69 +219,6 @@ function loadActs(){
   });
 }
 
-// ── 桌次匯入與發布 ────────────────────────────────────────────────────────
-var tiState=null; // {actId, people, autoWrites, unmatched, ambiguous}
-function tiMatch(){
-  var actId=document.getElementById('ti-act').value;
-  var text=document.getElementById('ti-paste').value;
-  if(!actId){setMsg('ti-msg','請先選活動','err');return;}
-  var parsed=parseTablePaste(text);
-  if(!parsed.length){setMsg('ti-msg','貼上內容是空的','err');return;}
-  setMsg('ti-msg','比對中…','');
-  jsonp('listTableBoard',{token:q('t'),actId:actId}).then(function(r){
-    if(!r||!r.ok){setMsg('ti-msg',(r&&r.msg)||'載入失敗','err');return;}
-    var m=matchByName(parsed,r.people);
-    tiState={actId:actId,people:r.people,autoWrites:m.writes,unmatched:m.unmatched,ambiguous:m.ambiguous,published:r.published};
-    var opts='<option value="">— 忽略這筆 —</option>'+r.people.map(function(p){
-      return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'（'+esc(p.unit)+'）</option>';}).join('');
-    var h='<div>對上 <b>'+m.writes.length+'</b> 筆'
-      +(m.unmatched.length?'・<span style="color:#b0694a">查無 '+m.unmatched.length+' 筆</span>':'')
-      +(m.ambiguous.length?'・<span style="color:#b0694a">同名 '+m.ambiguous.length+' 筆</span>':'')+'</div>';
-    m.unmatched.forEach(function(u,i){
-      h+='<div class="fld" style="margin-top:6px"><label>「'+esc(u.name)+'」（桌次 '+esc(u.table)+'）查無此參加者，指定：</label>'
-        +'<select class="ti-fix" data-table="'+esc(u.table)+'">'+opts+'</select></div>';});
-    m.ambiguous.forEach(function(a){
-      var co='<option value="">— 忽略這筆 —</option>'+a.candidates.map(function(p){
-        return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'（'+esc(p.unit)+'）</option>';}).join('');
-      h+='<div class="fld" style="margin-top:6px"><label>「'+esc(a.name)+'」（桌次 '+esc(a.table)+'）有同名多人，選一位：</label>'
-        +'<select class="ti-fix" data-table="'+esc(a.table)+'">'+co+'</select></div>';});
-    h+='<button class="btn btn-pri" style="margin-top:10px" onclick="tiWrite()">寫入桌次</button>'
-      +'<button class="btn" style="margin-top:8px" onclick="tiPublish()">'+(tiState.published?'已發布（再按重新確認）':'發布給同仁看')+'</button>';
-    document.getElementById('ti-result').innerHTML=h;
-    setMsg('ti-msg','','');
-  });
-}
-function tiWrite(){
-  if(!tiState){setMsg('ti-msg','請先比對','err');return;}
-  var writes=tiState.autoWrites.slice();
-  document.querySelectorAll('.ti-fix').forEach(function(sel){
-    if(sel.value)writes.push({userId:sel.value,table:sel.getAttribute('data-table')||''});
-  });
-  var cur={};tiState.people.forEach(function(p){cur[p.userId]=p.table;});
-  var todo=diffWrites(writes,cur);
-  if(!todo.length){setMsg('ti-msg','沒有需要變更的桌次（都和現值相同）','ok');return;}
-  var chunks=[];while(todo.length)chunks.push(todo.splice(0,20));
-  var applied=0;
-  setMsg('ti-msg','寫入中…','');
-  (function next(){
-    var c=chunks.shift();
-    if(!c){setMsg('ti-msg','完成：已寫入 '+applied+' 筆桌次。再按一次「比對名單」可核對結果。','ok');return;}
-    jsonp('setTables',{token:q('t'),actId:tiState.actId,writes:JSON.stringify(c)}).then(function(r){
-      if(!r||!r.ok){setMsg('ti-msg',(r&&r.msg)||'寫入失敗','err');return;}
-      applied+=r.applied;next();
-    });
-  })();
-}
-function tiPublish(){
-  if(!tiState){setMsg('ti-msg','請先比對','err');return;}
-  if(!confirm('發布後，同仁在 LINE 活動頁就看得到自己的桌次。確定發布？'))return;
-  jsonp('publishTables',{token:q('t'),actId:tiState.actId}).then(function(r){
-    if(!r||!r.ok){setMsg('ti-msg',(r&&r.msg)||'發布失敗','err');return;}
-    tiState.published=true;
-    setMsg('ti-msg','已發布。之後再改桌次會即時生效。','ok');
-  });
-}
-
 // ── 桌次管理分頁 ──────────────────────────────────────────────────────────
 function loadTablesTab(){
   jsonp('listActivities',{token:q('t')}).then(function(r){
@@ -287,9 +227,10 @@ function loadTablesTab(){
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
       return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';
     }).join('');
-    loadGuests();
+    loadGuests();loadSeatMap();
   });
 }
+var guestCache=null;
 function loadGuests(){
   var actId=document.getElementById('ti-act').value;
   var box=document.getElementById('guest-list');
@@ -297,18 +238,52 @@ function loadGuests(){
   box.innerHTML='<div class="empty">載入中…</div>';
   jsonp('listGuests',{token:q('t'),actId:actId}).then(function(r){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    guestCache=r.rows;
     if(!r.rows.length){box.innerHTML='<div class="empty">尚未匯入來賓名單</div>';return;}
+    var agg={},order=[];
+    r.rows.forEach(function(g){
+      var k=g.owner+'|'+g.name;
+      if(!agg[k]){agg[k]={owner:g.owner,name:g.name,seats:0,tables:[]};order.push(k);}
+      if(g.seatNo>0){agg[k].seats++;if(g.table&&agg[k].tables.indexOf(g.table)<0)agg[k].tables.push(g.table);}
+    });
     var total=0;
     var h='<table style="width:100%;border-collapse:collapse;font-size:13px">'
       +'<tr style="color:#888;text-align:left"><th style="padding:4px 6px">負責人員</th><th>廠商</th><th>人數</th><th>桌次</th></tr>';
-    r.rows.forEach(function(g){
-      total+=g.count;
-      h+='<tr style="border-top:1px solid #eee"><td style="padding:4px 6px">'+esc(g.owner)+'</td><td>'+esc(g.name)
-        +'</td><td>'+g.count+'</td><td>'+esc(g.table||'—')+'</td></tr>';
+    order.forEach(function(k){
+      var g=agg[k];total+=g.seats;
+      h+='<tr style="border-top:1px solid #eee'+(g.seats?'':';color:#bbb')+'"><td style="padding:4px 6px">'+esc(g.owner)+'</td><td>'+esc(g.name)
+        +'</td><td>'+g.seats+'</td><td>'+esc(g.tables.join('、')||'—')+'</td></tr>';
     });
-    h+='</table><div style="font-size:12.5px;color:#888;margin-top:6px">來賓合計 '+total+' 人（不含人數 0 的廠商席位）</div>';
+    h+='</table><div style="font-size:12.5px;color:#888;margin-top:6px">來賓合計 '+total+' 人（灰字＝本次不出席、留檔備查）</div>';
     box.innerHTML=h;
   });
+}
+
+// 來賓名單下載（原格式重建：一廠商一列＋參加人數；含 0 人廠商）
+function dlGuestFile(){
+  var actId=document.getElementById('ti-act').value;
+  if(!actId){setMsg('gl-msg','請先選活動','err');return;}
+  setMsg('gl-msg','產生中…','');
+  Promise.all([__rdlXlsx(),jsonp('listGuests',{token:q('t'),actId:actId})]).then(function(rs){
+    var r=rs[1];
+    if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'載入失敗','err');return;}
+    if(!r.rows.length){setMsg('gl-msg','此活動沒有來賓資料','err');return;}
+    var agg={},order=[];
+    r.rows.forEach(function(g){
+      var k=g.owner+'|'+g.name;
+      if(!agg[k]){agg[k]={owner:g.owner,name:g.name,seats:0,type:g.type,fullName:g.fullName,contact:g.contact,phone:g.phone,tables:[]};order.push(k);}
+      if(g.seatNo>0){agg[k].seats++;if(g.table&&agg[k].tables.indexOf(g.table)<0)agg[k].tables.push(g.table);}
+    });
+    var aoa=[['負責人員','廠商名稱','參加人數','工程類別','公司全名','聯絡人','聯繫電話','桌次']];
+    order.forEach(function(k){var g=agg[k];
+      aoa.push([g.owner,g.name,g.seats,g.type,g.fullName,g.contact,g.phone,g.tables.join('、')]);});
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    styleWs_(ws,aoa,{headerRow:true,leftAlign:['公司全名','聯繫電話']});
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'來賓名單');
+    XLSX.writeFile(wb,'來賓名單_'+actId+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx');
+    setMsg('gl-msg','已下載 ✅','ok');
+  }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
 }
 
 // 座位排列用檔（上方空白座位格＋下方 出席同仁依單位／來賓依負責人）
@@ -337,17 +312,122 @@ function dlSeatingFile(){
       });
     }
     Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
-    var guestsByOwner=expandGuests(gu.rows);
-    var owners=[];
-    gu.rows.forEach(function(g){var o=(g.owner||'').trim()||'其他';if(g.count>0&&owners.indexOf(o)<0&&o!=='其他')owners.push(o);});
+    var guestsByOwner={},owners=[],guestSeats=0;
+    gu.rows.forEach(function(g){
+      if(g.seatNo<=0)return;
+      var o=(g.owner||'').trim()||'其他';
+      (guestsByOwner[o]=guestsByOwner[o]||[]).push(g.name);guestSeats++;
+      if(o!=='其他'&&owners.indexOf(o)<0)owners.push(o);
+    });
     var aoa=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner);
     var ws=XLSX.utils.aoa_to_sheet(aoa);
     styleWs_(ws,aoa,{headerRow:true});
     var wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'座位表');
     XLSX.writeFile(wb,'座位排列用檔_'+tb.actName+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx');
-    setMsg('sf-msg','已下載 ✅（出席同仁 '+tb.people.length+' 人＋來賓席位 '+Object.keys(guestsByOwner).reduce(function(n,k){return n+guestsByOwner[k].length;},0)+' 格）','ok');
+    setMsg('sf-msg','已下載 ✅（出席同仁 '+tb.people.length+' 人＋來賓席位 '+guestSeats+' 格）','ok');
   }).catch(function(e){setMsg('sf-msg',String(e&&e.message||e),'err');});
+}
+
+// ── 座位總覽（以桌為單位·QR 連結·線上改位·變更上色） ─────────────────────
+var seatState=null;
+function loadSeatMap(){
+  var actId=document.getElementById('ti-act').value;
+  var box=document.getElementById('seat-map');
+  if(!actId){box.innerHTML='<div class="empty">請先選活動</div>';return;}
+  box.innerHTML='<div class="empty">載入中…</div>';
+  Promise.all([
+    jsonp('listTableBoard',{token:q('t'),actId:actId}),
+    jsonp('listGuests',{token:q('t'),actId:actId})
+  ]).then(function(rs){
+    var tb=rs[0],gu=rs[1];
+    if(!tb||!tb.ok){box.innerHTML='<div class="empty">'+esc((tb&&tb.msg)||'載入失敗')+'</div>';return;}
+    var entries=[];
+    tb.people.forEach(function(p){entries.push({kind:'emp',id:p.userId,name:p.name,sub:p.unit,table:p.table,changed:p.changedAt>0});});
+    if(gu&&gu.ok)gu.rows.forEach(function(g){
+      if(g.seatNo<=0)return;
+      entries.push({kind:'guest',id:g._row,name:g.name,sub:g.owner+'・來賓',table:g.table,changed:g.changedAt>0});
+    });
+    seatState={actId:actId,entries:entries,published:tb.published};
+    document.getElementById('seat-pub-btn').textContent=tb.published?'已發布（改動即時生效）':'發布給同仁看';
+    renderSeatMap();
+  });
+}
+function seatTableKeys(){
+  var keys=[];seatState.entries.forEach(function(e){var t=e.table||'';if(keys.indexOf(t)<0)keys.push(t);});
+  keys.sort(function(a,b){
+    if(a==='')return 1;if(b==='')return -1;
+    if(a==='主桌')return -1;if(b==='主桌')return 1;
+    var na=parseFloat(a),nb=parseFloat(b);
+    if(!isNaN(na)&&!isNaN(nb))return na-nb;
+    if(!isNaN(na))return -1;if(!isNaN(nb))return 1;
+    return a<b?-1:1;
+  });
+  return keys;
+}
+function renderSeatMap(){
+  var h='';
+  seatTableKeys().forEach(function(t){
+    var members=seatState.entries.filter(function(e){return (e.table||'')===t;});
+    h+='<div style="margin-bottom:10px"><div style="font-weight:700;font-size:14px;margin:8px 0 4px">'
+      +(t?esc(t)+' 桌':'未排桌')+'　<span style="color:#999;font-weight:400;font-size:12px">'+members.length+' 人</span></div>';
+    members.forEach(function(e){
+      h+='<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid #ddd;border-radius:8px;padding:2px 6px;margin:2px;font-size:13px'
+        +(e.changed?';background:#fff3c2;border-color:#e5c65a':'')+'">'
+        +esc(e.name)+'<span style="font-size:10.5px;color:#999">'+esc(e.sub)+'</span>'
+        +(e.kind==='emp'?'<a href="#" style="text-decoration:none" onclick="showQr(\''+esc(e.name)+'\');return false">🔳</a>':'')
+        +'<a href="#" style="text-decoration:none;font-size:11px" onclick="moveSeat(\''+e.kind+'\',\''+esc(String(e.id))+'\',\''+esc(e.name)+'\');return false">移桌</a>'
+        +'</span>';
+    });
+    h+='</div>';
+  });
+  document.getElementById('seat-map').innerHTML=h||'<div class="empty">沒有出席者</div>';
+}
+function moveSeat(kind,id,name){
+  var to=prompt('把「'+name+'」移到哪一桌？（輸入桌號或「主桌」；清空＝未排桌）');
+  if(to===null)return;
+  to=to.trim();
+  setMsg('sm-msg','寫入中…','');
+  var p=(kind==='emp')
+    ?jsonp('setTables',{token:q('t'),actId:seatState.actId,writes:JSON.stringify([{userId:id,table:to}]),mark:'1'})
+    :jsonp('setGuestTable',{token:q('t'),actId:seatState.actId,row:id,table:to});
+  p.then(function(r){
+    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
+    setMsg('sm-msg','已移動 ✅（黃底＝已變更）','ok');
+    loadSeatMap();loadGuests();
+  });
+}
+function seatPublish(){
+  if(!seatState){return;}
+  if(!confirm(seatState.published?'桌次已是發布狀態。再按一次確認？':'發布後，同仁在 LINE 活動頁就看得到自己的桌次。確定發布？'))return;
+  jsonp('publishTables',{token:q('t'),actId:seatState.actId}).then(function(r){
+    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'發布失敗','err');return;}
+    seatState.published=true;
+    document.getElementById('seat-pub-btn').textContent='已發布（改動即時生效）';
+    setMsg('sm-msg','已發布。之後再改桌次會即時生效。','ok');
+  });
+}
+
+// 個人 QR 彈窗（員工·用批次簽發結果快取）
+var qrCodeCache={};
+function showQr(name){
+  var actId=document.getElementById('ti-act').value;
+  var ready=qrCodeCache[actId]
+    ?Promise.resolve(qrCodeCache[actId])
+    :Promise.all([__tmLib('assets/qrcode-gen.js','qrcode'),jsonp('getCheckinCodes',{token:q('t'),actId:actId})])
+      .then(function(rs){if(!rs[1]||!rs[1].ok)throw new Error((rs[1]&&rs[1].msg)||'簽發失敗');qrCodeCache[actId]=rs[1].rows;return rs[1].rows;});
+  ready.then(function(rows){
+    var norm=function(s){return String(s||'').replace(/[\s　]+/g,'');};
+    var p=rows.find(function(r){return norm(r.name)===norm(name);});
+    if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
+    var ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;display:flex;align-items:center;justify-content:center';
+    ov.onclick=function(){ov.remove();};
+    var cv=__qrCanvas(p.code,p.name,p.unit+'・'+p.empNo);
+    cv.style.cssText='max-width:80vw;max-height:80vh;border-radius:12px';
+    ov.appendChild(cv);
+    document.body.appendChild(ov);
+  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
 
 // QR 批次下載（qrcode-gen＋jszip 用到才載）
@@ -377,7 +457,7 @@ function __qrCanvas(code,label1,label2){
 function dlAllQr(){
   var actId=document.getElementById('ti-act').value;
   if(!actId){setMsg('qr-msg','請先選活動','err');return;}
-  setMsg('qr-msg','產生中…（約 150 張）','');
+  setMsg('qr-msg','產生中…','');
   Promise.all([
     __tmLib('assets/qrcode-gen.js','qrcode'),
     __tmLib('assets/jszip.min.js','JSZip'),
@@ -385,6 +465,8 @@ function dlAllQr(){
   ]).then(function(rs){
     var r=rs[2];
     if(!r||!r.ok){setMsg('qr-msg',(r&&r.msg)||'簽發失敗','err');return;}
+    if(!r.rows.length){setMsg('qr-msg','此活動還沒有「參加」的回覆，無 QR 可產。','err');return;}
+    qrCodeCache[actId]=r.rows;
     var zip=new JSZip();
     var chain=Promise.resolve();
     r.rows.forEach(function(p){
@@ -401,7 +483,7 @@ function dlAllQr(){
       a.href=URL.createObjectURL(blob);
       a.download='員工QR_'+actId+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
       a.click();URL.revokeObjectURL(a.href);
-      setMsg('qr-msg','已下載 ✅（'+r.rows.length+' 張，每張下方標姓名／單位／員編）','ok');
+      setMsg('qr-msg','已下載 ✅（'+r.rows.length+' 張＝本活動確認參加者，每張下方標姓名／單位／員編）','ok');
     });
   }).catch(function(e){setMsg('qr-msg',String(e&&e.message||e),'err');});
 }
