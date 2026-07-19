@@ -434,8 +434,9 @@ function upGuests(input){
       var g=aoa[r];
       var raw=String(g[ix('廠商名稱')]||'').replace(/[\t\s　]+/g,' ').trim();
       if(!raw)continue;
-      var note='',m=raw.match(/^(.*?)[（(]\s*不收費\s*[)）]$/);
-      if(m){raw=m[1].trim();note='不收費';}
+      var note=(ix('註記')>=0?String(g[ix('註記')]||'').trim():'');
+      var m=raw.match(/^(.*?)[（(]\s*(不收費|[^)）]{1,6})\s*[)）]$/);
+      if(m){raw=m[1].trim();note=note||m[2].trim();}
       var base={owner:String(g[ix('負責人員')]||'').trim(),name:raw,
         type:String(g[ix('工程類別')]||'').trim(),fullName:String(g[ix('公司全名')]||'').replace(/[\t\s　]+/g,' ').trim(),
         contact:String(g[ix('聯絡人')]||'').trim(),phone:String(g[ix('聯繫電話')]||'').trim(),note:note,table:''};
