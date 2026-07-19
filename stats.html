@@ -209,6 +209,18 @@ function jsonp(action,params,timeoutMs){return new Promise(function(res){
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
+/** 依「URL 編碼後長度」自適應切包（中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度）。 */
+function chunkByLen(rows,maxEnc){
+  maxEnc=maxEnc||3000;
+  var out=[],cur=[];
+  rows.forEach(function(r){
+    var next=cur.concat([r]);
+    if(cur.length&&encodeURIComponent(JSON.stringify(next)).length>maxEnc){out.push(cur);cur=[r];}
+    else cur=next;
+  });
+  if(cur.length)out.push(cur);
+  return out;
+}
 /** 寫入類呼叫：45s 逾時＋失敗自動重試（預設再試 2 次）。 */
 function jsonpW(action,params,tries){
   tries=(tries==null?2:tries);
@@ -457,8 +469,7 @@ function upGuests(input){
     setMsg('gl-msg','寫入中…（'+rows.length+' 列）','');
     jsonpW('clearGuests',{token:q('t'),actId:actId()}).then(function(cr){
       if(!cr||!cr.ok){setMsg('gl-msg',(cr&&cr.msg)||'清除舊資料失敗','err');return;}
-      var chunks=[];var tmp=rows.slice();
-      while(tmp.length)chunks.push(tmp.splice(0,20));
+      var chunks=chunkByLen(rows,3000);
       var total=chunks.length,done=0,added=0;
       (function next(){
         var c=chunks.shift();
@@ -508,15 +519,13 @@ function upSeating(input){
       +(unknown.length?('\n查無 '+unknown.length+' 筆將略過：'+unknown.slice(0,5).map(function(u){return u.name;}).join('、')):'')))
       { setMsg('sm-msg','已取消','');return; }
     document.getElementById('sm-msg').innerHTML=msg+'　寫入中…';
-    var chunks=[];var tmp=eWrites.slice();
-    while(tmp.length)chunks.push(tmp.splice(0,20));
+    var chunks=chunkByLen(eWrites,3000);
     var applied=0;
     (function next(){
       var c=chunks.shift();
       if(!c){
         // 來賓批次（20 筆一包，避免逐筆呼叫拖成數分鐘）
-        var gchunks=[],gtmp=gWrites.slice();
-        while(gtmp.length)gchunks.push(gtmp.splice(0,20));
+        var gchunks=chunkByLen(gWrites,3000);
         (function nextG(){
           var gc=gchunks.shift();
           if(!gc){
