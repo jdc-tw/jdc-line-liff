@@ -626,7 +626,7 @@ function __logo(){
     });
   });
 }
-/** QR 畫布：中央 logo（原比例）＋活動名（與 logo 同寬）＋姓名（大一級），皆灰階。 */
+/** QR 畫布：中央膠囊＝logo（原比例）＋活動名（與 logo 同寬）＋姓名（大一級），文字灰階。 */
 function __qrCanvas(code,name,actName,logo){
   var qr=qrcode(0,'H');qr.addData(code);qr.make();
   var n=qr.getModuleCount(),cell=8,quiet=24,size=n*cell+quiet*2;
@@ -635,33 +635,43 @@ function __qrCanvas(code,name,actName,logo){
   ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size);
   ctx.fillStyle='#000';
   for(var r=0;r<n;r++)for(var c=0;c<n;c++)if(qr.isDark(r,c))ctx.fillRect(quiet+c*cell,quiet+r*cell,cell,cell);
-  var LW=Math.round(size*0.165);                 // logo 寬
-  var lh=logo?Math.round(LW*(logo.height/logo.width)):LW;
-  var fs1=14,fs2=16;
-  ctx.font='700 '+fs1+'px -apple-system,"PingFang TC",sans-serif';
-  var s1=LW/Math.max(ctx.measureText(actName).width,1);
-  ctx.font='700 '+fs2+'px -apple-system,"PingFang TC",sans-serif';
-  var s2=(LW*1.18)/Math.max(ctx.measureText(name).width,1);
-  var h1=fs1*s1,h2=fs2*s2,pad=Math.round(size*0.012),gap=2;
-  var capW=Math.max(LW,fs2*s2*name.length? LW*1.18:LW)+pad*2;
-  var capH=lh+gap+h1+gap+h2+pad*2;
-  var cx=size/2,cy=size/2;
+
+  var LW=Math.round(size*0.165);                       // logo 寬（原比例縮放）
+  var lh=logo?Math.round(LW*(logo.height/logo.width)):Math.round(LW*1.03);
+  var FONT=function(px){return '700 '+px+'px -apple-system,"PingFang TC","Noto Sans TC",sans-serif';};
+  // 真實墨水寬度（粗體中文的 advance width 會低估）
+  var inkW=function(txt,px){
+    ctx.font=FONT(px);
+    var m=ctx.measureText(txt);
+    var l=m.actualBoundingBoxLeft,r=m.actualBoundingBoxRight;
+    return (isFinite(l)&&isFinite(r))?(l+r):m.width;
+  };
+  var BASE=20;
+  var sAct=LW/Math.max(inkW(actName,BASE),1);          // 活動名寬＝logo 寬
+  var sNm=(LW*1.18)/Math.max(inkW(name,BASE),1);       // 姓名比活動名大一級
+  var hAct=BASE*sAct, hNm=BASE*sNm;
+  var wAct=LW, wNm=LW*1.18;
+  var pad=Math.round(size*0.03), gap=Math.round(size*0.008);
+  var capW=Math.ceil(Math.max(LW,wAct,wNm))+pad*2;
+  var capH=Math.ceil(lh+gap+hAct+gap+hNm)+pad*2;
+  var cx=size/2, cy=size/2, rx=cx-capW/2, ry=cy-capH/2, rr=Math.round(size*0.02);
   ctx.fillStyle='#fff';
   ctx.beginPath();
-  var rx=cx-capW/2,ry=cy-capH/2,rr=6;
-  ctx.moveTo(rx+rr,ry);ctx.arcTo(rx+capW,ry,rx+capW,ry+capH,rr);
-  ctx.arcTo(rx+capW,ry+capH,rx,ry+capH,rr);ctx.arcTo(rx,ry+capH,rx,ry,rr);
-  ctx.arcTo(rx,ry,rx+capW,ry,rr);ctx.closePath();ctx.fill();
+  ctx.moveTo(rx+rr,ry);
+  ctx.arcTo(rx+capW,ry,rx+capW,ry+capH,rr);
+  ctx.arcTo(rx+capW,ry+capH,rx,ry+capH,rr);
+  ctx.arcTo(rx,ry+capH,rx,ry,rr);
+  ctx.arcTo(rx,ry,rx+capW,ry,rr);
+  ctx.closePath();ctx.fill();
+
   var y=ry+pad;
   if(logo){ctx.drawImage(logo,cx-LW/2,y,LW,lh);y+=lh+gap;}
   ctx.fillStyle='#767676';ctx.textAlign='center';ctx.textBaseline='top';
-  ctx.save();ctx.translate(cx,y);ctx.scale(s1,s1);
-  ctx.font='700 '+fs1+'px -apple-system,"PingFang TC",sans-serif';
-  ctx.fillText(actName,0,0);ctx.restore();
-  y+=h1+gap;
-  ctx.save();ctx.translate(cx,y);ctx.scale(s2,s2);
-  ctx.font='700 '+fs2+'px -apple-system,"PingFang TC",sans-serif';
-  ctx.fillText(name,0,0);ctx.restore();
+  [[actName,sAct,hAct],[name,sNm,hNm]].forEach(function(t,i){
+    ctx.save();ctx.translate(cx,y);ctx.scale(t[1],t[1]);
+    ctx.font=FONT(BASE);ctx.fillText(t[0],0,0);ctx.restore();
+    y+=t[2]+(i===0?gap:0);
+  });
   return cv;
 }
 var qrCache={};
