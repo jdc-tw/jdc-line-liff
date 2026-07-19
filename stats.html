@@ -62,6 +62,42 @@
   .msg { font-size: 14px; margin-top: 8px; min-height: 1em; }
   .msg.ok { color: #1a7d44; } .msg.err { color: #b71c1c; }
   .rep { border-top: 1px solid #f0f0f0; margin-top: 10px; padding-top: 8px; }
+  /* 桌次管理 */
+  .btnrow { display: flex; gap: 8px; margin-top: 10px; }
+  .btnrow .btn { flex: 1; padding: 10px 4px; font-size: 14px; }
+  .btn-pri2 { background: #1a5c3a; color: #fff; }
+  .btn-up { background: #fff; color: #1a5c3a; border: 2px solid #1a5c3a; }
+  .btn-amber { background: #b26a00; color: #fff; }
+  .btn-red { background: #c62828; color: #fff; }
+  .btn-grey { background: #e8e8e8; color: #777; }
+  .pills { display: flex; gap: 6px; margin: 14px 0 10px; }
+  .pill { flex: 1; text-align: center; font-size: 13px; font-weight: 600; padding: 7px 0; border-radius: 8px;
+    background: #f1f1f1; color: #666; border: 1px solid transparent; cursor: pointer; }
+  .pill.on { background: #e6f0ea; color: #1a5c3a; border-color: #9dbfab; }
+  .scope { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tile { border: 1px solid #e3e3e3; border-radius: 10px; padding: 8px 4px; text-align: center;
+    background: #fafafa; cursor: pointer; }
+  .tile b { display: block; font-size: 14px; line-height: 1.3; }
+  .tile .c { font-size: 11px; color: #888; }
+  .tile.sel { background: #e6f0ea; border: 2px solid #1a5c3a; }
+  .tile.dirty { background: #fff3c2; border-color: #e5c65a; }
+  .tile.empty0 { color: #bbb; background: #fff; }
+  .tile.unit b { font-size: 12.5px; }
+  .detail { border: 2px solid #1a5c3a; border-radius: 12px; margin-top: 10px; padding: 10px 14px; background: #fff; }
+  .dhead { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .prow { display: flex; align-items: center; gap: 7px; padding: 6px 2px; border-bottom: 1px solid #f2f2f2; font-size: 14px; }
+  .prow:last-child { border-bottom: none; }
+  .prow .nm { font-weight: 600; min-width: 58px; }
+  .prow .ti { font-size: 11px; color: #888; flex: 1; }
+  .prow .gname { color: #c00000; font-weight: 600; min-width: 58px; }
+  .prow .gtag { font-size: 10.5px; background: #fdecea; color: #b71c1c; border-radius: 8px; padding: 0 6px; }
+  .prow .chg { font-size: 10.5px; background: #e5c65a; color: #5d4a00; border-radius: 8px; padding: 0 6px; }
+  .prow.chgrow { background: #fff3c2; border-radius: 8px; }
+  .prow .tno { font-size: 11px; background: #e6f0ea; color: #1a5c3a; border-radius: 8px; padding: 0 7px; font-weight: 700; }
+  .mini { font-size: 11px; color: #1a5c3a; border: 1px solid #cfe3d6; border-radius: 6px; padding: 1px 6px;
+    background: #fff; cursor: pointer; }
+  .divider { font-size: 11px; color: #bbb; padding: 4px 2px 2px; letter-spacing: .1em; }
   @media (min-width: 768px) {
     body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
     h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
@@ -100,40 +136,45 @@
 </div>
 <div id="tab-tables" style="display:none">
   <h1>桌次管理</h1>
-  <div class="fld"><label>活動（歷史活動也可選，供參考前次資料）</label>
-    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadGuests();loadSeatMap()"></select></div>
-  <div class="card" style="margin-top:12px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">❶ 🎩 來賓名單</div>
-    <div id="guest-list"><div class="empty">載入中…</div></div>
-    <button class="btn" style="margin-top:10px" onclick="dlGuestFile()">📥 下載來賓名單（Excel・原格式）</button>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">名單由維護者代灌（把 Excel 傳給維護者）；上方活動切到歷史場次即可下載前次名單參考。</div>
+  <div class="fld"><label>活動（切歷史場次可參考前次資料）</label>
+    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadSeating()"></select></div>
+
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🎩 來賓名單 <span id="g-sum" style="color:#888;font-weight:400;font-size:14px"></span></div>
+    <div class="btnrow"><button class="btn btn-up" onclick="document.getElementById('g-file').click()">⬆ 上傳</button>
+      <button class="btn btn-pri2" onclick="dlGuestFile()">⬇ 下載</button></div>
+    <input type="file" id="g-file" accept=".xlsx,.xls" style="display:none" onchange="upGuests(this)">
     <div id="gl-msg" class="msg"></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">❷ 📤 下載座位排列用檔</div>
-    <button class="btn btn-pri" onclick="dlSeatingFile()">下載排位用檔（出席同仁依單位＋來賓依負責人）</button>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">上方＝空白座位格；下方＝分類名單，剪下貼到上方排位。<b>排好把檔案傳回給維護者</b>，由維護者匯入系統。</div>
-    <div id="sf-msg" class="msg"></div>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-weight:700;font-size:16px">❸ 🪑 座位總覽（以桌為單位）</div>
-      <button class="btn" style="width:auto;padding:6px 14px" onclick="seatPublish()" id="seat-pub-btn">發布給同仁看</button>
-    </div>
-    <div id="seat-map"><div class="empty">載入中…</div></div>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">每人可點 🔳 看個人 QR（僅員工）、「移桌」線上改位；<span style="background:#fff3c2;padding:0 6px;border-radius:4px">黃底</span>＝匯入座位表後被變更過的席位。</div>
+
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🪑 座位表</div>
+    <div class="btnrow"><button class="btn btn-pri2" onclick="dlSeatingFile()">⬇ 排位用檔</button>
+      <button class="btn btn-up" onclick="document.getElementById('s-file').click()">⬆ 排位結果</button></div>
+    <input type="file" id="s-file" accept=".xlsx,.xls" style="display:none" onchange="upSeating(this)">
+    <div class="pills"><button class="pill on" id="pv-table" onclick="setSeatView('table')">依桌次</button>
+      <button class="pill" id="pv-unit" onclick="setSeatView('unit')">依單位</button></div>
+    <div id="scope-row" class="scope"><span style="font-size:13px;color:#666">顯示</span>
+      <select id="seat-scope" onchange="renderBoard()" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px">
+        <option value="seated">已排桌</option><option value="unseated">未排桌</option></select></div>
+    <div id="seat-board"><div class="empty">載入中…</div></div>
+    <div id="seat-detail"></div>
+    <div class="btnrow"><button class="btn btn-pri2" onclick="dlFormal()">⬇ 正式座位表</button>
+      <button class="btn" id="pub-btn" onclick="seatPublish()">發佈桌次</button></div>
     <div id="sm-msg" class="msg"></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">❹ 🔳 員工 QR 批次下載</div>
-    <button class="btn btn-pri" onclick="dlAllQr()">下載本活動確認參加員工的 QR（ZIP・每張標姓名）</button>
-    <div style="font-size:12.5px;color:#888;margin-top:8px">只簽發「本活動回覆＝參加」的在職同仁；之後有人補回覆，重按下載就會包含（同人同活動的碼固定不變）。不需 LINE 綁定。</div>
+
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🔳 員工 QR</div>
+    <div class="btnrow"><button class="btn btn-pri2" onclick="dlAllQr()">⬇ 批次下載（確認參加者）</button></div>
+    <div style="font-size:12px;color:#888;margin-top:6px">ZIP・檔名 單位_姓名.png；單獨一張＝座位表各列的「⬇QR」。</div>
     <div id="qr-msg" class="msg"></div>
   </div>
-  <div class="card" style="margin-top:16px">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">📥 員工名冊下載</div>
-    <button class="btn btn-pri" onclick="downloadRoster()">下載員工名冊（單位總表）</button>
-    <button class="btn btn-pri" style="margin-top:8px" onclick="downloadRosterFlat()">下載員工名冊（逐人明細）</button>
+
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">📥 員工名冊</div>
+    <div class="btnrow"><button class="btn btn-pri2" onclick="downloadRoster()">⬇ 單位總表</button>
+      <button class="btn btn-pri2" onclick="downloadRosterFlat()">⬇ 逐人明細</button></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;color:#555;font-size:14px">
       <input type="checkbox" id="s-dl-leavers" style="width:auto;margin:0">列出離職同仁（僅逐人明細適用）
     </label>
@@ -143,7 +184,6 @@
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
-<script src="assets/table-import.js"></script>
 <script src="assets/seating.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -219,218 +259,354 @@ function loadActs(){
   });
 }
 
-// ── 桌次管理分頁 ──────────────────────────────────────────────────────────
+// ── 桌次管理分頁 ────────────────────────────────────────────────────────
+var SB = null;          // getSeatingBoard 結果
+var seatView = 'table'; // table | unit
+var seatSel = null;     // 選中的桌/單位
+
 function loadTablesTab(){
   jsonp('listActivities',{token:q('t')}).then(function(r){
-    if(!r||!r.ok){document.getElementById('guest-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     var sel=document.getElementById('ti-act');
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';
-    }).join('');
-    loadGuests();loadSeatMap();
+      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';}).join('');
+    loadSeating();
   });
 }
-var guestCache=null;
-function loadGuests(){
-  var actId=document.getElementById('ti-act').value;
-  var box=document.getElementById('guest-list');
-  if(!actId){box.innerHTML='<div class="empty">請先選活動</div>';return;}
-  box.innerHTML='<div class="empty">載入中…</div>';
-  jsonp('listGuests',{token:q('t'),actId:actId}).then(function(r){
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    guestCache=r.rows;
-    if(!r.rows.length){box.innerHTML='<div class="empty">尚未匯入來賓名單</div>';return;}
-    var agg={},order=[];
-    r.rows.forEach(function(g){
-      var k=g.owner+'|'+g.name;
-      if(!agg[k]){agg[k]={owner:g.owner,name:g.name,seats:0,tables:[]};order.push(k);}
-      if(g.seatNo>0){agg[k].seats++;if(g.table&&agg[k].tables.indexOf(g.table)<0)agg[k].tables.push(g.table);}
+function actId(){return document.getElementById('ti-act').value;}
+
+function loadSeating(){
+  var id=actId();
+  if(!id)return;
+  document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
+  document.getElementById('seat-detail').innerHTML='';
+  jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r){
+    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    SB=r; seatSel=null;
+    document.getElementById('g-sum').textContent='共 '+r.guestVendors+' 家・'+r.guestSeats+' 人';
+    var b=document.getElementById('pub-btn');
+    if(r.pubState==='none'){b.className='btn btn-amber';b.textContent='發佈桌次';}
+    else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
+    else {b.className='btn btn-red';b.textContent='重新發佈';}
+    renderBoard();
+  });
+}
+function setSeatView(v){
+  seatView=v; seatSel=null;
+  document.getElementById('pv-table').className='pill'+(v==='table'?' on':'');
+  document.getElementById('pv-unit').className='pill'+(v==='unit'?' on':'');
+  document.getElementById('scope-row').style.display=(v==='table')?'':'none';
+  renderBoard();
+}
+function tableKeys_(seats){
+  var ks=[];seats.forEach(function(s){var t=String(s.table||'');if(t&&ks.indexOf(t)<0)ks.push(t);});
+  ks.sort(function(a,b){var na=parseFloat(a),nb=parseFloat(b);
+    if(!isNaN(na)&&!isNaN(nb))return na-nb;if(!isNaN(na))return -1;if(!isNaN(nb))return 1;return a<b?-1:1;});
+  return ks;
+}
+function renderBoard(){
+  if(!SB)return;
+  var box=document.getElementById('seat-board'),h='';
+  if(seatView==='table'){
+    var scope=document.getElementById('seat-scope').value;
+    if(scope==='unseated'){
+      var un=SB.seats.filter(function(s){return !String(s.table||'');});
+      box.innerHTML='';
+      renderDetail('未排桌（'+un.length+' 人）',un,true);
+      return;
+    }
+    var keys=tableKeys_(SB.seats);
+    if(!keys.length){box.innerHTML='<div class="empty">尚未排桌——先下載排位用檔，排好後上傳</div>';
+      document.getElementById('seat-detail').innerHTML='';return;}
+    h='<div class="board">'+keys.map(function(t){
+      var m=SB.seats.filter(function(s){return String(s.table||'')===t;});
+      var dirty=m.some(function(s){return s.changed;});
+      return '<div class="tile'+(seatSel===t?' sel':'')+(dirty?' dirty':'')+'" onclick="pickTile(\''+esc(t)+'\')">'
+        +'<b>'+esc(t)+'桌</b><span class="c">'+m.length+'人'+(dirty?'・有變更':'')+'</span></div>';
+    }).join('')+'</div>';
+  }else{
+    var byU={},uks=[];
+    SB.seats.forEach(function(s){
+      var k=(s.kind==='guest')?'🎩來賓':(s.unit||'（未填單位）');
+      if(!byU[k]){byU[k]=[];uks.push(k);}byU[k].push(s);
     });
-    var total=0;
-    var h='<table style="width:100%;border-collapse:collapse;font-size:13px">'
-      +'<tr style="color:#888;text-align:left"><th style="padding:4px 6px">負責人員</th><th>廠商</th><th>人數</th><th>桌次</th></tr>';
-    order.forEach(function(k){
-      var g=agg[k];total+=g.seats;
-      h+='<tr style="border-top:1px solid #eee'+(g.seats?'':';color:#bbb')+'"><td style="padding:4px 6px">'+esc(g.owner)+'</td><td>'+esc(g.name)
-        +'</td><td>'+g.seats+'</td><td>'+esc(g.tables.join('、')||'—')+'</td></tr>';
-    });
-    h+='</table><div style="font-size:12.5px;color:#888;margin-top:6px">來賓合計 '+total+' 人（灰字＝本次不出席、留檔備查）</div>';
-    box.innerHTML=h;
+    uks.sort(function(a,b){if(a==='🎩來賓')return 1;if(b==='🎩來賓')return -1;return byU[b].length-byU[a].length;});
+    h='<div class="board">'+uks.map(function(u){
+      var dirty=byU[u].some(function(s){return s.changed;});
+      return '<div class="tile unit'+(seatSel===u?' sel':'')+(dirty?' dirty':'')+'" onclick="pickTile(\''+esc(u)+'\')">'
+        +'<b>'+esc(u)+'</b><span class="c">'+byU[u].length+'人'+(dirty?'・有變更':'')+'</span></div>';
+    }).join('')+'</div>';
+  }
+  box.innerHTML=h;
+  if(seatSel)pickTile(seatSel,true);else document.getElementById('seat-detail').innerHTML='';
+}
+function pickTile(key,keep){
+  if(!keep&&seatSel===key){seatSel=null;renderBoard();return;}
+  seatSel=key;
+  if(!keep)renderBoard();
+  var list,title;
+  if(seatView==='table'){
+    list=SB.seats.filter(function(s){return String(s.table||'')===key;});
+    title=key+' 桌・'+list.length+' 人';
+  }else{
+    list=SB.seats.filter(function(s){
+      var k=(s.kind==='guest')?'🎩來賓':(s.unit||'（未填單位）');return k===key;});
+    title=key+'・'+list.length+' 人';
+  }
+  renderDetail(title,list,seatView==='unit');
+}
+function renderDetail(title,list,showTableTag){
+  var sorted=sortSeats(list,SB.ranks||{});
+  var h='<div class="detail"><div class="dhead">'+esc(title)+'</div>';
+  var lastKind='';
+  sorted.forEach(function(s){
+    if(s.kind==='guest'&&lastKind!=='guest'&&lastKind!=='')h+='<div class="divider">── 來賓 ──</div>';
+    lastKind=s.kind;
+    h+='<div class="prow'+(s.changed?' chgrow':'')+'">';
+    if(s.kind==='guest'){
+      h+='<span class="gname">'+esc(s.name)+'</span><span class="ti">'+esc(s.note||'')+'</span>';
+      if(s.changed)h+='<span class="chg">已變更</span>';
+      if(showTableTag&&s.table)h+='<span class="tno">'+esc(s.table)+' 桌</span>';
+      h+='<span class="gtag">來賓</span>';
+    }else{
+      h+='<span class="nm">'+esc(s.name)+'</span><span class="ti">'+esc(s.title||'')+'</span>';
+      if(s.changed)h+='<span class="chg">已變更</span>';
+      if(showTableTag&&s.table)h+='<span class="tno">'+esc(s.table)+' 桌</span>';
+      h+='<span class="mini" onclick="showQr(\''+esc(s.name)+'\')">🔳</span>'
+        +'<span class="mini" onclick="dlOneQr(\''+esc(s.name)+'\')">⬇QR</span>';
+    }
+    h+='<span class="mini" onclick="moveSeat(\''+s.kind+'\',\''+esc(String(s.id))+'\',\''+esc(s.name)+'\')">移桌</span></div>';
+  });
+  document.getElementById('seat-detail').innerHTML=h+'</div>';
+}
+function moveSeat(kind,id,name){
+  var to=prompt('把「'+name+'」移到哪一桌？（輸入桌號；清空＝未排桌）');
+  if(to===null)return;
+  to=to.trim();
+  setMsg('sm-msg','寫入中…','');
+  var p=(kind==='emp')
+    ?jsonp('setTables',{token:q('t'),actId:actId(),writes:JSON.stringify([{userId:id,table:to}]),mark:'1'})
+    :jsonp('setGuestTable',{token:q('t'),actId:actId(),row:id,table:to});
+  p.then(function(r){
+    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
+    setMsg('sm-msg','已移動 ✅','ok');loadSeating();
+  });
+}
+function seatPublish(){
+  if(!SB)return;
+  var st=SB.pubState;
+  if(st==='clean'){setMsg('sm-msg','目前已是發佈狀態，沒有新的調整。','ok');return;}
+  if(!confirm(st==='dirty'?'桌次有調整，要重新發佈給同仁看嗎？':'發佈後同仁在 LINE 活動頁就看得到自己的桌次。確定發佈？'))return;
+  jsonp('publishTables',{token:q('t'),actId:actId()}).then(function(r){
+    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'發佈失敗','err');return;}
+    setMsg('sm-msg','已發佈 ✅','ok');loadSeating();
   });
 }
 
-// 來賓名單下載（原格式重建：一廠商一列＋參加人數；含 0 人廠商）
+// ── 檔案上傳（來賓／排位結果） ─────────────────────────────────────────
+function readSheetAoa_(file){
+  return __rdlXlsx().then(function(){
+    return new Promise(function(res,rej){
+      var fr=new FileReader();
+      fr.onload=function(e){
+        try{
+          var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+          res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''}));
+        }catch(err){rej(err);}
+      };
+      fr.onerror=function(){rej(new Error('檔案讀取失敗'));};
+      fr.readAsArrayBuffer(file);
+    });
+  });
+}
+function upGuests(input){
+  var f=input.files&&input.files[0];input.value='';
+  if(!f)return;
+  if(!actId()){setMsg('gl-msg','請先選活動','err');return;}
+  if(SB&&SB.guestSeats>0&&!confirm('上傳會「整批置換」本活動來賓名單，已排定的來賓桌次會被清掉。確定？'))return;
+  setMsg('gl-msg','解析中…','');
+  readSheetAoa_(f).then(function(aoa){
+    var hdr=(aoa[0]||[]).map(function(x){return String(x).trim();});
+    var ix=function(n){return hdr.indexOf(n);};
+    if(ix('廠商名稱')<0||ix('參加人數')<0){setMsg('gl-msg','格式不符：需有「廠商名稱」「參加人數」欄','err');return;}
+    var rows=[];
+    for(var r=1;r<aoa.length;r++){
+      var g=aoa[r];
+      var raw=String(g[ix('廠商名稱')]||'').replace(/[\t\s　]+/g,' ').trim();
+      if(!raw)continue;
+      var note='',m=raw.match(/^(.*?)[（(]\s*不收費\s*[)）]$/);
+      if(m){raw=m[1].trim();note='不收費';}
+      var base={owner:String(g[ix('負責人員')]||'').trim(),name:raw,
+        type:String(g[ix('工程類別')]||'').trim(),fullName:String(g[ix('公司全名')]||'').replace(/[\t\s　]+/g,' ').trim(),
+        contact:String(g[ix('聯絡人')]||'').trim(),phone:String(g[ix('聯繫電話')]||'').trim(),note:note,table:''};
+      var n=Number(g[ix('參加人數')])||0;
+      if(n<=0)rows.push(Object.assign({seatNo:0},base));
+      else for(var k=1;k<=n;k++)rows.push(Object.assign({seatNo:k},base));
+    }
+    if(!rows.length){setMsg('gl-msg','檔案沒有可匯入的資料','err');return;}
+    setMsg('gl-msg','寫入中…（'+rows.length+' 列）','');
+    jsonp('clearGuests',{token:q('t'),actId:actId()}).then(function(){
+      var chunks=[];var tmp=rows.slice();
+      while(tmp.length)chunks.push(tmp.splice(0,8));
+      var added=0;
+      (function next(){
+        var c=chunks.shift();
+        if(!c){setMsg('gl-msg','完成 ✅ 已匯入 '+added+' 列','ok');loadSeating();return;}
+        jsonp('addGuests',{token:q('t'),actId:actId(),rows:JSON.stringify(c)}).then(function(r){
+          if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'寫入失敗','err');return;}
+          added+=r.added;next();
+        });
+      })();
+    });
+  }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
+}
+function upSeating(input){
+  var f=input.files&&input.files[0];input.value='';
+  if(!f)return;
+  if(!actId()||!SB){setMsg('sm-msg','請先選活動','err');return;}
+  setMsg('sm-msg','解析中…','');
+  readSheetAoa_(f).then(function(aoa){
+    var parsed=parseSeatingUpload(aoa);
+    if(!parsed.length){setMsg('sm-msg','座位格是空的，沒有可匯入的排位結果','err');return;}
+    var norm=function(s){return String(s||'').replace(/[\s　]+/g,'');};
+    var empIdx={},guestIdx={};
+    SB.seats.forEach(function(s){
+      if(s.kind==='emp')empIdx[norm(s.name)]=s;
+      else (guestIdx[norm(s.name)]=guestIdx[norm(s.name)]||[]).push(s);
+    });
+    var eWrites=[],gWrites=[],unknown=[],used={};
+    parsed.forEach(function(p){
+      var k=norm(p.name);
+      if(empIdx[k]){eWrites.push({userId:empIdx[k].id,table:p.table});return;}
+      if(guestIdx[k]&&guestIdx[k].length){
+        used[k]=(used[k]||0);
+        var g=guestIdx[k][used[k]];
+        if(g){used[k]++;gWrites.push({row:g.id,table:p.table});return;}
+      }
+      unknown.push(p);
+    });
+    var msg='比對：同仁 '+eWrites.length+' 人・來賓 '+gWrites.length+' 席'
+      +(unknown.length?('・<b style="color:#b71c1c">查無 '+unknown.length+' 筆：'
+        +unknown.slice(0,8).map(function(u){return esc(u.name);}).join('、')
+        +(unknown.length>8?'…':'')+'</b>（這些會略過）'):'');
+    if(!confirm('要寫入嗎？\n同仁 '+eWrites.length+' 人、來賓 '+gWrites.length+' 席'
+      +(unknown.length?('\n查無 '+unknown.length+' 筆將略過：'+unknown.slice(0,5).map(function(u){return u.name;}).join('、')):'')))
+      { setMsg('sm-msg','已取消','');return; }
+    document.getElementById('sm-msg').innerHTML=msg+'　寫入中…';
+    var chunks=[];var tmp=eWrites.slice();
+    while(tmp.length)chunks.push(tmp.splice(0,20));
+    var applied=0;
+    (function next(){
+      var c=chunks.shift();
+      if(!c){
+        // 來賓逐筆（席位列定位）
+        var gi=0;
+        (function nextG(){
+          if(gi>=gWrites.length){
+            jsonp('clearSeatMarks',{token:q('t'),actId:actId()}).then(function(){
+              setMsg('sm-msg','匯入完成 ✅ 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席（此版成為新基準，變更標記已歸零）','ok');
+              loadSeating();
+            });return;
+          }
+          var g=gWrites[gi++];
+          jsonp('setGuestTable',{token:q('t'),actId:actId(),row:g.row,table:g.table,base:'1'}).then(nextG);
+        })();
+        return;
+      }
+      jsonp('setTables',{token:q('t'),actId:actId(),writes:JSON.stringify(c)}).then(function(r){
+        if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
+        applied+=r.applied;next();
+      });
+    })();
+  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
+}
+
+// ── 下載 ───────────────────────────────────────────────────────────────
 function dlGuestFile(){
-  var actId=document.getElementById('ti-act').value;
-  if(!actId){setMsg('gl-msg','請先選活動','err');return;}
+  if(!actId()){setMsg('gl-msg','請先選活動','err');return;}
   setMsg('gl-msg','產生中…','');
-  Promise.all([__rdlXlsx(),jsonp('listGuests',{token:q('t'),actId:actId})]).then(function(rs){
+  Promise.all([__rdlXlsx(),jsonp('listGuests',{token:q('t'),actId:actId()})]).then(function(rs){
     var r=rs[1];
     if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'載入失敗','err');return;}
     if(!r.rows.length){setMsg('gl-msg','此活動沒有來賓資料','err');return;}
     var agg={},order=[];
     r.rows.forEach(function(g){
       var k=g.owner+'|'+g.name;
-      if(!agg[k]){agg[k]={owner:g.owner,name:g.name,seats:0,type:g.type,fullName:g.fullName,contact:g.contact,phone:g.phone,tables:[]};order.push(k);}
+      if(!agg[k]){agg[k]={owner:g.owner,name:g.name,seats:0,type:g.type,fullName:g.fullName,
+        contact:g.contact,phone:g.phone,note:g.note,tables:[]};order.push(k);}
       if(g.seatNo>0){agg[k].seats++;if(g.table&&agg[k].tables.indexOf(g.table)<0)agg[k].tables.push(g.table);}
     });
-    var aoa=[['負責人員','廠商名稱','參加人數','工程類別','公司全名','聯絡人','聯繫電話','桌次']];
+    var aoa=[['負責人員','廠商名稱','參加人數','工程類別','公司全名','聯絡人','聯繫電話','註記','桌次']];
     order.forEach(function(k){var g=agg[k];
-      aoa.push([g.owner,g.name,g.seats,g.type,g.fullName,g.contact,g.phone,g.tables.join('、')]);});
-    var ws=XLSX.utils.aoa_to_sheet(aoa);
-    styleWs_(ws,aoa,{headerRow:true,leftAlign:['公司全名','聯繫電話']});
-    var wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'來賓名單');
-    XLSX.writeFile(wb,'來賓名單_'+actId+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx');
+      aoa.push([g.owner,g.name,g.seats,g.type,g.fullName,g.contact,g.phone,g.note,g.tables.join('、')]);});
+    writeSeatXlsx_(aoa,'來賓名單_'+(SB?SB.actName:actId()),'來賓名單',{leftAlign:['公司全名','聯繫電話']});
     setMsg('gl-msg','已下載 ✅','ok');
   }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
 }
-
-// 座位排列用檔（上方空白座位格＋下方 出席同仁依單位／來賓依負責人）
 function dlSeatingFile(){
-  var actId=document.getElementById('ti-act').value;
-  if(!actId){setMsg('sf-msg','請先選活動','err');return;}
-  setMsg('sf-msg','產生中…','');
-  Promise.all([__rdlXlsx(),
-    jsonp('listTableBoard',{token:q('t'),actId:actId}),
-    jsonp('listGuests',{token:q('t'),actId:actId}),
-    jsonp('listOptions',{token:q('t')})
-  ]).then(function(rs){
-    var tb=rs[1],gu=rs[2],op=rs[3];
-    if(!tb||!tb.ok){setMsg('sf-msg',(tb&&tb.msg)||'出席名單載入失敗','err');return;}
-    if(!gu||!gu.ok){setMsg('sf-msg',(gu&&gu.msg)||'來賓載入失敗','err');return;}
-    var byUnit={};
-    tb.people.forEach(function(p){(byUnit[p.unit]=byUnit[p.unit]||[]).push(p.name);});
+  if(!SB){setMsg('sm-msg','請先選活動','err');return;}
+  setMsg('sm-msg','產生中…','');
+  Promise.all([__rdlXlsx(),jsonp('listOptions',{token:q('t')})]).then(function(rs){
+    var op=rs[1];
+    var byUnit={},guestsByOwner={},owners=[],guestSeats=0;
+    SB.seats.forEach(function(s){
+      if(s.kind==='emp')(byUnit[s.unit||'（未填單位）']=byUnit[s.unit||'（未填單位）']||[]).push(s.name);
+      else{var o=s.unit||'其他';(guestsByOwner[o]=guestsByOwner[o]||[]).push(s.name);guestSeats++;
+        if(o!=='其他'&&owners.indexOf(o)<0)owners.push(o);}
+    });
     var unitOrder=[];
-    if(op&&op.ok){ // 總公司本部在前、工地在後（同名冊單位總表的欄序慣例）
-      ['總公司',''].forEach(function(wantHq,pass){
-        op.rows.forEach(function(o){
-          if(o.type!=='單位'||!byUnit[o.name]||unitOrder.indexOf(o.name)>=0)return;
-          var isHq=(o.group==='總公司');
-          if((pass===0&&isHq)||(pass===1&&!isHq))unitOrder.push(o.name);
-        });
-      });
-    }
+    if(op&&op.ok){['總公司',''].forEach(function(_,pass){
+      op.rows.forEach(function(o){
+        if(o.type!=='單位'||!byUnit[o.name]||unitOrder.indexOf(o.name)>=0)return;
+        var isHq=(o.group==='總公司');
+        if((pass===0&&isHq)||(pass===1&&!isHq))unitOrder.push(o.name);
+      });});}
     Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
-    var guestsByOwner={},owners=[],guestSeats=0;
-    gu.rows.forEach(function(g){
-      if(g.seatNo<=0)return;
-      var o=(g.owner||'').trim()||'其他';
-      (guestsByOwner[o]=guestsByOwner[o]||[]).push(g.name);guestSeats++;
-      if(o!=='其他'&&owners.indexOf(o)<0)owners.push(o);
-    });
-    var aoa=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner);
-    var ws=XLSX.utils.aoa_to_sheet(aoa);
-    styleWs_(ws,aoa,{headerRow:true});
-    var wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,'座位表');
-    XLSX.writeFile(wb,'座位排列用檔_'+tb.actName+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx');
-    setMsg('sf-msg','已下載 ✅（出席同仁 '+tb.people.length+' 人＋來賓席位 '+guestSeats+' 格）','ok');
-  }).catch(function(e){setMsg('sf-msg',String(e&&e.message||e),'err');});
-}
-
-// ── 座位總覽（以桌為單位·QR 連結·線上改位·變更上色） ─────────────────────
-var seatState=null;
-function loadSeatMap(){
-  var actId=document.getElementById('ti-act').value;
-  var box=document.getElementById('seat-map');
-  if(!actId){box.innerHTML='<div class="empty">請先選活動</div>';return;}
-  box.innerHTML='<div class="empty">載入中…</div>';
-  Promise.all([
-    jsonp('listTableBoard',{token:q('t'),actId:actId}),
-    jsonp('listGuests',{token:q('t'),actId:actId})
-  ]).then(function(rs){
-    var tb=rs[0],gu=rs[1];
-    if(!tb||!tb.ok){box.innerHTML='<div class="empty">'+esc((tb&&tb.msg)||'載入失敗')+'</div>';return;}
-    var entries=[];
-    tb.people.forEach(function(p){entries.push({kind:'emp',id:p.userId,name:p.name,sub:p.unit,table:p.table,changed:p.changedAt>0});});
-    if(gu&&gu.ok)gu.rows.forEach(function(g){
-      if(g.seatNo<=0)return;
-      entries.push({kind:'guest',id:g._row,name:g.name,sub:g.owner+'・來賓',table:g.table,changed:g.changedAt>0});
-    });
-    seatState={actId:actId,entries:entries,published:tb.published};
-    document.getElementById('seat-pub-btn').textContent=tb.published?'已發布（改動即時生效）':'發布給同仁看';
-    renderSeatMap();
-  });
-}
-function seatTableKeys(){
-  var keys=[];seatState.entries.forEach(function(e){var t=e.table||'';if(keys.indexOf(t)<0)keys.push(t);});
-  keys.sort(function(a,b){
-    if(a==='')return 1;if(b==='')return -1;
-    if(a==='主桌')return -1;if(b==='主桌')return 1;
-    var na=parseFloat(a),nb=parseFloat(b);
-    if(!isNaN(na)&&!isNaN(nb))return na-nb;
-    if(!isNaN(na))return -1;if(!isNaN(nb))return 1;
-    return a<b?-1:1;
-  });
-  return keys;
-}
-function renderSeatMap(){
-  var h='';
-  seatTableKeys().forEach(function(t){
-    var members=seatState.entries.filter(function(e){return (e.table||'')===t;});
-    h+='<div style="margin-bottom:10px"><div style="font-weight:700;font-size:14px;margin:8px 0 4px">'
-      +(t?esc(t)+' 桌':'未排桌')+'　<span style="color:#999;font-weight:400;font-size:12px">'+members.length+' 人</span></div>';
-    members.forEach(function(e){
-      h+='<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid #ddd;border-radius:8px;padding:2px 6px;margin:2px;font-size:13px'
-        +(e.changed?';background:#fff3c2;border-color:#e5c65a':'')+'">'
-        +esc(e.name)+'<span style="font-size:10.5px;color:#999">'+esc(e.sub)+'</span>'
-        +(e.kind==='emp'?'<a href="#" style="text-decoration:none" onclick="showQr(\''+esc(e.name)+'\');return false">🔳</a>':'')
-        +'<a href="#" style="text-decoration:none;font-size:11px" onclick="moveSeat(\''+e.kind+'\',\''+esc(String(e.id))+'\',\''+esc(e.name)+'\');return false">移桌</a>'
-        +'</span>';
-    });
-    h+='</div>';
-  });
-  document.getElementById('seat-map').innerHTML=h||'<div class="empty">沒有出席者</div>';
-}
-function moveSeat(kind,id,name){
-  var to=prompt('把「'+name+'」移到哪一桌？（輸入桌號或「主桌」；清空＝未排桌）');
-  if(to===null)return;
-  to=to.trim();
-  setMsg('sm-msg','寫入中…','');
-  var p=(kind==='emp')
-    ?jsonp('setTables',{token:q('t'),actId:seatState.actId,writes:JSON.stringify([{userId:id,table:to}]),mark:'1'})
-    :jsonp('setGuestTable',{token:q('t'),actId:seatState.actId,row:id,table:to});
-  p.then(function(r){
-    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
-    setMsg('sm-msg','已移動 ✅（黃底＝已變更）','ok');
-    loadSeatMap();loadGuests();
-  });
-}
-function seatPublish(){
-  if(!seatState){return;}
-  if(!confirm(seatState.published?'桌次已是發布狀態。再按一次確認？':'發布後，同仁在 LINE 活動頁就看得到自己的桌次。確定發布？'))return;
-  jsonp('publishTables',{token:q('t'),actId:seatState.actId}).then(function(r){
-    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'發布失敗','err');return;}
-    seatState.published=true;
-    document.getElementById('seat-pub-btn').textContent='已發布（改動即時生效）';
-    setMsg('sm-msg','已發布。之後再改桌次會即時生效。','ok');
-  });
-}
-
-// 個人 QR 彈窗（員工·用批次簽發結果快取）
-var qrCodeCache={};
-function showQr(name){
-  var actId=document.getElementById('ti-act').value;
-  var ready=qrCodeCache[actId]
-    ?Promise.resolve(qrCodeCache[actId])
-    :Promise.all([__tmLib('assets/qrcode-gen.js','qrcode'),jsonp('getCheckinCodes',{token:q('t'),actId:actId})])
-      .then(function(rs){if(!rs[1]||!rs[1].ok)throw new Error((rs[1]&&rs[1].msg)||'簽發失敗');qrCodeCache[actId]=rs[1].rows;return rs[1].rows;});
-  ready.then(function(rows){
-    var norm=function(s){return String(s||'').replace(/[\s　]+/g,'');};
-    var p=rows.find(function(r){return norm(r.name)===norm(name);});
-    if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
-    var ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;display:flex;align-items:center;justify-content:center';
-    ov.onclick=function(){ov.remove();};
-    var cv=__qrCanvas(p.code,p.name,p.unit+'・'+p.empNo);
-    cv.style.cssText='max-width:80vw;max-height:80vh;border-radius:12px';
-    ov.appendChild(cv);
-    document.body.appendChild(ov);
+    var empCount=SB.seats.filter(function(s){return s.kind==='emp';}).length;
+    var aoa=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner,empCount+guestSeats);
+    writeSeatXlsx_(aoa,'座位排列用檔_'+SB.actName,'座位表',{});
+    setMsg('sm-msg','已下載 ✅（出席同仁 '+empCount+' 人＋來賓席位 '+guestSeats+' 格）','ok');
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
+function dlFormal(){
+  if(!SB){setMsg('sm-msg','請先選活動','err');return;}
+  if(!SB.seats.some(function(s){return String(s.table||'');})){setMsg('sm-msg','還沒有人排桌','err');return;}
+  setMsg('sm-msg','產生中…','');
+  __rdlXlsx().then(function(){
+    var r=buildFormalAoa(SB.seats,SB.ranks||{});
+    writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',{redCells:r.guestCells,boldLastRow:true});
+    setMsg('sm-msg','已下載 ✅','ok');
+  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
+}
+/** 黑體＋格線＋置中；opts.redCells=[[r,c]] 上紅字、boldLastRow 末列粗體。 */
+function writeSeatXlsx_(aoa,fname,sheetName,opts){
+  opts=opts||{};
+  var ws=XLSX.utils.aoa_to_sheet(aoa);
+  var bd={style:'thin',color:{rgb:'B8B8B8'}};
+  var border={top:bd,bottom:bd,left:bd,right:bd};
+  var leftIdx=(opts.leftAlign||[]).map(function(h){return aoa[0].indexOf(h);}).filter(function(i){return i>=0;});
+  var red={};(opts.redCells||[]).forEach(function(rc){red[rc[0]+','+rc[1]]=1;});
+  var widths=[];
+  var wlen=function(v){var n=0,t=String(v==null?'':v);for(var i=0;i<t.length;i++)n+=t.charCodeAt(i)>255?2:1;return n;};
+  for(var r=0;r<aoa.length;r++){
+    for(var c=0;c<(aoa[r]||[]).length;c++){
+      widths[c]=Math.max(widths[c]||0,wlen(aoa[r][c]));
+      var ref=XLSX.utils.encode_cell({r:r,c:c});
+      if(!ws[ref])ws[ref]={t:'s',v:''};
+      ws[ref].s={border:border,
+        alignment:{horizontal:(leftIdx.indexOf(c)>=0&&r>0)?'left':'center',vertical:'center'},
+        font:{name:'Microsoft JhengHei',
+          bold:(r===0||(opts.boldLastRow&&r===aoa.length-1))||undefined,
+          color:red[r+','+c]?{rgb:'C00000'}:undefined}};
+    }
+  }
+  ws['!cols']=widths.map(function(w){return {wch:Math.min(Math.max(w+2,6),30)};});
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,fname+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx');
+}
 
-// QR 批次下載（qrcode-gen＋jszip 用到才載）
+// ── QR ─────────────────────────────────────────────────────────────────
 function __tmLib(src,flag){
   if(window[flag])return Promise.resolve();
   return new Promise(function(res,rej){
@@ -439,51 +615,115 @@ function __tmLib(src,flag){
     document.body.appendChild(s);
   });
 }
-function __qrCanvas(code,label1,label2){
-  var qr=qrcode(0,'M');qr.addData(code);qr.make();
+var LOGO_DATA=null;
+function __logo(){
+  if(LOGO_DATA)return Promise.resolve(LOGO_DATA);
+  return fetch('assets/logo-mark.svg').then(function(r){return r.text();}).then(function(t){
+    return new Promise(function(res){
+      var img=new Image();
+      img.onload=function(){LOGO_DATA=img;res(img);};
+      img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(t)));
+    });
+  });
+}
+/** QR 畫布：中央 logo（原比例）＋活動名（與 logo 同寬）＋姓名（大一級），皆灰階。 */
+function __qrCanvas(code,name,actName,logo){
+  var qr=qrcode(0,'H');qr.addData(code);qr.make();
   var n=qr.getModuleCount(),cell=8,quiet=24,size=n*cell+quiet*2;
-  var cv=document.createElement('canvas');cv.width=size;cv.height=size+56;
+  var cv=document.createElement('canvas');cv.width=size;cv.height=size;
   var ctx=cv.getContext('2d');
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size);
   ctx.fillStyle='#000';
   for(var r=0;r<n;r++)for(var c=0;c<n;c++)if(qr.isDark(r,c))ctx.fillRect(quiet+c*cell,quiet+r*cell,cell,cell);
-  ctx.textAlign='center';
-  ctx.font='bold 22px -apple-system,sans-serif';
-  ctx.fillText(label1,size/2,size+22);
-  ctx.font='14px -apple-system,sans-serif';ctx.fillStyle='#555';
-  ctx.fillText(label2,size/2,size+44);
+  var LW=Math.round(size*0.165);                 // logo 寬
+  var lh=logo?Math.round(LW*(logo.height/logo.width)):LW;
+  var fs1=14,fs2=16;
+  ctx.font='700 '+fs1+'px -apple-system,"PingFang TC",sans-serif';
+  var s1=LW/Math.max(ctx.measureText(actName).width,1);
+  ctx.font='700 '+fs2+'px -apple-system,"PingFang TC",sans-serif';
+  var s2=(LW*1.18)/Math.max(ctx.measureText(name).width,1);
+  var h1=fs1*s1,h2=fs2*s2,pad=Math.round(size*0.012),gap=2;
+  var capW=Math.max(LW,fs2*s2*name.length? LW*1.18:LW)+pad*2;
+  var capH=lh+gap+h1+gap+h2+pad*2;
+  var cx=size/2,cy=size/2;
+  ctx.fillStyle='#fff';
+  ctx.beginPath();
+  var rx=cx-capW/2,ry=cy-capH/2,rr=6;
+  ctx.moveTo(rx+rr,ry);ctx.arcTo(rx+capW,ry,rx+capW,ry+capH,rr);
+  ctx.arcTo(rx+capW,ry+capH,rx,ry+capH,rr);ctx.arcTo(rx,ry+capH,rx,ry,rr);
+  ctx.arcTo(rx,ry,rx+capW,ry,rr);ctx.closePath();ctx.fill();
+  var y=ry+pad;
+  if(logo){ctx.drawImage(logo,cx-LW/2,y,LW,lh);y+=lh+gap;}
+  ctx.fillStyle='#767676';ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.save();ctx.translate(cx,y);ctx.scale(s1,s1);
+  ctx.font='700 '+fs1+'px -apple-system,"PingFang TC",sans-serif';
+  ctx.fillText(actName,0,0);ctx.restore();
+  y+=h1+gap;
+  ctx.save();ctx.translate(cx,y);ctx.scale(s2,s2);
+  ctx.font='700 '+fs2+'px -apple-system,"PingFang TC",sans-serif';
+  ctx.fillText(name,0,0);ctx.restore();
   return cv;
 }
+var qrCache={};
+function qrRows(){
+  var id=actId();
+  if(qrCache[id])return Promise.resolve(qrCache[id]);
+  return Promise.all([__tmLib('assets/qrcode-gen.js','qrcode'),__logo(),
+    jsonp('getCheckinCodes',{token:q('t'),actId:id})]).then(function(rs){
+    if(!rs[2]||!rs[2].ok)throw new Error((rs[2]&&rs[2].msg)||'簽發失敗');
+    qrCache[id]=rs[2].rows;return rs[2].rows;
+  });
+}
+function findQr(rows,name){
+  var norm=function(s){return String(s||'').replace(/[\s　]+/g,'');};
+  for(var i=0;i<rows.length;i++)if(norm(rows[i].name)===norm(name))return rows[i];
+  return null;
+}
+function showQr(name){
+  qrRows().then(function(rows){
+    var p=findQr(rows,name);
+    if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
+    var ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;display:flex;align-items:center;justify-content:center';
+    ov.onclick=function(){ov.remove();};
+    var cv=__qrCanvas(p.code,p.name,SB.actName,LOGO_DATA);
+    cv.style.cssText='max-width:82vw;max-height:82vh;border-radius:12px;background:#fff';
+    ov.appendChild(cv);document.body.appendChild(ov);
+  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
+}
+function dlOneQr(name){
+  qrRows().then(function(rows){
+    var p=findQr(rows,name);
+    if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
+    __qrCanvas(p.code,p.name,SB.actName,LOGO_DATA).toBlob(function(b){
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(b);a.download=(p.unit||'未分類')+'_'+p.name+'.png';
+      a.click();URL.revokeObjectURL(a.href);
+      setMsg('sm-msg','已下載 '+p.name+' 的 QR ✅','ok');
+    });
+  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
+}
 function dlAllQr(){
-  var actId=document.getElementById('ti-act').value;
-  if(!actId){setMsg('qr-msg','請先選活動','err');return;}
+  if(!actId()){setMsg('qr-msg','請先選活動','err');return;}
   setMsg('qr-msg','產生中…','');
-  Promise.all([
-    __tmLib('assets/qrcode-gen.js','qrcode'),
-    __tmLib('assets/jszip.min.js','JSZip'),
-    jsonp('getCheckinCodes',{token:q('t'),actId:actId})
-  ]).then(function(rs){
-    var r=rs[2];
-    if(!r||!r.ok){setMsg('qr-msg',(r&&r.msg)||'簽發失敗','err');return;}
-    if(!r.rows.length){setMsg('qr-msg','此活動還沒有「參加」的回覆，無 QR 可產。','err');return;}
-    qrCodeCache[actId]=r.rows;
-    var zip=new JSZip();
-    var chain=Promise.resolve();
-    r.rows.forEach(function(p){
+  Promise.all([__tmLib('assets/jszip.min.js','JSZip'),qrRows()]).then(function(rs){
+    var rows=rs[1];
+    if(!rows.length){setMsg('qr-msg','此活動還沒有「參加」的回覆，無 QR 可產。','err');return;}
+    var zip=new JSZip(),chain=Promise.resolve();
+    rows.forEach(function(p){
       chain=chain.then(function(){
         return new Promise(function(res){
-          __qrCanvas(p.code,p.name,p.unit+'・'+p.empNo).toBlob(function(b){
-            zip.file(p.empNo+'_'+p.name+'.png',b);res();
-          });
+          __qrCanvas(p.code,p.name,SB.actName,LOGO_DATA).toBlob(function(b){
+            zip.file((p.unit||'未分類')+'_'+p.name+'.png',b);res();});
         });
       });
     });
     chain.then(function(){return zip.generateAsync({type:'blob'});}).then(function(blob){
       var a=document.createElement('a');
       a.href=URL.createObjectURL(blob);
-      a.download='員工QR_'+actId+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
+      a.download='員工QR_'+SB.actName+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
       a.click();URL.revokeObjectURL(a.href);
-      setMsg('qr-msg','已下載 ✅（'+r.rows.length+' 張＝本活動確認參加者，每張下方標姓名／單位／員編）','ok');
+      setMsg('qr-msg','已下載 ✅（'+rows.length+' 張）','ok');
     });
   }).catch(function(e){setMsg('qr-msg',String(e&&e.message||e),'err');});
 }
