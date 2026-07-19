@@ -198,17 +198,26 @@ function showAdminSwitch(who){
   a.addEventListener('click',function(e){e.preventDefault();location.href=a.href;}); // iOS standalone：<a> 會彈內嵌 Safari，JS 導頁留在 App 內
   document.body.appendChild(a);
 }
-function jsonp(action,params){return new Promise(function(res){
+function jsonp(action,params,timeoutMs){return new Promise(function(res){
   var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
   var s=document.createElement('script');
   s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
-  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時（伺服器喚醒中），請重新整理再試。'});cleanup();},15000);
+  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時（伺服器喚醒中），請重新整理再試。'});cleanup();},timeoutMs||15000);
   s.onerror=function(){res({ok:false,msg:'連線失敗，請重新整理。'});cleanup();};
   function cleanup(){clearTimeout(timer);window[cb]=function(){};s.remove();}
   window[cb]=function(d){res(d);cleanup();};
   document.body.appendChild(s);});}
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
+/** 寫入類呼叫：45s 逾時＋失敗自動重試（預設再試 2 次）。 */
+function jsonpW(action,params,tries){
+  tries=(tries==null?2:tries);
+  return jsonp(action,params,45000).then(function(r){
+    if(r&&r.ok)return r;
+    if(tries<=0)return r;
+    return new Promise(function(res){setTimeout(res,1500);}).then(function(){return jsonpW(action,params,tries-1);});
+  });
+}
 
 // 依單位收納（保留原順序）；bodyFn(items) 決定每組內容。單位旁顯示人數。
 function groupHtml(arr, bodyFn){
@@ -446,16 +455,21 @@ function upGuests(input){
     }
     if(!rows.length){setMsg('gl-msg','檔案沒有可匯入的資料','err');return;}
     setMsg('gl-msg','寫入中…（'+rows.length+' 列）','');
-    jsonp('clearGuests',{token:q('t'),actId:actId()}).then(function(){
+    jsonpW('clearGuests',{token:q('t'),actId:actId()}).then(function(cr){
+      if(!cr||!cr.ok){setMsg('gl-msg',(cr&&cr.msg)||'清除舊資料失敗','err');return;}
       var chunks=[];var tmp=rows.slice();
-      while(tmp.length)chunks.push(tmp.splice(0,8));
-      var added=0;
+      while(tmp.length)chunks.push(tmp.splice(0,20));
+      var total=chunks.length,done=0,added=0;
       (function next(){
         var c=chunks.shift();
         if(!c){setMsg('gl-msg','完成 ✅ 已匯入 '+added+' 列','ok');loadSeating();return;}
-        jsonp('addGuests',{token:q('t'),actId:actId(),rows:JSON.stringify(c)}).then(function(r){
-          if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'寫入失敗','err');return;}
-          added+=r.added;next();
+        setMsg('gl-msg','寫入中… '+(done)+'/'+total,'');
+        jsonpW('addGuests',{token:q('t'),actId:actId(),rows:JSON.stringify(c)}).then(function(r){
+          if(!r||!r.ok){
+            setMsg('gl-msg','寫入中斷（已寫入 '+added+' 列）：'+((r&&r.msg)||'未知錯誤')+'　請重新上傳整份檔案','err');
+            loadSeating();return;
+          }
+          added+=r.added;done++;next();
         });
       })();
     });
@@ -506,16 +520,16 @@ function upSeating(input){
         (function nextG(){
           var gc=gchunks.shift();
           if(!gc){
-            jsonp('clearSeatMarks',{token:q('t'),actId:actId()}).then(function(){
+            jsonpW('clearSeatMarks',{token:q('t'),actId:actId()}).then(function(){
               setMsg('sm-msg','匯入完成 ✅ 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席（此版成為新基準，變更標記已歸零）','ok');
               loadSeating();
             });return;
           }
-          jsonp('setGuestTables',{token:q('t'),actId:actId(),rows:JSON.stringify(gc),base:'1'}).then(nextG);
+          jsonpW('setGuestTables',{token:q('t'),actId:actId(),rows:JSON.stringify(gc),base:'1'}).then(nextG);
         })();
         return;
       }
-      jsonp('setTables',{token:q('t'),actId:actId(),writes:JSON.stringify(c)}).then(function(r){
+      jsonpW('setTables',{token:q('t'),actId:actId(),writes:JSON.stringify(c)}).then(function(r){
         if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
         applied+=r.applied;next();
       });
