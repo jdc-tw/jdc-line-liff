@@ -327,9 +327,15 @@ function dlSeatingFile(){
     var byUnit={};
     tb.people.forEach(function(p){(byUnit[p.unit]=byUnit[p.unit]||[]).push(p.name);});
     var unitOrder=[];
-    if(op&&op.ok)op.rows.forEach(function(o){
-      if(o.type==='單位'&&byUnit[o.name]&&unitOrder.indexOf(o.name)<0)unitOrder.push(o.name);
-    });
+    if(op&&op.ok){ // 總公司本部在前、工地在後（同名冊單位總表的欄序慣例）
+      ['總公司',''].forEach(function(wantHq,pass){
+        op.rows.forEach(function(o){
+          if(o.type!=='單位'||!byUnit[o.name]||unitOrder.indexOf(o.name)>=0)return;
+          var isHq=(o.group==='總公司');
+          if((pass===0&&isHq)||(pass===1&&!isHq))unitOrder.push(o.name);
+        });
+      });
+    }
     Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
     var guestsByOwner=expandGuests(gu.rows);
     var owners=[];
