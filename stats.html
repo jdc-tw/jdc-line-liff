@@ -499,17 +499,18 @@ function upSeating(input){
     (function next(){
       var c=chunks.shift();
       if(!c){
-        // 來賓逐筆（席位列定位）
-        var gi=0;
+        // 來賓批次（20 筆一包，避免逐筆呼叫拖成數分鐘）
+        var gchunks=[],gtmp=gWrites.slice();
+        while(gtmp.length)gchunks.push(gtmp.splice(0,20));
         (function nextG(){
-          if(gi>=gWrites.length){
+          var gc=gchunks.shift();
+          if(!gc){
             jsonp('clearSeatMarks',{token:q('t'),actId:actId()}).then(function(){
               setMsg('sm-msg','匯入完成 ✅ 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席（此版成為新基準，變更標記已歸零）','ok');
               loadSeating();
             });return;
           }
-          var g=gWrites[gi++];
-          jsonp('setGuestTable',{token:q('t'),actId:actId(),row:g.row,table:g.table,base:'1'}).then(nextG);
+          jsonp('setGuestTables',{token:q('t'),actId:actId(),rows:JSON.stringify(gc),base:'1'}).then(nextG);
         })();
         return;
       }
