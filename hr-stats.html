@@ -57,17 +57,15 @@
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
-function jsonp(action,params){return new Promise(function(res){
-  var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+// fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕（2026-07-24 verify 實證後全站換）
+function jsonp(action,params){
   var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
-  var s=document.createElement('script');
-  s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
-  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時，請重新整理。'});cleanup();},30000);
-  function cleanup(){clearTimeout(timer);delete window[cb];s.remove();}
-  window[cb]=function(d){res(d);cleanup();};
-  s.onerror=function(){res({ok:false,msg:'連線失敗'});cleanup();};
-  document.body.appendChild(s);
-});}
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},30000);
+  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+    .then(function(r){return r.text();})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時，請重新整理。':'連線失敗'};});}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // 色票（dataviz 驗證過：#3d8f63/#b9863f 全項通過；序列段=同色深淺、非彩虹）

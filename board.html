@@ -218,16 +218,15 @@ function showAdminSwitch(who){
   a.addEventListener('click',function(e){e.preventDefault();location.href=a.href;}); // iOS standalone：<a> 會彈內嵌 Safari，JS 導頁留在 App 內
   document.body.appendChild(a);
 }
-function jsonp(action,params){return new Promise(function(res){
-  var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+// fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕（2026-07-24 verify 實證後全站換）
+function jsonp(action,params){
   var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
-  var s=document.createElement('script');
-  s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
-  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時（伺服器喚醒中），請重新整理再試。'});cleanup();},15000);
-  s.onerror=function(){res({ok:false,msg:'連線失敗'});cleanup();};
-  function cleanup(){clearTimeout(timer);window[cb]=function(){};s.remove();}
-  window[cb]=function(d){res(d);cleanup();};
-  document.body.appendChild(s);});}
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},15000);
+  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+    .then(function(r){return r.text();})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗'};});}
 var TOKEN=getToken();
 annivInit(jsonp, TOKEN);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
 function updateBadge(n){

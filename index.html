@@ -257,38 +257,29 @@
     // ─── JSONP helper ──────────────────────────────────────────────────────────
     // 診斷強化：區分「script 根本沒載入(WebView 封鎖跨網域)」與「script 載入了但
     // callback 沒被執行(回應沒被當 JS 跑)」。逾時訊息會帶出 loaded 狀態。
+    // fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，
+    // 帳號狀態半殘的電腦被 Google 拒絕回 Drive 錯誤頁（2026-07-24 verify 實證後全站換）
     function jsonp(action, params, timeoutMs) {
-      return new Promise(function (resolve, reject) {
-        var cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
-        var s = document.createElement('script');
-        var loaded = false;   // onload 是否觸發過
-        var fired = false;    // callback 是否被呼叫過
-        var timer = setTimeout(function () {
-          cleanup();
-          reject(new Error('逾時(loaded=' + loaded + ')'));
-        }, timeoutMs || 30000);
-        function cleanup() {
+      var qs = Object.keys(params || {}).map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(params[k] == null ? '' : params[k]);
+      }).join('&');
+      var url = GAS_URL + '?action=' + encodeURIComponent(action) + (qs ? ('&' + qs) : '') + '&callback=cb';
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs || 30000);
+      return fetch(url, { credentials: 'omit', redirect: 'follow', signal: ctrl.signal })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
           clearTimeout(timer);
-          try { delete window[cb]; } catch (e) { window[cb] = undefined; }
-          if (s.parentNode) s.parentNode.removeChild(s);
-        }
-        window[cb] = function (data) { fired = true; cleanup(); resolve(data); };
-        var qs = Object.keys(params || {}).map(function (k) {
-          return encodeURIComponent(k) + '=' + encodeURIComponent(params[k] == null ? '' : params[k]);
-        }).join('&');
-        s.src = GAS_URL + '?action=' + encodeURIComponent(action) + (qs ? ('&' + qs) : '') + '&callback=' + cb;
-        s.onload = function () {
-          loaded = true;
-          // script 已下載並執行完畢，但 callback 沒被叫到 → 回應不是可執行的 JSONP
-          if (!fired) {
-            setTimeout(function () {
-              if (!fired) { cleanup(); reject(new Error('script 已載入但 callback 未執行')); }
-            }, 500);
-          }
-        };
-        s.onerror = function () { cleanup(); reject(new Error('script 載入失敗(onerror)')); };
-        document.body.appendChild(s);
-      });
+          var a = txt.indexOf('('), b = txt.lastIndexOf(')');
+          if (a === -1 || b === -1) throw new Error('回應格式不符');
+          return JSON.parse(txt.slice(a + 1, b));
+        })
+        .catch(function (err) {
+          clearTimeout(timer);
+          if (err && err.name === 'AbortError') throw new Error('逾時');
+          if (err && err.message === '回應格式不符') throw err;
+          throw new Error('連線失敗');
+        });
     }
 
     // 取網址 ?mode=<模式>；LIFF 有時把原始 query 包進 liff.state，兩處都找。
