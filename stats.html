@@ -198,16 +198,15 @@ function showAdminSwitch(who){
   a.addEventListener('click',function(e){e.preventDefault();location.href=a.href;}); // iOS standalone：<a> 會彈內嵌 Safari，JS 導頁留在 App 內
   document.body.appendChild(a);
 }
-function jsonp(action,params,timeoutMs){return new Promise(function(res){
-  var cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+// fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕（2026-07-24 verify 實證後全站換）
+function jsonp(action,params,timeoutMs){
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
-  var s=document.createElement('script');
-  s.src=GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback='+cb;
-  var timer=setTimeout(function(){res({ok:false,msg:'連線逾時（伺服器喚醒中），請重新整理再試。'});cleanup();},timeoutMs||15000);
-  s.onerror=function(){res({ok:false,msg:'連線失敗，請重新整理。'});cleanup();};
-  function cleanup(){clearTimeout(timer);window[cb]=function(){};s.remove();}
-  window[cb]=function(d){res(d);cleanup();};
-  document.body.appendChild(s);});}
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
+  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+    .then(function(r){return r.text();})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
 /** 依「URL 編碼後長度」自適應切包（中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度）。 */
 function chunkByLen(rows,maxEnc){
