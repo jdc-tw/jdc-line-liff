@@ -227,6 +227,9 @@ function jsonp(action,params){
     .then(function(r){return r.text();})
     .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗'};});}
+// SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。待報到者姓名屬 PII，只在進入本頁後才快取、admin 不預取。
+function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
+function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 var TOKEN=getToken();
 annivInit(jsonp, TOKEN);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
 function updateBadge(n){
@@ -625,9 +628,16 @@ function addDoneItem(o, prepend){
 }
 
 function load(){
-  document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';
+  var key='swr:board';
+  var cached=swrGet(key);
+  if(cached){renderLoad(cached);}
+  else{document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';}
   // options 與 pending 彼此不相依 → 並行發送，等待時間由「相加」降為「較慢的那個」
   Promise.all([jsonp('getCheckinOptions',{}), jsonp('getCheckinPending',{token:TOKEN})]).then(function(rs){
+    if(rs[1]&&rs[1].ok){swrSet(key,rs);renderLoad(rs);}else if(!cached){renderLoad(rs);}
+  });
+}
+function renderLoad(rs){
     var opt=rs[0], r=rs[1];
     if(opt&&(opt.units||opt.titles))gOpts=opt;
     if(opt&&(opt.unitGroups||opt.titleGroups))window.JDC_GROUPS={unitGroups:opt.unitGroups,titleGroups:opt.titleGroups};   // 分組吃選項主檔「分類」欄
@@ -641,7 +651,6 @@ function load(){
     updateBadge(r.rows.length);
     var done=r.done||[]; var list=document.getElementById('donelist'); list.innerHTML='';
     if(done.length){ document.getElementById('doneWrap').style.display=''; list.innerHTML=done.map(doneItemHtml).join(''); }
-  });
 }
 rosterDlInit({ jsonp: jsonp, token: TOKEN, leaversId: 'r-dl-leavers',
   msg: function (t, ty) { var el = document.getElementById('r-dl-msg'); el.className = 'msg show msg-' + (ty || 'info'); el.textContent = t; } });

@@ -207,6 +207,9 @@ function jsonp(action,params,timeoutMs){
     .then(function(r){return r.text();})
     .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
+// SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
+function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
+function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
 /** 依「URL 編碼後長度」自適應切包（中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度）。 */
 function chunkByLen(rows,maxEnc){
@@ -862,9 +865,16 @@ jsonp('listActivities',{token:q('t')}).then(function(r){
 });
 
 function loadStats(act){
-  var meta=document.getElementById('meta'), box=document.getElementById('content');
-  meta.textContent='載入中…';box.innerHTML='<div class="empty">載入中…</div>';
+  var key='swr:getActivityStats:'+(act||'');
+  var cached=swrGet(key);
+  if(cached){renderStats(cached);}
+  else{document.getElementById('meta').textContent='載入中…';document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
   jsonp('getActivityStats',{token:q('t'),act:act||''}).then(function(r){
+    if(r&&r.ok){swrSet(key,r);renderStats(r);}else if(!cached){renderStats(r);}
+  });
+}
+function renderStats(r){
+  var meta=document.getElementById('meta'), box=document.getElementById('content');
   if(!r||!r.ok){meta.textContent='';box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
   var a=r.activity, c=r.counts;
   window._curAct=a.id||'';
@@ -884,7 +894,6 @@ function loadStats(act){
     +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList)
     +'<div class="sec">已綁定未填（'+c.boundNoReply+'）— 催填問卷連結即可</div>'+listHtml(r.boundNoReply)
     +'<div class="sec">未綁定（'+c.notBound+'）— 要先完成身分綁定才能填</div>'+listHtml(r.notBound);
-  });
 }
 loadStats(q('act'));
 annivInit(jsonp, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁
