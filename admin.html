@@ -45,6 +45,20 @@ if(t){
   document.getElementById('go-stats').href='stats.html?t='+t;
   document.getElementById('go-hr').href='hr-stats.html?t='+t;
 }
+// 預取種子（2026-07-25）：停在本頁時背景先抓兩個聚合看板寫進 sessionStorage，點進去即秒顯（同分頁導頁保留）。
+// GAS /exec 每發 2-4s 固定往返、暖容器/快取都削不掉，唯有預先抓好、把等待丟在你看選單這幾秒。
+// 只做 hr-stats／活動出席統計（非 PII）；board 帶待報到者姓名，不預取，由其自身 SWR 於進入後才快取。
+if(t){
+  var GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+  var seed=function(action,key){
+    fetch(GAS+'?action='+encodeURIComponent(action)+'&token='+encodeURIComponent(t)+'&callback=cb',{credentials:'omit',redirect:'follow'})
+      .then(function(r){return r.text();})
+      .then(function(x){var a=x.indexOf('('),b=x.lastIndexOf(')');if(a<0||b<0)return;var o=JSON.parse(x.slice(a+1,b));if(o&&o.ok){try{sessionStorage.setItem(key,JSON.stringify(o));}catch(e){}}})
+      .catch(function(){});
+  };
+  seed('getHrStats','swr:getHrStats');
+  seed('getActivityStats','swr:getActivityStats:');   // 對齊 stats.html 預設 act='' 的 key
+}
 // iOS「加到主畫面」standalone 模式：<a> 導頁會彈出帶網址列的內嵌 Safari，
 // 改用 JS 導頁就留在 App 視窗內（桌機瀏覽器行為不變）
 document.querySelectorAll('a.card').forEach(function(a){
