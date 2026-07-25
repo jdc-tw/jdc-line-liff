@@ -1,0 +1,45 @@
+name: 更新 hr-stats-pub.json
+
+# 每日把「人事看板公開聚合版」（getHrStatsPublic·無姓名·無 token）灌進 hr-stats-pub.json。
+# 讓 hr-stats.html 首次載入直讀此靜態檔（~0.4s·Pages CDN）而非等 getHrStats 的 ~2s /exec 往返；
+# 退休預警名單仍只由 gated getHrStats 即時載入（本靜態檔不含姓名）。
+# 零密鑰：getHrStatsPublic 公開無 token、推送用 Actions 內建 GITHUB_TOKEN。
+
+on:
+  schedule:
+    - cron: '10 22 * * *'   # 每日 06:10 台北（UTC 22:10）——錯開 roster 的 06:00
+  workflow_dispatch: {}     # 手動按鈕：要立即刷新時到 Actions 頁按 Run workflow
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-hr-stats
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 從 GAS 取公開聚合版
+        run: |
+          GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
+          curl -fsSL "$GAS?action=getHrStatsPublic&callback=__cb" \
+            | sed -E 's/^__cb\((.*)\)$/\1/' > hr-stats-pub.json.new
+          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('hr-stats-pub.json.new','utf8')); if(!r.ok||!r.stats||!r.stats.total) throw new Error('hr-stats 內容異常，放棄更新'); if(!r.stats.pub) throw new Error('缺 pub 旗標，疑似含姓名的 gated 版，放棄'); const nm=[]; Object.keys(r.stats.units).forEach(function(n){const R=r.stats.units[n].retire; ['now','y5','y10'].forEach(function(k){R[k].forEach(function(v){if(v)nm.push(v);});});}); if(nm.length) throw new Error('偵測到姓名外洩('+nm.length+')，放棄更新'); console.log('✓ 在職',r.stats.total,'| 單位',r.stats.unitOrder.length,'| 退休名單已剝名')"
+          mv hr-stats-pub.json.new hr-stats-pub.json
+
+      - name: 有變動才 commit & push
+        run: |
+          if git diff --quiet hr-stats-pub.json; then
+            echo "人事聚合無變動，不需更新。"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hr-stats-pub.json
+          git commit -m "chore: 自動更新 hr-stats-pub.json（排程）"
+          git push
+          echo "✓ 已更新並推上 GitHub Pages"
