@@ -238,16 +238,30 @@ function renderHr(r){
     var inner=segs.map(function(c,i){ if(!c)return '';
       return '<div class="seg" style="flex:'+c+';background:'+C_RET[i]+'"></div>';}).join('');
     html+='<div class="hrow"><div class="nm">'+esc(nm)+'</div><div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+total+'</div></div>'
-        +'<div class="names" style="margin-left:96px">'
-        +(R.now.length?'<b>已滿65：</b>'+R.now.map(esc).join('、')+'　':'')
-        +(R.y5.length?'<b>5年內：</b>'+R.y5.map(esc).join('、')+'　':'')
-        +(R.y10.length?'<b>10年內：</b>'+R.y10.map(esc).join('、'):'')+'</div>';
+        +(s.pub
+          ? '<div class="names" style="margin-left:96px;color:#9a8f7a">🔒 名單需權限，載入中…</div>'
+          : '<div class="names" style="margin-left:96px">'
+            +(R.now.length?'<b>已滿65：</b>'+R.now.map(esc).join('、')+'　':'')
+            +(R.y5.length?'<b>5年內：</b>'+R.y5.map(esc).join('、')+'　':'')
+            +(R.y10.length?'<b>10年內：</b>'+R.y10.map(esc).join('、'):'')+'</div>');
   });
   html+='</div>';
   main.innerHTML=html;
 }
-(function(){var k='swr:getHrStats';var c=swrGet(k);if(c)renderHr(c);
-  jsonp('getHrStats',{token:q('t')}).then(function(r){if(r&&r.ok){swrSet(k,r);renderHr(r);}else if(!c)renderHr(r);});})();
+(function(){
+  var k='swr:getHrStats', c=swrGet(k), painted=false;
+  if(c){renderHr(c);painted=true;}                               // 重訪：sessionStorage(含名)秒顯
+  else{                                                          // 首訪：靜態聚合(無名)先秒顯圖表(~0.4s·Pages CDN)，退休名單顯示🔒
+    fetch('hr-stats-pub.json?v='+Date.now(),{cache:'no-store'})
+      .then(function(r){return r.json();})
+      .then(function(p){if(p&&p.ok&&!painted){renderHr(p);painted=true;}})
+      .catch(function(){});
+  }
+  jsonp('getHrStats',{token:q('t')}).then(function(r){           // 即時(含名·token gated)校正並填退休名單
+    if(r&&r.ok){swrSet(k,r);renderHr(r);}
+    else if(!painted){renderHr(r);}
+  });
+})();
 </script>
 </body>
 </html>
