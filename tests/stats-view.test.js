@@ -33,6 +33,13 @@ test('renderStatsHtml meta 含活動日期、截止、狀態與身分', () => {
   assert.equal(out.metaText, '活動日期：2026/01/20　回覆截止：2026/01/05　狀態：關閉　（張容瑞副總）');
 });
 
+test('活動名稱為空時用 fallbackTitle（避免切換活動殘留上一場標題）', () => {
+  const noName = JSON.parse(JSON.stringify(OK));
+  noName.activity.name = '';
+  assert.equal(renderStatsHtml(noName, { fallbackTitle: '活動紀錄看板' }).titleText, '活動紀錄看板');
+  assert.equal(renderStatsHtml(noName, {}).titleText, '');
+});
+
 test('renderStatsHtml 意見區帶筆數', () => {
   assert.match(renderStatsHtml(OK, {}).bodyHtml, /意見（1）/);
 });

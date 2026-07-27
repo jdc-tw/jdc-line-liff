@@ -48,7 +48,7 @@ function renderStatsHtml(r, opts){
   return {
     ok:true,
     actId: a.id||'',
-    titleText: a.name||'',
+    titleText: a.name||opts.fallbackTitle||'',
     metaText: [a.eventDate?'活動日期：'+a.eventDate:'', a.deadlineText?'回覆截止：'+a.deadlineText:'',
                '狀態：'+a.status, '（'+r.who+'）'].filter(Boolean).join('　'),
     bodyHtml:

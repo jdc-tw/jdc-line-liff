@@ -849,7 +849,7 @@ function loadStats(act){
   });
 }
 function renderStats(r){
-  var out=renderStatsHtml(r,{});
+  var out=renderStatsHtml(r,{fallbackTitle:'活動紀錄看板'});
   var meta=document.getElementById('meta'), box=document.getElementById('content');
   if(out.titleText)document.getElementById('title').textContent=out.titleText;
   meta.textContent=out.metaText;
