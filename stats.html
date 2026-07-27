@@ -185,6 +185,7 @@
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
 <script src="assets/seating.js"></script>
+<script src="assets/stats-view.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
@@ -210,7 +211,6 @@ function jsonp(action,params,timeoutMs){
 // SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
 function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
 /** 依「URL 編碼後長度」自適應切包（中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度）。 */
 function chunkByLen(rows,maxEnc){
   maxEnc=maxEnc||3000;
@@ -230,31 +230,6 @@ function jsonpW(action,params,tries){
     if(r&&r.ok)return r;
     if(tries<=0)return r;
     return new Promise(function(res){setTimeout(res,1500);}).then(function(){return jsonpW(action,params,tries-1);});
-  });
-}
-
-// 依單位收納（保留原順序）；bodyFn(items) 決定每組內容。單位旁顯示人數。
-function groupHtml(arr, bodyFn){
-  if(!arr.length) return '<div class="empty">（無）</div>';
-  var m={},order=[];
-  arr.forEach(function(o){if(!m[o.unit]){m[o.unit]=[];order.push(o.unit);}m[o.unit].push(o);});
-  return order.map(function(u){
-    return '<details class="grp"><summary>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span></summary><div class="body">'+bodyFn(m[u])+'</div></details>';
-  }).join('');
-}
-// 純名字（橫排流式）
-function listHtml(arr){
-  return groupHtml(arr, function(items){
-    return '<div class="names">'+items.map(function(o){return '<span>'+esc(o.name)+'</span>';}).join('')+'</div>';
-  });
-}
-// 意見清單：每人一列，姓名＋參加/不參加標記＋意見
-function opinionsHtml(arr){
-  return groupHtml(arr, function(items){
-    return items.map(function(o){
-      var att=o.attend==='參加' ? '<span class="att att-y">參加</span>' : '<span class="att att-n">不參加</span>';
-      return '<div class="p"><span class="n">'+esc(o.name)+'</span>'+att+'<span class="op">'+esc(o.opinion)+'</span></div>';
-    }).join('');
   });
 }
 
@@ -874,26 +849,16 @@ function loadStats(act){
   });
 }
 function renderStats(r){
+  var out=renderStatsHtml(r,{});
   var meta=document.getElementById('meta'), box=document.getElementById('content');
-  if(!r||!r.ok){meta.textContent='';box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
-  var a=r.activity, c=r.counts;
-  window._curAct=a.id||'';
+  if(out.titleText)document.getElementById('title').textContent=out.titleText;
+  meta.textContent=out.metaText;
+  box.innerHTML=out.bodyHtml;
+  if(!out.ok)return;
+  window._curAct=out.actId;
   var sel=document.getElementById('act-picker');
-  if(sel.options.length&&a.id)sel.value=a.id;
-  document.getElementById('title').textContent=a.name||'活動紀錄看板';
-  meta.textContent=[a.eventDate?'活動日期：'+a.eventDate:'', a.deadlineText?'回覆截止：'+a.deadlineText:'', '狀態：'+a.status, '（'+r.who+'）'].filter(Boolean).join('　');
+  if(sel.options.length&&out.actId)sel.value=out.actId;
   showAdminSwitch(r.who);
-  var noReply=c.boundNoReply+c.notBound;
-  box.innerHTML=
-    '<div class="card"><div class="grid">'
-      +'<div><div class="num green">'+c.attend+'</div><div class="cap">參加</div></div>'
-      +'<div><div class="num red">'+c.absent+'</div><div class="cap">不參加</div></div>'
-      +'<div><div class="num grey">'+noReply+'</div><div class="cap">未填</div></div>'
-    +'</div><div class="sub">全員 '+c.total+'・已回覆 '+c.replied+'・葷 '+c.meat+'／素 '+c.veg+'</div></div>'
-    +'<div class="sec">意見（'+(r.opinions||[]).length+'）— 參加與不參加者填的意見</div>'+opinionsHtml(r.opinions||[])
-    +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList)
-    +'<div class="sec">已綁定未填（'+c.boundNoReply+'）— 催填問卷連結即可</div>'+listHtml(r.boundNoReply)
-    +'<div class="sec">未綁定（'+c.notBound+'）— 要先完成身分綁定才能填</div>'+listHtml(r.notBound);
 }
 loadStats(q('act'));
 annivInit(jsonp, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁
