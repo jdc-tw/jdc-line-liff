@@ -3,9 +3,9 @@ const assert = require('node:assert');
 const { esc, listHtml, opinionsHtml, renderStatsHtml, pickDefaultActivity } = require('../assets/stats-view.js');
 
 const OK = {
-  ok: true, who: '***REMOVED***副總',
+  ok: true, who: '王副總',
   activity: { id: 'A003', name: '2026 尾牙', status: '關閉', eventDate: '2026/01/20', deadlineText: '2026/01/05' },
-  counts: { attend: 120, absent: 14, boundNoReply: 8, notBound: 12, total: 154, replied: 134, meat: 100, veg: 20 },
+  counts: { attend: 70, absent: 10, boundNoReply: 5, notBound: 15, total: 100, replied: 80, meat: 50, veg: 20 },
   opinions: [{ unit: '工務部', name: '王小明', attend: '參加', opinion: '希望早點結束' }],
   absentList: [{ unit: '工務部', name: '李小華' }],
   boundNoReply: [{ unit: '管理部', name: '陳小美' }],
@@ -22,15 +22,15 @@ test('renderStatsHtml 產出三個數字與總計列', () => {
   assert.equal(out.ok, true);
   assert.equal(out.actId, 'A003');
   assert.equal(out.titleText, '2026 尾牙');
-  assert.match(out.bodyHtml, /">120<\/div><div class="cap">參加/);
-  assert.match(out.bodyHtml, /">14<\/div><div class="cap">不參加/);
-  assert.match(out.bodyHtml, /">20<\/div><div class="cap">未填/);   // boundNoReply 8 + notBound 12
-  assert.match(out.bodyHtml, /全員 154・已回覆 134・葷 100／素 20/);
+  assert.match(out.bodyHtml, /">70<\/div><div class="cap">參加/);
+  assert.match(out.bodyHtml, /">10<\/div><div class="cap">不參加/);
+  assert.match(out.bodyHtml, /">20<\/div><div class="cap">未填/);   // boundNoReply 5 + notBound 15
+  assert.match(out.bodyHtml, /全員 100・已回覆 80・葷 50／素 20/);
 });
 
 test('renderStatsHtml meta 含活動日期、截止、狀態與身分', () => {
   const out = renderStatsHtml(OK, {});
-  assert.equal(out.metaText, '活動日期：2026/01/20　回覆截止：2026/01/05　狀態：關閉　（***REMOVED***副總）');
+  assert.equal(out.metaText, '活動日期：2026/01/20　回覆截止：2026/01/05　狀態：關閉　（王副總）');
 });
 
 test('活動名稱為空時用 fallbackTitle（避免切換活動殘留上一場標題）', () => {
