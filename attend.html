@@ -1,0 +1,124 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>活動出席狀況</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    padding: 20px 16px 40px; font-size: 17px; line-height: 1.6; color: #333;
+    background: #f7f7f7; max-width: 480px; margin: 0 auto;
+  }
+  .brand { text-align: center; margin: 0 0 14px; }
+  .brand img { width: 100%; max-width: 240px; height: auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #1a1a1a; }
+  .meta { font-size: 14px; color: #888; margin-bottom: 18px; }
+  .picker { width: 100%; font-size: 15px; padding: 8px 10px; border: 1px solid #ddd;
+    border-radius: 8px; margin-bottom: 10px; display: none; background: #fff; }
+  .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; }
+  .num { font-size: 26px; font-weight: 700; color: #1a1a1a; }
+  .num.green { color: #06a04a; } .num.red { color: #c62828; } .num.grey { color: #888; }
+  .cap { font-size: 13px; color: #888; }
+  .sub { font-size: 14px; color: #666; margin-top: 12px; text-align: center; }
+  .sec { font-size: 16px; color: #666; margin: 24px 0 10px; font-weight: 600; }
+  .grp { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 8px; overflow: hidden; }
+  .grp summary { padding: 12px 14px; cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: baseline; gap: 8px; }
+  .grp summary::-webkit-details-marker { display: none; }
+  .grp summary::before { content: '▸'; color: #bbb; font-size: 13px; transition: transform .15s; }
+  .grp[open] summary::before { transform: rotate(90deg); }
+  .grp .cnt { color: #888; font-weight: 400; font-size: 14px; }
+  .grp .body { padding: 0 14px 12px 30px; }
+  .names { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px; color: #444; }
+  .p { padding: 4px 0; border-bottom: 1px solid #f2f2f2; }
+  .p:last-child { border-bottom: none; }
+  .p .n { font-weight: 600; }
+  .p .att { font-size: 12px; padding: 1px 7px; border-radius: 10px; margin-left: 8px; }
+  .att-y { background: #e6f9ee; color: #1a7d44; }
+  .att-n { background: #fdecea; color: #b71c1c; }
+  .p .op { font-size: 14px; color: #444; display: block; margin-top: 2px; }
+  .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
+  @media (min-width: 768px) {
+    body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
+    h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
+    .card { padding: 26px 30px; } .sec { font-size: 18px; }
+  }
+</style></head><body>
+<div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<h1 id="title">活動出席狀況</h1>
+<select id="act-picker" class="picker" onchange="load(this.value)"></select>
+<div id="meta" class="meta">載入中…</div>
+<div id="content"><div class="empty">載入中…</div></div>
+<script src="assets/stats-view.js"></script>
+<script>
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+// fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕
+function jsonp(action,params,timeoutMs){
+  var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
+  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+    .then(function(r){return r.text();})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
+// SWR：sessionStorage 秒顯上次結果、背景重抓校正
+function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
+function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+
+var CUR='';   // 目前顯示的活動ID
+
+function paint(r){
+  var out=renderStatsHtml(r,{fallbackTitle:'活動出席狀況'});
+  if(out.titleText)document.getElementById('title').textContent=out.titleText;
+  document.getElementById('meta').textContent=out.metaText;
+  document.getElementById('content').innerHTML=out.bodyHtml;
+  if(!out.ok)return;
+  CUR=out.actId;
+  var sel=document.getElementById('act-picker');
+  if(sel.options.length&&out.actId)sel.value=out.actId;
+}
+
+function load(actId){
+  if(!actId){
+    document.getElementById('meta').textContent='';
+    document.getElementById('content').innerHTML='<div class="empty">目前還沒有任何活動。</div>';
+    return;
+  }
+  CUR=actId;
+  var key='swr:attend:'+actId;
+  var cached=swrGet(key);
+  if(cached)paint(cached);
+  else{document.getElementById('meta').textContent='載入中…';
+       document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
+  jsonp('getActivityStats',{token:q('t'),act:actId}).then(function(r){
+    if(r&&r.ok){swrSet(key,r);paint(r);}else if(!cached){paint(r);}
+  });
+}
+
+// 進頁：先取活動清單決定要看哪一場（活動關掉也看得到最新一場）
+jsonp('listActivities',{token:q('t')}).then(function(r){
+  if(!r||!r.ok){
+    document.getElementById('meta').textContent='';
+    document.getElementById('content').innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效，請向系統管理者索取新連結。')+'</div>';
+    return;
+  }
+  var sel=document.getElementById('act-picker');
+  if(r.rows.length){
+    sel.innerHTML=r.rows.slice().reverse().map(function(a){
+      var st=a.status==='開放'?(a.open?'開放中':'已截止'):'已關閉';
+      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（'+st+'・回覆 '+a.replies+'）</option>';
+    }).join('');
+    sel.style.display='';
+  }
+  load(pickDefaultActivity(r.rows,q('act')));
+});
+
+// 切回這個分頁就重抓一次（不做定時輪詢，省 GAS 配額）
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&CUR)load(CUR);
+});
+</script></body></html>
