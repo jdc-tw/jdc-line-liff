@@ -1,0 +1,5 @@
+# 本站是公司內部工具（LINE LIFF 綁定/報到、人事與活動看板），不對外公開招攬。
+# 一律禁止搜尋引擎檢索——特別是 roster.json 這類供前端讀取的資料檔，
+# 它們無法像 HTML 那樣掛 noindex meta，只能靠這裡擋。
+User-agent: *
+Disallow: /
