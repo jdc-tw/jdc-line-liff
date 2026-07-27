@@ -70,6 +70,9 @@ function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):nu
 function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 
 var CUR='';   // 目前顯示的活動ID
+// 記住上次看的那場，回訪時先用它的快取秒開（localStorage：跨分頁、關瀏覽器也留著）
+function lastAct(){try{return localStorage.getItem('attend:lastAct')||'';}catch(e){return '';}}
+function rememberAct(id){try{if(id)localStorage.setItem('attend:lastAct',id);}catch(e){}}
 
 function paint(r){
   var out=renderStatsHtml(r,{fallbackTitle:'活動出席狀況'});
@@ -78,6 +81,7 @@ function paint(r){
   document.getElementById('content').innerHTML=out.bodyHtml;
   if(!out.ok)return;
   CUR=out.actId;
+  rememberAct(CUR);
   var sel=document.getElementById('act-picker');
   if(sel.options.length&&out.actId)sel.value=out.actId;
 }
@@ -99,23 +103,45 @@ function load(actId){
   });
 }
 
-// 進頁：先取活動清單決定要看哪一場（活動關掉也看得到最新一場）
-jsonp('listActivities',{token:q('t')}).then(function(r){
-  if(!r||!r.ok){
-    document.getElementById('meta').textContent='';
-    document.getElementById('content').innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效，請向系統管理者索取新連結。')+'</div>';
-    return;
-  }
-  var sel=document.getElementById('act-picker');
-  if(r.rows.length){
-    sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      var st=a.status==='開放'?(a.open?'開放中':'已截止'):'已關閉';
-      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（'+st+'・回覆 '+a.replies+'）</option>';
-    }).join('');
-    sel.style.display='';
-  }
-  load(pickDefaultActivity(r.rows,q('act')));
-});
+// 進頁：兩支 GAS 同時發，不串接等待（GAS 每支固定 3 秒起跳，串接＝首屏 6 秒以上）。
+// 樂觀那支直接問「開放中那場」的統計——多數情況命中，畫面 3 秒就出來；
+// 只有在全部活動皆關閉（樂觀那支撲空）時，才退回用清單挑最新一場再問一次。
+(function init(){
+  var t=q('t'), urlAct=q('act');
+  var pList = jsonp('listActivities',{token:t});
+  var pFast = jsonp('getActivityStats',{token:t,act:urlAct||''});
+
+  // 回訪秒開：先用上次看的那場的快取畫出來，背景再校正
+  var seed = urlAct || lastAct();
+  if(seed){ var c=swrGet('swr:attend:'+seed); if(c)paint(c); }
+
+  pFast.then(function(r){
+    if(r&&r.ok){ swrSet('swr:attend:'+(r.activity.id||''),r); paint(r); }
+  });
+
+  pList.then(function(r){
+    if(!r||!r.ok){
+      if(!CUR){
+        document.getElementById('meta').textContent='';
+        document.getElementById('content').innerHTML='<div class="empty">'+esc((r&&r.msg)||'連結無效或已失效，請向系統管理者索取新連結。')+'</div>';
+      }
+      return;
+    }
+    var sel=document.getElementById('act-picker');
+    if(r.rows.length){
+      sel.innerHTML=r.rows.slice().reverse().map(function(a){
+        var st=a.status==='開放'?(a.open?'開放中':'已截止'):'已關閉';
+        return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（'+st+'・回覆 '+a.replies+'）</option>';
+      }).join('');
+      sel.style.display='block';   // 不可用 ''：display:none 在 .picker class 上，清行內樣式只會退回 none
+      if(CUR)sel.value=CUR;
+    }
+    return pFast.then(function(fr){
+      if(fr&&fr.ok)return;                            // 樂觀那支已命中，不必再打
+      load(pickDefaultActivity(r.rows,urlAct));       // 全部關閉 → 挑最新一場
+    });
+  });
+})();
 
 // 切回這個分頁就重抓一次（不做定時輪詢，省 GAS 配額）
 document.addEventListener('visibilitychange',function(){
