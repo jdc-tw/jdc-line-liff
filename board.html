@@ -368,8 +368,10 @@ function catBadge(cat){
   var col=CAT_COLOR[cat]||'#666';
   return '<span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(cat)+'</span>';
 }
-// 單位/職稱欄：嚴格下拉＋系統預選最佳猜測（雅慧只在不對時改；清單沒有的到「資訊維護」分頁新增）。
+// 單位/職稱欄：嚴格下拉＋系統預選最佳猜測（雅慧只在不對時改）。
 // 猜測順位：完全命中 → 部分命中（公告「富貴莊園(兼)春天」→ 清單「富貴莊園」；公告「所長」→「所長/經理」取第一個並列出其他候選）
+// 職稱附「＋ 手動輸入職稱…」逃生門（新職稱首次出現免繞資訊維護；套用時 ensureOption_ 自動回補選項清單）；
+// 單位維持嚴格下拉（單位連動意見箱/LINE 標籤，新單位仍走資訊維護）。
 function hrPickField(box, key, list, cur, label){
   var pick=(cur&&list.indexOf(cur)>=0)?cur:'';
   var hint='';
@@ -379,12 +381,29 @@ function hrPickField(box, key, list, cur, label){
       pick=cand[0];
       hint='公告寫「'+esc(cur)+'」→ 已預選「'+esc(cand[0])+'」，請核對'+(cand.length>1?'（其他候選：'+cand.slice(1).map(esc).join('、')+'）':'');
     }else{
-      hint='公告寫「'+esc(cur)+'」不在清單；請核定一個，或先到「資訊維護」分頁新增'+label;
+      hint=key==='title'
+        ? '公告寫「'+esc(cur)+'」不在清單；可選「＋ 手動輸入職稱…」照公告輸入（核定套用後自動加入選項清單）'
+        : '公告寫「'+esc(cur)+'」不在清單；請核定一個，或先到「資訊維護」分頁新增'+label;
     }
   }
-  box.innerHTML='<select data-k="'+key+'"><option value=""'+(pick?'':' selected')+'>── 請選擇 ──</option>'
-    +list.map(function(v){return '<option'+(v===pick?' selected':'')+'>'+esc(v)+'</option>';}).join('')+'</select>'
-    +(hint?'<div class="done-meta" style="margin:-8px 0 12px">'+hint+'</div>':'');
+  var hintHtml=hint?'<div class="done-meta" style="margin:-8px 0 12px">'+hint+'</div>':'';
+  function toSelect(val){
+    box.innerHTML='<select data-k="'+key+'"><option value=""'+(val?'':' selected')+'>── 請選擇 ──</option>'
+      +list.map(function(v){return '<option'+(v===val?' selected':'')+'>'+esc(v)+'</option>';}).join('')
+      +(key==='title'?'<option value="__manual__">＋ 手動輸入職稱…</option>':'')
+      +'</select>'+hintHtml;
+    if(key==='title'){
+      var sel=box.querySelector('select');
+      sel.onchange=function(){ if(sel.value==='__manual__') toInput(cur||''); };
+    }
+  }
+  function toInput(val){
+    box.innerHTML='<input data-k="'+key+'" type="text" value="'+esc(val||'')+'" placeholder="請照公告輸入職稱">'
+      +'<button type="button" class="linkbtn" data-back>↩ 改用清單選</button>'+hintHtml;
+    box.querySelector('[data-back]').onclick=function(){ toSelect(pick); };
+    box.querySelector('input').focus();
+  }
+  toSelect(pick);
 }
 // 比對失敗補救：單位→姓名 串聯下拉＋手動輸入
 function hrNameField(box){
