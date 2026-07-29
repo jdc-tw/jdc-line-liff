@@ -31,6 +31,9 @@
 <script src="assets/jsQR.min.js"></script>
 <script src="assets/staff-scan.js"></script>
 <script>
+/** 同 assets/checkin-board.js 寫法：塞進 innerHTML 前先中和 & < >。 */
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
 var qs = new URLSearchParams(location.search);
 var DEMO = qs.get('demo') === '1';
 var ACT = qs.get('act') || 'zzdemo2026';
@@ -72,6 +75,7 @@ function updateQueueBadge() {   // D4：佇列筆數長駐畫面
   document.getElementById('qbadge').style.color = n > 0 ? '#e8b339' : '#8a8';
 }
 function enqueue(empNo, method) {
+  if (DEMO) return;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
   var q = loadQueue(); q.push({ empNo: empNo, ts: Date.now(), m: method || 'scan' });
   saveQueue(q); flush();
 }
@@ -136,7 +140,7 @@ function manualCheckin(p) {
   if (!confirm(msg)) return;
   enqueue(p.empNo, 'manual');
   if (h) state.seen[h] = true;
-  show('ok', '✓ 已受理（手動）｜' + p.name + '<div class="meta">' + (p.unit || '') + '</div>');
+  show('ok', '✓ 已受理（手動）｜' + esc(p.name) + '<div class="meta">' + esc(p.unit || '') + '</div>');
   document.getElementById('hits').innerHTML = '';
   document.getElementById('manual').value = '';
 }
@@ -175,6 +179,17 @@ function purgeIfExpired() {
   if (exp && Date.now() > exp) { sessionStorage.removeItem(SNAP_KEY); sessionStorage.removeItem(EXPIRE_KEY); }
 }
 
+/**
+ * 快照到期＝活動日+1 天 23:59（容忍 yyyy/MM/dd 或 yyyy-MM-dd）；
+ * 無值或解析不到→回 null，呼叫端維持現行 24h 保守值。
+ */
+function computeCheckinExpiry_(eventDateStr) {
+  var m = String(eventDateStr || '').match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (!m) return null;
+  var dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1, 23, 59, 0, 0);
+  return isNaN(dt.getTime()) ? null : dt.getTime();
+}
+
 function applySnapshotPayload(res) {
   // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
   snapshot = res.snapshot; nameTable = res.nameTable || {};
@@ -196,8 +211,9 @@ async function loadSnapshot(force) {
   }
   applySnapshotPayload(res);
   sessionStorage.setItem(SNAP_KEY, JSON.stringify(res));
-  // 到期＝活動日+1；保守 24h（可由 res 帶 eventDate 精算）
-  sessionStorage.setItem(EXPIRE_KEY, String(Date.now() + 24 * 3600 * 1000));
+  // 到期＝活動日+1 天 23:59；解析不到（無 eventDate 或格式外）→維持保守 24h
+  var expEpoch = computeCheckinExpiry_(res.eventDate);
+  sessionStorage.setItem(EXPIRE_KEY, String(expEpoch || (Date.now() + 24 * 3600 * 1000)));
   ready = true;
   show('ok', '✓ 名單就緒（' + Object.keys(snapshot).length + ' 位參加者）');
 }
@@ -220,19 +236,18 @@ async function handle(text, t0) {
   var ms = Math.round(performance.now() - t0);
   if (r.verdict.type === 'ok') {
     var pp = r.verdict.person;
-    var tbl = pp.table ? ('第 ' + pp.table + ' 桌') : '（未排桌）';
+    var tbl = pp.table ? ('第 ' + esc(pp.table) + ' 桌') : '（未排桌）';
     var main = pp.table === '主桌' ? '<span style="color:#ff6b6b">主桌</span>' : tbl;
     // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
-    show('ok', '✓ 已受理｜' + pp.name + '<div class="meta">' + pp.unit + '・' + main + '・' + ms + 'ms</div>');
+    show('ok', '✓ 已受理｜' + esc(pp.name) + '<div class="meta">' + esc(pp.unit) + '・' + main + '・' + ms + 'ms</div>');
     if (navigator.vibrate) navigator.vibrate(80);
     enqueue(pp.empNo, 'scan');
   } else if (r.verdict.type === 'dup') {
-    show('dup', '⚠ ' + r.verdict.person.name + ' 已報到過');
+    show('dup', '⚠ ' + esc(r.verdict.person.name) + ' 已報到過');
   } else {
     show('bad', '❌ 查無此碼（快照無資料）');
   }
-  document.getElementById('stat').textContent =
-    '已掃 ' + Object.keys(state.seen).length + ' 人｜佇列 ' + state.queue.length + ' 筆（spike 不回寫）';
+  document.getElementById('stat').textContent = '已掃 ' + Object.keys(state.seen).length + ' 人';
 }
 
 function loop(video, ctx, cv) {
