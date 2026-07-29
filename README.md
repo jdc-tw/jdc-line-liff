@@ -12,8 +12,8 @@
 |---|---|
 | `index.html` | LIFF 主頁（綁定 / 活動問卷 / 問題回報），含樂觀渲染 |
 | `verify.html` | email 驗證信連結落地頁（JSONP 回呼後端完成驗證） |
-| `roster.json` | 同源靜態名單（單位→姓名下拉來源） |
-| `update-roster.sh` | 名單更新後重新產生 `roster.json` 並發佈 |
+| `roster.json` | 同源靜態選項檔（單位／職稱下拉來源）。⚠️ 本 repo 為 PUBLIC ＋ GitHub Pages 匿名可讀，**不得放入姓名等個資**；更新流程有防護會擋 |
+| `update-roster.sh` | 選項更新後重新產生 `roster.json` 並發佈（平時走排程，這支是逃生口） |
 
 ## 架構一句話
 
