@@ -92,23 +92,28 @@ async function flush() {
   try {
     var packs = chunkByLen(q, 3000);    // D1：一律切包
     for (var i = 0; i < packs.length; i++) {
-      var res = await jget('recordEventCheckins', {
-        t: TOKEN, act: ACT, rows: JSON.stringify(packs[i]),
-        n: Date.now() + '' + Math.floor(Math.random() * 1e6)   // cache-bust nonce
-      }, 45000);
-      if (!res || !res.ok) {            // D3：任何非 ok（lock timeout/400/逾時）＝失敗
+      try {
+        var res = await jget('recordEventCheckins', {
+          t: TOKEN, act: ACT, rows: JSON.stringify(packs[i]),
+          n: Date.now() + '' + Math.floor(Math.random() * 1e6)   // cache-bust nonce
+        }, 45000);
+        if (!res || !res.ok) {            // D3：任何非 ok（lock timeout/400/逾時）＝失敗
+          show('dup', '⚠ 回寫未完成，' + loadQueue().length + ' 筆待送，稍後自動重試');
+          return;                          // 保留剩餘佇列、等下一輪；不遞迴重試
+        }
+        // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
+        var sent = {}; packs[i].forEach(function (r) { sent[r.empNo + '|' + r.ts] = true; });
+        saveQueue(loadQueue().filter(function (r) { return !sent[r.empNo + '|' + r.ts]; }));
+        lastSyncAt = new Date().toLocaleTimeString();
+        document.getElementById('lastsync').textContent = lastSyncAt;
+        // C2：後端回傳全場已報到員編 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
+        (res.allChecked || []).forEach(function (emp) {
+          var h = empToHash[emp]; if (h) state.seen[h] = true;
+        });
+      } catch (err) {   // 網路中斷／AbortController 逾時／JSON 解析失敗＝同一種失敗
         show('dup', '⚠ 回寫未完成，' + loadQueue().length + ' 筆待送，稍後自動重試');
-        return;                          // 保留剩餘佇列、等下一輪；不遞迴重試
+        return;         // 佇列語意不變：只有成功那支才會被移除，這裡沒動過佇列
       }
-      // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
-      var sent = {}; packs[i].forEach(function (r) { sent[r.empNo + '|' + r.ts] = true; });
-      saveQueue(loadQueue().filter(function (r) { return !sent[r.empNo + '|' + r.ts]; }));
-      lastSyncAt = new Date().toLocaleTimeString();
-      document.getElementById('lastsync').textContent = lastSyncAt;
-      // C2：後端回傳全場已報到員編 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
-      (res.allChecked || []).forEach(function (emp) {
-        var h = empToHash[emp]; if (h) state.seen[h] = true;
-      });
     }
   } finally { flushing = false; updateQueueBadge(); }
 }
@@ -123,9 +128,13 @@ document.addEventListener('visibilitychange', function () {
 });
 
 function manualCheckin(p) {
-  if (!confirm('手動報到：' + p.name + '（' + p.unit + '）？')) return;
-  enqueue(p.empNo, 'manual');
   var h = empToHash[p.empNo];
+  var alreadySeen = h && state.seen[h];   // 本機已知報到過，但後端冪等仍允許再送出
+  var msg = alreadySeen
+    ? '此人已報到過，仍要再送出？'
+    : ('手動報到：' + p.name + '（' + p.unit + '）？');
+  if (!confirm(msg)) return;
+  enqueue(p.empNo, 'manual');
   if (h) state.seen[h] = true;
   show('ok', '✓ 已受理（手動）｜' + p.name + '<div class="meta">' + (p.unit || '') + '</div>');
   document.getElementById('hits').innerHTML = '';
@@ -242,7 +251,14 @@ function loop(video, ctx, cv) {
 }
 
 (async function init() {
-  if (DEMO) await buildDemoSnapshot(); else await loadSnapshot();
+  updateQueueBadge();   // 佇列筆數不依賴 empToHash：開頁立刻反映上次 session 遺留的真實筆數，不等第一輪排程
+  if (DEMO) {
+    await buildDemoSnapshot();
+    updateQueueBadge();   // demo 快照建完後保險再確認一次（buildDemoSnapshot 不動佇列）
+  } else {
+    await loadSnapshot();
+    flush();   // 此時 empToHash 已由 applySnapshotPayload→rebuildEmpIndex 建好，立即補打一次殘留佇列
+  }
   document.getElementById('manual').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') {
       handle(this.value.trim(), performance.now());
