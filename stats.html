@@ -129,6 +129,10 @@
     <div class="fld"><label>調查截止日（必填，系統自動收到當天 23:59）</label><input id="na-deadline" type="date"></div>
     <div class="fld"><label>活動日期（選填，顯示在問卷上）</label><input id="na-event" type="date"></div>
     <div class="fld"><label>說明文字（選填，顯示在問卷卡片上）</label><textarea id="na-q" placeholder="例：請於截止日前回覆出席意願"></textarea></div>
+    <div class="fld"><label style="display:flex;align-items:center;gap:8px;font-weight:400">
+      <input type="checkbox" id="act-lottery-chk" style="width:auto;margin:0">連結獎金榜（尾牙用）</label>
+      <input id="act-lottery-ssid" type="text" style="display:none;margin-top:6px"
+             placeholder="獎金榜試算表 ID" value="1Hhd4egsR3lnaybO1zsCp-kVS2_K1KHmR"></div>
     <button class="btn btn-pri" onclick="createAct()">建立活動（狀態自動＝開放）</button>
     <div id="na-msg" class="msg"></div>
   </div>
@@ -769,16 +773,23 @@ function actCard(a){
     +'<div>'+btns+'</div><div class="msg" data-msg></div><div class="rep" style="display:none" data-rep></div></div>';
 }
 function cardMsg(id,text,cls){var c=document.getElementById('act-'+id);if(!c)return;var el=c.querySelector('[data-msg]');el.textContent=text;el.className='msg '+(cls||'');}
+document.getElementById('act-lottery-chk').addEventListener('change',function(){
+  document.getElementById('act-lottery-ssid').style.display=this.checked?'block':'none';
+});
 function createAct(){
   var name=document.getElementById('na-name').value.trim();
   var dl=document.getElementById('na-deadline').value;
   if(!name){setMsg('na-msg','請填活動名稱','err');return;}
   if(!dl){setMsg('na-msg','請選調查截止日','err');return;}
+  var lotteryOn=document.getElementById('act-lottery-chk').checked;
+  var lotterySsId=lotteryOn?document.getElementById('act-lottery-ssid').value.trim():'';
+  if(lotteryOn&&!lotterySsId){setMsg('na-msg','已勾選連結獎金榜，請填試算表 ID','err');return;}
   setMsg('na-msg','建立中…','');
-  jsonp('addActivity',{token:q('t'),name:name,deadlineDate:dl,eventDate:document.getElementById('na-event').value,question:document.getElementById('na-q').value.trim()}).then(function(r){
+  jsonp('addActivity',{token:q('t'),name:name,deadlineDate:dl,eventDate:document.getElementById('na-event').value,question:document.getElementById('na-q').value.trim(),lotterySsId:lotterySsId}).then(function(r){
     if(!r||!r.ok){setMsg('na-msg',(r&&r.msg)||'建立失敗','err');return;}
     setMsg('na-msg','✅ 已建立（'+r.id+'），截止 '+r.deadline,'ok');
     document.getElementById('na-name').value='';document.getElementById('na-q').value='';
+    document.getElementById('act-lottery-chk').checked=false;document.getElementById('act-lottery-ssid').style.display='none';
     loadActs();
   });
 }
