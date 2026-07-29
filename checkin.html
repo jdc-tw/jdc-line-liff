@@ -74,12 +74,15 @@ function paintStats(stats){
   document.getElementById('updated').textContent='最後更新：'+new Date().toLocaleTimeString('zh-TW',{hour12:false});
 }
 
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
 function paintError(msg){
   document.getElementById('meta').textContent='';
-  document.getElementById('content').innerHTML='<div class="empty">'+msg+'</div>';
+  document.getElementById('content').innerHTML='<div class="empty">'+esc(msg)+'</div>';
 }
 
 function load(){
+  if(!TOKEN||!ACT)return;   // 缺參數：init() 已畫過錯誤訊息，不再發請求（否則輪詢/手動刷新會一路打 token=''&act=''）
   jget('getEventCheckinStats',{token:TOKEN,act:ACT}).then(function(r){
     if(r&&r.ok){ swrSet(SWR_KEY,r.stats); paintStats(r.stats); }
     else if(!swrGet(SWR_KEY)){ paintError((r&&r.msg)||'連結無效或已失效，請向系統管理者索取新連結。'); }
