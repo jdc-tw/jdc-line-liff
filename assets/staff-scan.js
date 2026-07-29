@@ -30,4 +30,27 @@ function applyScan(state, hash, snapshot, nowMs) {
   return { state: { seen: seen, queue: queue }, verdict: { type: 'ok', person: person } };
 }
 
-if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan };
+function chunkByLen(rows, maxLen) {
+  var packs = [], cur = [];
+  for (var i = 0; i < rows.length; i++) {
+    var trial = cur.concat([rows[i]]);
+    if (encodeURIComponent(JSON.stringify(trial)).length > maxLen && cur.length) {
+      packs.push(cur); cur = [rows[i]];
+    } else cur = trial;
+  }
+  if (cur.length) packs.push(cur);
+  return packs;
+}
+
+function searchNames(nameTable, query) {
+  var q = String(query || '').replace(/[\s　]+/g, ''); if (!q) return [];
+  var out = [];
+  for (var k in nameTable) {
+    var p = nameTable[k];
+    if (p.name && p.name.replace(/[\s　]+/g, '').indexOf(q) !== -1) out.push(p);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames };

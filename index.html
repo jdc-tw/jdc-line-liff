@@ -10,6 +10,7 @@
   <title>日本國土開發 LINE 平台</title>
   <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg" />
   <script src="assets/groups.js"></script>
+  <script src="assets/qrcode-gen.js"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -234,6 +235,15 @@
       </div>
     </div>
 
+    <!-- 通行證：個人報到 QR（?mode=pass） -->
+    <div id="section-pass" class="card" style="display:none">
+      <h2>我的報到碼</h2>
+      <div id="pass-msg"></div>
+      <div id="pass-qr" style="text-align:center"></div>
+      <p class="hint" style="text-align:center">出示給工作人員掃描</p>
+      <p style="text-align:center"><a href="#" id="pass-retry" style="font-size:14px;color:#1a56c4">重新整理</a></p>
+    </div>
+
     <!-- 問題回報：一顆按鈕（之後接員工意見 Google 表單） -->
     <div id="section-report" class="card" style="display:none">
       <h2>問題回報</h2>
@@ -331,6 +341,11 @@
     }
     function show(id) { document.getElementById(id).style.display = ''; }
     function hide(id) { document.getElementById(id).style.display = 'none'; }
+    function escHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
 
     function populateUnitSelect(selUnit, units) {
       // 與報到頁共用 groups.js 的 jdcGroupedOptions：單位分「總公司／工地」兩組 <optgroup>，分類唯一來源不分歧。
@@ -344,6 +359,7 @@
     function startApp(userId, displayName) {
       gUserId = userId;
       gDisplayName = displayName;
+      if (getMode() === 'pass') { startPass(userId); return; }
       gRendered = false;
       gRosterReady = false;
       gRealState = undefined;
@@ -400,6 +416,28 @@
         // 背景失敗：若已樂觀顯示(綁定首頁/活動)仍可用；若在等(待驗證)則維持載入中
       });
       }
+    }
+
+    // 通行證模式（?mode=pass）：秀個人報到 QR，不走綁定/roster 主流程。
+    function startPass(userId) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('main').style.display = 'block';
+      show('section-pass');
+      var act = getAct();
+      var msgEl = document.getElementById('pass-msg');
+      if (!act) { showMsg(msgEl, escHtml('連結缺少活動參數'), 'err'); return; }
+      jsonp('getEventCheckinPass', { userId: userId, act: act }).then(function (res) {
+        if (!res || !res.ok) {
+          showMsg(msgEl, escHtml((res && res.msg) || '取得報到碼失敗，請稍後再試。'), 'err');
+          return;
+        }
+        var qr = qrcode(0, 'H');
+        qr.addData(res.code);
+        qr.make();
+        document.getElementById('pass-qr').innerHTML = qr.createImgTag(6, 8);
+      }).catch(function (err) {
+        showMsg(msgEl, escHtml('網路錯誤：' + (err && err.message ? err.message : err)), 'err');
+      });
     }
 
     // 顯示主畫面 + 套用狀態（名單沒到先不顯示；可重複呼叫＝校正）
@@ -692,6 +730,12 @@
           showMsg(msgEl, '網路錯誤：' + (err && err.message ? err.message : err), 'err');
           btn.disabled = false;
         });
+    });
+
+    // ─── 通行證重新整理（?mode=pass）───────────────────────────────────────────
+    document.getElementById('pass-retry').addEventListener('click', function (e) {
+      e.preventDefault();
+      location.reload();
     });
 
     // ─── 問題回報：開員工意見 Google 表單 ──────────────────────────────────────

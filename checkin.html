@@ -1,0 +1,102 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>報到看板</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    padding: 20px 16px 40px; font-size: 17px; line-height: 1.6; color: #333;
+    background: #f7f7f7; max-width: 480px; margin: 0 auto;
+  }
+  .brand { text-align: center; margin: 0 0 14px; }
+  .brand img { width: 100%; max-width: 240px; height: auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #1a1a1a; text-align: center; }
+  .meta { font-size: 13px; color: #888; margin-bottom: 18px; text-align: center; }
+  .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .big { font-size: 30px; font-weight: 700; color: #1a1a1a; text-align: center; margin-bottom: 10px; }
+  .st { font-size: 15px; color: #666; text-align: center; margin-bottom: 12px; }
+  .units { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; font-size: 15px; color: #444; }
+  .units .u { background: #f2f2f2; border-radius: 8px; padding: 6px 12px; }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; font-weight: 600; color: #666; font-size: 15px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '▸'; color: #bbb; font-size: 13px; margin-right: 4px; }
+  details[open] summary::before { content: '▾'; }
+  details ul { margin: 10px 0 0; padding-left: 20px; font-size: 15px; color: #444; }
+  details li { padding: 2px 0; }
+  .btn { display: block; width: 100%; padding: 13px; border: none; border-radius: 8px;
+    font-size: 16px; font-weight: 700; cursor: pointer; background: #06c755; color: #fff; }
+  .btn:active { background: #05a847; }
+  .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
+  .updated { text-align: center; font-size: 12px; color: #aaa; margin-top: 10px; }
+  @media (min-width: 768px) {
+    body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
+    h1 { font-size: 25px; } .big { font-size: 40px; } .card { padding: 26px 30px; }
+  }
+</style></head><body>
+<div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<h1>報到看板</h1>
+<div id="meta" class="meta">載入中…</div>
+<div id="content"><div class="empty">載入中…</div></div>
+<button id="refresh" class="btn">立即刷新</button>
+<div id="updated" class="updated"></div>
+<script src="assets/checkin-board.js"></script>
+<script>
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+var TOKEN=q('t'), ACT=q('act');
+
+// jget：打 GAS JSONP action，逾時／連線失敗回 {ok:false,msg}（fetch 匿名 credentials:'omit'：
+// 半殘 Google session 的電腦帶著瀏覽器登入態反被擋）
+function jget(action, params, timeoutMs){
+  var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
+  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+    .then(function(r){return r.text();})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});
+}
+
+// SWR：sessionStorage 秒顯上次結果、背景重抓校正；重抓失敗不蓋舊畫面
+function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
+function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+var SWR_KEY='swr:checkin:'+ACT;
+
+function paintStats(stats){
+  document.getElementById('meta').textContent='活動 '+ACT;
+  document.getElementById('content').innerHTML=renderBoardHtml(stats);
+  document.getElementById('updated').textContent='最後更新：'+new Date().toLocaleTimeString('zh-TW',{hour12:false});
+}
+
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+function paintError(msg){
+  document.getElementById('meta').textContent='';
+  document.getElementById('content').innerHTML='<div class="empty">'+esc(msg)+'</div>';
+}
+
+function load(){
+  if(!TOKEN||!ACT)return;   // 缺參數：init() 已畫過錯誤訊息，不再發請求（否則輪詢/手動刷新會一路打 token=''&act=''）
+  jget('getEventCheckinStats',{token:TOKEN,act:ACT}).then(function(r){
+    if(r&&r.ok){ swrSet(SWR_KEY,r.stats); paintStats(r.stats); }
+    else if(!swrGet(SWR_KEY)){ paintError((r&&r.msg)||'連結無效或已失效，請向系統管理者索取新連結。'); }
+    // 失敗但有舊快取：不動畫面，保留上一次成功結果
+  });
+}
+
+(function init(){
+  if(!TOKEN||!ACT){ paintError('連結缺少參數，請向系統管理者索取新連結。'); return; }
+  var cached=swrGet(SWR_KEY);
+  if(cached)paintStats(cached);
+  load();
+})();
+
+document.getElementById('refresh').addEventListener('click', load);
+setInterval(load, 15000);
+</script></body></html>
