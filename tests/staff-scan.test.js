@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseChkCode, sha256Hex, applyScan } = require('../assets/staff-scan.js');
+const { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames } = require('../assets/staff-scan.js');
 
 test('parseChkCode：格式正確回員編', () => {
   assert.deepEqual(parseChkCode('CHK|nendkai2026|00011|abc123', 'nendkai2026'),
@@ -44,4 +44,25 @@ test('applyScan：快照標已報到（別台機器掃過）→dup', async () =>
   const r = applyScan({ seen: {}, queue: [] }, h, snap, 1000);
   assert.equal(r.verdict.type, 'dup');
   assert.equal(r.state.queue.length, 0);
+});
+
+test('chunkByLen：以 URL 編碼後長度為準、涵蓋全部', () => {
+  const rows = Array.from({length:10}, (_,i)=>({empNo:String(i),ts:i}));
+  const packs = chunkByLen(rows, 200);
+  assert.ok(packs.every(p => encodeURIComponent(JSON.stringify(p)).length <= 200));
+  assert.equal(packs.reduce((n,p)=>n+p.length,0), 10);
+});
+
+test('chunkByLen：中文編碼膨脹也不超限（編碼後 ~9 倍）', () => {
+  const rows = [{empNo:'測試甲',ts:1},{empNo:'測試乙',ts:2},{empNo:'測試丙',ts:3}];
+  const packs = chunkByLen(rows, 120);
+  assert.ok(packs.every(p => encodeURIComponent(JSON.stringify(p)).length <= 120));
+  assert.equal(packs.reduce((n,p)=>n+p.length,0), 3);
+});
+
+test('searchNames：姓名子字串命中（name 表）', () => {
+  const t = { '王大明':{empNo:'1',name:'王大明',unit:'A'}, '李小華':{empNo:'2',name:'李小華',unit:'B'} };
+  const r = searchNames(t, '王');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].empNo, '1');
 });
