@@ -11,13 +11,21 @@
   .meta{font-size:14px;opacity:.75}
   #manual{width:100%;font-size:18px;padding:10px;border-radius:10px;border:0;margin-top:6px;box-sizing:border-box}
   #stat{font-size:13px;opacity:.6;margin-top:8px}
+  #hits{margin-top:6px}
+  #hits div{padding:10px;border-radius:8px;background:#222;margin-bottom:4px;font-size:16px}
 </style></head><body>
 <video id="cam" playsinline muted></video>
 <div id="panel">
   <div id="result" class="card bad" style="display:none"></div>
-  <input id="manual" placeholder="相機不可用時：手動貼碼後按 Enter">
+  <input id="manual" placeholder="相機不可用時：手動貼碼或姓名，貼碼後按 Enter">
+  <div id="hits"></div>
   <div id="stat"></div>
-  <div id="snapver" style="font-size:12px;opacity:.5;margin-top:2px"></div>
+  <div id="qbadge" style="font-size:14px;margin-top:6px">待送 0 筆</div>
+  <div id="diag" class="meta" style="margin-top:4px">
+    <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
+    ｜<a href="#" id="reload" style="color:#93b3a1">重新載入名單</a>
+  </div>
+  <button id="wipe" style="margin-top:10px;font-size:14px">清除本機報到資料</button>
 </div>
 <canvas id="cv" style="display:none"></canvas>
 <script src="assets/jsQR.min.js"></script>
@@ -45,12 +53,100 @@ async function buildDemoSnapshot() {
     var h = await sha256Hex(DEMO_CODES[i]);
     snapshot[h] = Object.assign({ checked: false }, DEMO_PEOPLE[i]);
   }
+  DEMO_PEOPLE.forEach(function (p) { nameTable[p.name] = p; });
+  rebuildEmpIndex();
   ready = true;   // DEMO 模式無載入 gate：假快照建完即可掃（保留原行為）
 }
 
 var TOKEN = qs.get('t') || '';
 var SNAP_KEY = 'evtchk_snap_' + ACT;
 var EXPIRE_KEY = 'evtchk_exp_' + ACT;
+
+var QKEY = 'evtchk_queue_' + ACT;
+var lastSyncAt = '';   // 版本診斷列用
+function loadQueue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(_) { return []; } }
+function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQueueBadge(); }
+function updateQueueBadge() {   // D4：佇列筆數長駐畫面
+  var n = loadQueue().length;
+  document.getElementById('qbadge').textContent = '待送 ' + n + ' 筆';
+  document.getElementById('qbadge').style.color = n > 0 ? '#e8b339' : '#8a8';
+}
+function enqueue(empNo, method) {
+  var q = loadQueue(); q.push({ empNo: empNo, ts: Date.now(), m: method || 'scan' });
+  saveQueue(q); flush();
+}
+
+/** empNo → hash 反查索引（C2 合併 seen 用），快照替換時重建。 */
+var empToHash = {};
+function rebuildEmpIndex() {
+  empToHash = {};
+  for (var h in snapshot) empToHash[snapshot[h].empNo] = h;
+}
+
+// D 全套：in-flight guard＋不遞迴重試＋任何非 ok＝失敗保留佇列＋逐包成功逐包清
+var flushing = false;
+async function flush() {
+  if (flushing) return;                 // in-flight guard：同機同時最多一個 flush
+  var q = loadQueue(); if (!q.length) return;
+  flushing = true;
+  try {
+    var packs = chunkByLen(q, 3000);    // D1：一律切包
+    for (var i = 0; i < packs.length; i++) {
+      var res = await jget('recordEventCheckins', {
+        t: TOKEN, act: ACT, rows: JSON.stringify(packs[i]),
+        n: Date.now() + '' + Math.floor(Math.random() * 1e6)   // cache-bust nonce
+      }, 45000);
+      if (!res || !res.ok) {            // D3：任何非 ok（lock timeout/400/逾時）＝失敗
+        show('dup', '⚠ 回寫未完成，' + loadQueue().length + ' 筆待送，稍後自動重試');
+        return;                          // 保留剩餘佇列、等下一輪；不遞迴重試
+      }
+      // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
+      var sent = {}; packs[i].forEach(function (r) { sent[r.empNo + '|' + r.ts] = true; });
+      saveQueue(loadQueue().filter(function (r) { return !sent[r.empNo + '|' + r.ts]; }));
+      lastSyncAt = new Date().toLocaleTimeString();
+      document.getElementById('lastsync').textContent = lastSyncAt;
+      // C2：後端回傳全場已報到員編 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
+      (res.allChecked || []).forEach(function (emp) {
+        var h = empToHash[emp]; if (h) state.seen[h] = true;
+      });
+    }
+  } finally { flushing = false; updateQueueBadge(); }
+}
+
+// D2：15s ＋ 0–5s 隨機 jitter（每輪重算·六台去同相）；背景節流→回前景補打
+function scheduleFlush() {
+  setTimeout(function () { flush(); scheduleFlush(); }, 15000 + Math.random() * 5000);
+}
+scheduleFlush();
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible') flush();
+});
+
+function manualCheckin(p) {
+  if (!confirm('手動報到：' + p.name + '（' + p.unit + '）？')) return;
+  enqueue(p.empNo, 'manual');
+  var h = empToHash[p.empNo];
+  if (h) state.seen[h] = true;
+  show('ok', '✓ 已受理（手動）｜' + p.name + '<div class="meta">' + (p.unit || '') + '</div>');
+  document.getElementById('hits').innerHTML = '';
+  document.getElementById('manual').value = '';
+}
+
+function renderHits(hits) {
+  var el = document.getElementById('hits');
+  el.innerHTML = '';
+  if (!hits.length) {
+    el.innerHTML = '<div style="opacity:.7">查無此人，請洽主辦人工處理</div>';
+    return;
+  }
+  hits.forEach(function (p) {
+    var row = document.createElement('div');
+    var tail = String(p.empNo || '').slice(-3);
+    row.textContent = p.name + '｜' + (p.unit || '') + '｜末3碼 ' + tail;
+    row.addEventListener('click', function () { manualCheckin(p); });
+    el.appendChild(row);
+  });
+}
 
 function jget(action, params, timeoutMs) {
   var u = new URL('https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec');
@@ -75,6 +171,7 @@ function applySnapshotPayload(res) {
   snapshot = res.snapshot; nameTable = res.nameTable || {};
   snapMeta = { version: res.snapshotVersion, generatedAt: res.generatedAt };
   document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt;
+  rebuildEmpIndex();
 }
 
 async function loadSnapshot(force) {
@@ -119,6 +216,7 @@ async function handle(text, t0) {
     // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
     show('ok', '✓ 已受理｜' + pp.name + '<div class="meta">' + pp.unit + '・' + main + '・' + ms + 'ms</div>');
     if (navigator.vibrate) navigator.vibrate(80);
+    enqueue(pp.empNo, 'scan');
   } else if (r.verdict.type === 'dup') {
     show('dup', '⚠ ' + r.verdict.person.name + ' 已報到過');
   } else {
@@ -146,7 +244,27 @@ function loop(video, ctx, cv) {
 (async function init() {
   if (DEMO) await buildDemoSnapshot(); else await loadSnapshot();
   document.getElementById('manual').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { handle(this.value.trim(), performance.now()); this.value = ''; }
+    if (e.key === 'Enter') {
+      handle(this.value.trim(), performance.now());
+      this.value = '';
+      document.getElementById('hits').innerHTML = '';
+    }
+  });
+  document.getElementById('manual').addEventListener('input', function () {
+    var q = this.value.trim();
+    if (!q || q.indexOf('CHK|') === 0) { document.getElementById('hits').innerHTML = ''; return; }   // 是碼，走 Enter 掃碼路徑
+    renderHits(searchNames(nameTable, q));   // B2：搜全體在職 154 人表（含臨時出席）
+  });
+  document.getElementById('reload').addEventListener('click', function (e) {
+    e.preventDefault();
+    if (!confirm('重新載入名單？（僅更新名單版本，不影響已掃紀錄與待送佇列）')) return;
+    loadSnapshot(true);
+  });
+  document.getElementById('wipe').addEventListener('click', function () {
+    if (!confirm('清除本機快照與待送佇列？')) return;
+    sessionStorage.removeItem(SNAP_KEY); sessionStorage.removeItem(EXPIRE_KEY);
+    localStorage.removeItem(QKEY);
+    show('bad', '已清除，請重新整理');
   });
   try {
     var stream = await navigator.mediaDevices.getUserMedia({
