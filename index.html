@@ -34,7 +34,7 @@
       box-shadow: 0 1px 4px rgba(0,0,0,.08);
     }
     label { display: block; margin-bottom: 6px; font-size: 14px; color: #555; font-weight: 600; }
-    select, textarea {
+    select, textarea, #sel-name {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid #ddd;
@@ -45,7 +45,7 @@
       margin-bottom: 14px;
       -webkit-appearance: none;
     }
-    select:focus, textarea:focus { outline: none; border-color: #06c755; background: #fff; }
+    select:focus, textarea:focus, #sel-name:focus { outline: none; border-color: #06c755; background: #fff; }
     textarea { resize: vertical; min-height: 80px; }
     .btn {
       display: block;
@@ -94,6 +94,7 @@
     .radio-group input[type="radio"] { accent-color: #06c755; }
     .radio-group label:has(input:checked) { border-color: #06c755; background: #e6f9ee; }
     .hint { font-size: 13px; color: #888; margin-bottom: 14px; }
+    .hint a { color: #06c755; font-weight: 700; white-space: nowrap; }   /* 提示文字裡的電話等連結：品牌綠標示可點，且不從中間斷行 */
     hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
     #section-report { margin-top: 8px; }
     .brand { text-align: center; margin: 4px 0 14px; }
@@ -112,7 +113,7 @@
     #ob-birth-hint, #bind-birth-hint { font-size: 13px; color: #888; margin: 0 0 14px; }
     /* ── 長者友善：放大預設字級（2026-06-26，集中於此方便日後調整）────────────── */
     body { font-size: 17px; }
-    select, textarea, #ob-birth, #bind-birth, .email-row input { font-size: 16px; }
+    select, textarea, #sel-name, #ob-birth, #bind-birth, .email-row input { font-size: 16px; }
     label { font-size: 15px; }
     .hint { font-size: 14px; }
     .btn { font-size: 17px; }
@@ -128,23 +129,30 @@
     <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
     <p id="greeting" style="display:none; font-size:16px; color:#06c755; font-weight:700; margin:6px 0 16px"></p>
 
-    <!-- 未綁定：綁定表單 -->
+    <!-- 未綁定：綁定表單。2026-07-29 起不再是預設入口，只在 ?mode=bind 或「重新填寫」時出現。 -->
     <div id="section-bind" class="card" style="display:none">
       <h2>員工身分 LINE 驗證</h2>
-      <p class="hint">請選擇所屬單位、姓名與出生年月日，核對無誤後，系統會寄驗證信到您的公司信箱。<b>僅此一次，日後不需再驗證。</b></p>
+      <p class="hint">請填寫所屬單位、姓名與出生年月日，核對無誤後，系統會寄驗證信到您的公司信箱。<b>僅此一次，日後不需再驗證。</b></p>
       <label for="sel-unit">所屬單位</label>
       <select id="sel-unit">
         <option value="">── 請選擇 ──</option>
       </select>
       <label for="sel-name">姓名</label>
-      <select id="sel-name" disabled>
-        <option value="">── 請先選單位 ──</option>
-      </select>
+      <!-- 原為「單位→姓名」串聯下拉，選項來自 roster.json 的全公司名單＝把 153 位同仁姓名公開在網路上。
+           改自己輸入：submitBinding 本就以「姓名＋生日」雙因子比對名冊，改成手key不降強度，
+           反而消掉「匿名列舉全公司姓名」這件事本身。同報到頁 ob-name 的作法。 -->
+      <input type="text" id="sel-name" placeholder="請輸入姓名" autocomplete="off">
       <label for="bind-birth">出生年月日（西元）</label>
       <input type="date" id="bind-birth">
       <p id="bind-birth-hint">點欄位選擇出生日期</p>
       <div id="bind-msg"></div>
       <button class="btn btn-primary" id="btn-bind" disabled>送出驗證</button>
+    </div>
+
+    <!-- 未綁定且非 ?mode=bind：全員已驗證完成，綁定表單不再常開，改由工務管理組單獨發連結。 -->
+    <div id="section-need-verify" class="card" style="display:none">
+      <h2>尚未完成身分驗證</h2>
+      <p class="hint">這個 LINE 帳號還沒完成員工身分驗證，因此看不到活動內容。<br>請洽<b>工務管理組　柯佳岑</b>（<a href="tel:0225230950,224">02-2523-0950 #224</a>）取得驗證連結；或用下方「問題回報」與我們聯絡，我們會盡快協助您。</p>
     </div>
 
     <!-- 已綁定未驗證：顯示既有資料＋一鍵重寄（免重填）；重新填寫降為資料有誤時的備援 -->
@@ -318,7 +326,7 @@
     // ─── 全域狀態 ──────────────────────────────────────────────────────────────
     var gUserId = '';
     var gDisplayName = '';
-    var gNamesByUnit = {};
+    var gUnits = [];  // 單位清單，來自 roster.json（同源、免打 GAS）。2026-07-29 起 roster.json 不含姓名。
     var gTitles = []; // 報到職稱清單，來自 roster.json（同源、免打 GAS）
     var gActivityId = '';
     var gFormReady = false;    // 下拉/listener 只初始化一次
@@ -339,32 +347,10 @@
       });
     }
 
-    function populateUnitSelect(selUnit, namesByUnit) {
+    function populateUnitSelect(selUnit, units) {
       // 與報到頁共用 groups.js 的 jdcGroupedOptions：單位分「總公司／工地」兩組 <optgroup>，分類唯一來源不分歧。
       selUnit.innerHTML = '<option value="">── 請選擇 ──</option>'
-        + jdcGroupedOptions(Object.keys(namesByUnit), 'unit', '');
-    }
-
-    function onUnitChange(selUnit, selName, namesByUnit) {
-      var unit = selUnit.value;
-      selName.innerHTML = '';
-      if (!unit) {
-        selName.innerHTML = '<option value="">── 請先選單位 ──</option>';
-        selName.disabled = true;
-      } else {
-        var names = namesByUnit[unit] || [];
-        var placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = '── 請選擇姓名 ──';
-        selName.appendChild(placeholder);
-        names.forEach(function (n) {
-          var opt = document.createElement('option');
-          opt.value = n;
-          opt.textContent = n;
-          selName.appendChild(opt);
-        });
-        selName.disabled = false;
-      }
+        + jdcGroupedOptions(units, 'unit', '');
     }
 
     // ─── 主流程（樂觀渲染）─────────────────────────────────────────────────────
@@ -402,7 +388,7 @@
         if (!r.ok) throw new Error('roster ' + r.status);
         return r.json();
       }).then(function (roster) {
-        gNamesByUnit = roster.namesByUnit || {};
+        gUnits = roster.units || [];
         gTitles = roster.titles || [];
         window.JDC_GROUPS = { unitGroups: roster.unitGroups, titleGroups: roster.titleGroups };   // 分組吃選項主檔「分類」欄
         setupForm();
@@ -470,9 +456,9 @@
       gFormReady = true;
       var selUnit = document.getElementById('sel-unit');
       var selName = document.getElementById('sel-name');
-      populateUnitSelect(selUnit, gNamesByUnit);
-      selUnit.addEventListener('change', function () { onUnitChange(selUnit, selName, gNamesByUnit); updateBindBtn(); });
-      selName.addEventListener('change', updateBindBtn);
+      populateUnitSelect(selUnit, gUnits);
+      selUnit.addEventListener('change', updateBindBtn);
+      selName.addEventListener('input', updateBindBtn);   // 手key姓名：邊打邊解鎖送出鈕（'change' 要失焦才觸發）
       var bindBirth = document.getElementById('bind-birth');
       bindBirth.max = new Date().toISOString().slice(0, 10);   // 生日不可晚於今天
       bindBirth.addEventListener('change', updateBindBtn);
@@ -486,12 +472,14 @@
 
     // 依狀態顯示正確畫面（冪等，可重複套用＝校正）
     function applyState(state) {
-      ['section-bind', 'section-pending', 'section-activity', 'section-no-activity', 'section-onboard', 'section-closed'].forEach(hide);
+      ['section-bind', 'section-need-verify', 'section-pending', 'section-activity', 'section-no-activity', 'section-onboard', 'section-closed'].forEach(hide);
       if (getMode() === 'onboard') { show('section-onboard'); ensureFriendThenOnboard(); return; }
       var greet = document.getElementById('greeting');
       if (!state || !state.bound) {
         greet.style.display = 'none';
-        show('section-bind');
+        // 全員綁定完成後（2026-07-29），綁定表單只在工務管理組單獨發的 ?mode=bind 連結才出現；
+        // 一般入口顯示引導卡，避免不相干的人看到可填的身分表單。
+        show(getMode() === 'bind' ? 'section-bind' : 'section-need-verify');
       } else if (!state.verified) {
         greet.style.display = 'none';
         // 顯示他當初選的資料＋驗證信箱（免重填；重寄一鍵搞定）
@@ -603,7 +591,7 @@
       birth.max = new Date().toISOString().slice(0, 10); // 生日不可晚於今天
       // 姓名不預填 LINE 暱稱（暱稱常是綽號/英文名/表情）→ 留空強制同仁自己輸入真名
       // 單位/職稱下拉分群好掃描（分類在共用 assets/groups.js，與人事看板同一份、永不分歧）
-      unit.insertAdjacentHTML('beforeend', jdcGroupedOptions(Object.keys(gNamesByUnit), 'unit', ''));
+      unit.insertAdjacentHTML('beforeend', jdcGroupedOptions(gUnits, 'unit', ''));
       title.insertAdjacentHTML('beforeend', jdcGroupedOptions(gTitles, 'title', ''));
       // 職稱清單沒有自己的職稱→選這個，人事核准時補（後端會擋人事忘了改）
       var optHR = document.createElement('option');
@@ -651,14 +639,14 @@
 
     function updateBindBtn() {
       var unit = document.getElementById('sel-unit').value;
-      var name = document.getElementById('sel-name').value;
+      var name = document.getElementById('sel-name').value.trim();
       document.getElementById('btn-bind').disabled = !(unit && name && bindBirthParts());
     }
 
     document.getElementById('btn-bind').addEventListener('click', function () {
       var btn = this;
       var unit = document.getElementById('sel-unit').value;
-      var name = document.getElementById('sel-name').value;
+      var name = document.getElementById('sel-name').value.trim();
       var birth = bindBirthParts();
       var by = birth && birth.by, bm = birth && birth.bm, bd = birth && birth.bd;
       var msgEl = document.getElementById('bind-msg');
