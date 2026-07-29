@@ -1,8 +1,12 @@
 name: 更新 roster.json
 
-# 每日自動把最新員工名單（單位／姓名／職稱）從 GAS 灌進 roster.json。
+# 每日自動把最新的單位／職稱選項從 GAS 灌進 roster.json。
 # 零密鑰：GAS endpoint 公開、推送用 Actions 內建 GITHUB_TOKEN。永不過期、免維護。
 # 佳岑維護員工名單 Sheet 即可，前端報到頁選項最多 1 天內自動跟上。
+#
+# ⚠️ 這個檔會被寫進 PUBLIC repo ＋ GitHub Pages，**匿名任何人都讀得到**。
+# 2026-07-29 前它含 namesByUnit（153 位同仁真實姓名＋所屬單位）＝個資公開在網路上。
+# 下方防護會在偵測到姓名時**中止更新**，別把它拿掉；姓名清單請走 token 守門的 getHrPending。
 
 on:
   schedule:
@@ -22,12 +26,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 從 GAS 取最新名單
+      - name: 從 GAS 取最新選項（含防個資外洩檢查）
         run: |
           GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
           curl -fsSL "$GAS?action=getUnitsAndNames&callback=__cb" \
             | sed -E 's/^__cb\((.*)\)$/\1/' > roster.json.new
-          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('roster.json.new','utf8')); if(!r.units||!r.namesByUnit||!r.units.length) throw new Error('roster 內容異常，放棄更新'); console.log('✓ units',r.units.length,'| titles',(r.titles||[]).length)"
+          node -e '
+            const fs = require("fs");
+            const r = JSON.parse(fs.readFileSync("roster.json.new", "utf8"));
+            if (!r.units || !r.units.length || !r.titles || !r.titles.length) throw new Error("roster 內容異常，放棄更新");
+            if (r.namesByUnit) throw new Error("偵測到 namesByUnit（同仁姓名清單），這是公開檔，放棄更新");
+            // 白名單：上游哪天多回一個欄位（不論叫什麼名字）就中止，避免個資被夾帶進公開檔。
+            const ALLOW = { units: 1, titles: 1, unitGroups: 1, titleGroups: 1 };
+            const extra = Object.keys(r).filter(function (k) { return !ALLOW[k]; });
+            if (extra.length) throw new Error("出現未預期欄位，恐夾帶個資：" + extra.join(","));
+            console.log("✓ units", r.units.length, "| titles", r.titles.length);
+          '
           mv roster.json.new roster.json
 
       - name: 有變動才 commit & push
