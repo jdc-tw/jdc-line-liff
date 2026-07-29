@@ -17,6 +17,7 @@
   <div id="result" class="card bad" style="display:none"></div>
   <input id="manual" placeholder="相機不可用時：手動貼碼後按 Enter">
   <div id="stat"></div>
+  <div id="snapver" style="font-size:12px;opacity:.5;margin-top:2px"></div>
 </div>
 <canvas id="cv" style="display:none"></canvas>
 <script src="assets/jsQR.min.js"></script>
@@ -44,6 +45,55 @@ async function buildDemoSnapshot() {
     var h = await sha256Hex(DEMO_CODES[i]);
     snapshot[h] = Object.assign({ checked: false }, DEMO_PEOPLE[i]);
   }
+  ready = true;   // DEMO 模式無載入 gate：假快照建完即可掃（保留原行為）
+}
+
+var TOKEN = qs.get('t') || '';
+var SNAP_KEY = 'evtchk_snap_' + ACT;
+var EXPIRE_KEY = 'evtchk_exp_' + ACT;
+
+function jget(action, params, timeoutMs) {
+  var u = new URL('https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec');
+  u.searchParams.set('action', action);
+  Object.keys(params).forEach(function (k) { u.searchParams.set(k, params[k]); });
+  var ctrl = new AbortController(); var to = setTimeout(function(){ctrl.abort();}, timeoutMs||30000);
+  return fetch(u, { credentials: 'omit', redirect: 'follow', signal: ctrl.signal })
+    .then(function (r) { return r.text(); })
+    .then(function (t) { clearTimeout(to); return JSON.parse(t.slice(t.indexOf('(')+1, t.lastIndexOf(')'))); });
+}
+
+var nameTable = {}, snapMeta = { version: 0, generatedAt: '' };
+var ready = false;   // 快照載入 gate：未完成前掃描停用
+
+function purgeIfExpired() {
+  var exp = Number(sessionStorage.getItem(EXPIRE_KEY) || 0);
+  if (exp && Date.now() > exp) { sessionStorage.removeItem(SNAP_KEY); sessionStorage.removeItem(EXPIRE_KEY); }
+}
+
+function applySnapshotPayload(res) {
+  // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
+  snapshot = res.snapshot; nameTable = res.nameTable || {};
+  snapMeta = { version: res.snapshotVersion, generatedAt: res.generatedAt };
+  document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt;
+}
+
+async function loadSnapshot(force) {
+  purgeIfExpired();
+  var cached = force ? null : sessionStorage.getItem(SNAP_KEY);
+  if (cached) { applySnapshotPayload(JSON.parse(cached)); ready = true; return; }
+  show('dup', '⏳ 名單載入中，請稍候…');   // 載入 gate：未完成禁掃
+  var res = await jget('getEventCheckinSnapshot', { t: TOKEN, act: ACT });
+  if (!res.ok) {  // 失敗保留舊快照（若有），不清空
+    show('bad', '❌ ' + (res.msg || '名單載入失敗') + '<div class="meta">請確認網路後點「重新載入」</div>');
+    if (!ready) return;   // 完全沒快照＝維持禁掃
+    return;
+  }
+  applySnapshotPayload(res);
+  sessionStorage.setItem(SNAP_KEY, JSON.stringify(res));
+  // 到期＝活動日+1；保守 24h（可由 res 帶 eventDate 精算）
+  sessionStorage.setItem(EXPIRE_KEY, String(Date.now() + 24 * 3600 * 1000));
+  ready = true;
+  show('ok', '✓ 名單就緒（' + Object.keys(snapshot).length + ' 位參加者）');
 }
 
 function show(cls, html) {
@@ -52,6 +102,7 @@ function show(cls, html) {
 }
 
 async function handle(text, t0) {
+  if (!ready) { show('dup', '⏳ 名單載入中，請稍候再掃'); return; }   // 載入 gate
   var p = parseChkCode(text, ACT);
   if (!p.ok) {
     show('bad', p.reason === 'wrongAct' ? '❌ 這是別場活動的碼' : '❌ 無法辨識的碼');
@@ -63,7 +114,10 @@ async function handle(text, t0) {
   var ms = Math.round(performance.now() - t0);
   if (r.verdict.type === 'ok') {
     var pp = r.verdict.person;
-    show('ok', '✓ ' + pp.name + '<div class="meta">' + pp.unit + '・桌次 ' + pp.table + '・' + ms + 'ms</div>');
+    var tbl = pp.table ? ('第 ' + pp.table + ' 桌') : '（未排桌）';
+    var main = pp.table === '主桌' ? '<span style="color:#ff6b6b">主桌</span>' : tbl;
+    // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
+    show('ok', '✓ 已受理｜' + pp.name + '<div class="meta">' + pp.unit + '・' + main + '・' + ms + 'ms</div>');
     if (navigator.vibrate) navigator.vibrate(80);
   } else if (r.verdict.type === 'dup') {
     show('dup', '⚠ ' + r.verdict.person.name + ' 已報到過');
@@ -90,7 +144,7 @@ function loop(video, ctx, cv) {
 }
 
 (async function init() {
-  if (DEMO) await buildDemoSnapshot();
+  if (DEMO) await buildDemoSnapshot(); else await loadSnapshot();
   document.getElementById('manual').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { handle(this.value.trim(), performance.now()); this.value = ''; }
   });
