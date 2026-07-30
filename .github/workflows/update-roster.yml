@@ -2,7 +2,7 @@ name: 更新 roster.json
 
 # 每日自動把最新的單位／職稱選項從 GAS 灌進 roster.json。
 # 零密鑰：GAS endpoint 公開、推送用 Actions 內建 GITHUB_TOKEN。永不過期、免維護。
-# 佳岑維護員工名單 Sheet 即可，前端報到頁選項最多 1 天內自動跟上。
+# 名單維護者改員工名單 Sheet 即可，前端報到頁選項最多 1 天內自動跟上。
 #
 # ⚠️ 這個檔會被寫進 PUBLIC repo ＋ GitHub Pages，**匿名任何人都讀得到**。
 # 2026-07-29 前它含 namesByUnit（153 位同仁真實姓名＋所屬單位）＝個資公開在網路上。

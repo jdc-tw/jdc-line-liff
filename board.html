@@ -209,7 +209,8 @@ var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL
 var EMAIL_DOMAIN='@jdc-corpn.com.tw';
 var SENTINEL='（找不到，由人事填寫）';   // 新人「找不到」哨兵 → 看板停在請選擇
 function getToken(){var m=location.search.match(/[?&]t=([^&]+)/);return m?decodeURIComponent(m[1]):'';}
-// 管理者專屬跨看板切換（只有***REMOVED***的 token 顯示；受眾分離維持：佳岑/***REMOVED***看不到）
+// 管理者專屬跨看板切換（只有管理者的 token 顯示；受眾分離維持：人事/企劃等其他看板使用者看不到）
+// ⚠️ 本 repo 為 PUBLIC，註解與程式碼都不要寫同仁真實姓名。
 function showAdminSwitch(who){
   if(who!=='***REMOVED***'||document.getElementById('adm-switch'))return;
   var a=document.createElement('a');
@@ -368,7 +369,7 @@ function catBadge(cat){
   var col=CAT_COLOR[cat]||'#666';
   return '<span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(cat)+'</span>';
 }
-// 單位/職稱欄：嚴格下拉＋系統預選最佳猜測（***REMOVED***只在不對時改）。
+// 單位/職稱欄：嚴格下拉＋系統預選最佳猜測（人事只在不對時改）。
 // 猜測順位：完全命中 → 部分命中（公告「富貴莊園(兼)春天」→ 清單「富貴莊園」；公告「所長」→「所長/經理」取第一個並列出其他候選）
 // 職稱附「＋ 手動輸入職稱…」逃生門（新職稱首次出現免繞資訊維護；套用時 ensureOption_ 自動回補選項清單）；
 // 單位維持嚴格下拉（單位連動意見箱/LINE 標籤，新單位仍走資訊維護）。

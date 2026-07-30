@@ -5,16 +5,16 @@ const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
 
 test('expandGuests：一席一列展開（seatNo>0 才佔位）', () => {
   const guests = [
-    { owner: '***REMOVED***', name: '***REMOVED***', seatNo: 1 },
-    { owner: '***REMOVED***', name: '***REMOVED***', seatNo: 2 },
-    { owner: '***REMOVED***', name: '***REMOVED***', seatNo: 0 },
-    { owner: '***REMOVED***', name: '***REMOVED***', seatNo: 1 },
+    { owner: '王小明', name: '家屬甲', seatNo: 1 },
+    { owner: '王小明', name: '家屬甲', seatNo: 2 },
+    { owner: '王小明', name: '家屬乙', seatNo: 0 },
+    { owner: '李美麗', name: '家屬丙', seatNo: 1 },
   ];
-  assert.deepEqual(expandGuests(guests), { '***REMOVED***': ['***REMOVED***', '***REMOVED***'], '***REMOVED***': ['***REMOVED***'] });
+  assert.deepEqual(expandGuests(guests), { '王小明': ['家屬甲', '家屬甲'], '李美麗': ['家屬丙'] });
 });
 
 test('buildSeatingAoa：28 桌、A 欄純數字、含檢核公式與剩餘列', () => {
-  const aoa = buildSeatingAoa(['管理部'], { '管理部': ['甲', '乙'] }, ['***REMOVED***'], { '***REMOVED***': ['***REMOVED***'] }, 3);
+  const aoa = buildSeatingAoa(['管理部'], { '管理部': ['甲', '乙'] }, ['王小明'], { '王小明': ['家屬甲'] }, 3);
   assert.equal(aoa[0][0], '桌次');
   assert.equal(aoa[0][SEAT_COLS + 1], '檢核');
   assert.equal(aoa[1][0], 1);                       // A 欄純數字（不寫主桌）
@@ -30,9 +30,9 @@ test('buildSeatingAoa：28 桌、A 欄純數字、含檢核公式與剩餘列', 
   const h = TABLE_ROWS + 2;
   assert.equal(aoa[h][0], '序號');
   assert.equal(aoa[h][1], '管理部');
-  assert.equal(aoa[h][2], '***REMOVED***');
+  assert.equal(aoa[h][2], '王小明');
   assert.equal(aoa[h + 1][1], '甲');
-  assert.equal(aoa[h + 1][2], '***REMOVED***');
+  assert.equal(aoa[h + 1][2], '家屬甲');
   // 剩餘列（COUNTA）
   const rem = aoa[aoa.length - 2];
   assert.equal(rem[0], '剩餘');
@@ -45,36 +45,36 @@ test('parseSeatingUpload：讀座位格→{name, table}[]，跳過空格與非�
     [1, '王小明', '李美麗', '', '目前人數', 2],
     [2, '張三', '', '', '預定人數', 3],
     [],
-    ['序號', '管理部', '***REMOVED***'],
-    [1, '未排的人', '***REMOVED***'],
+    ['序號', '管理部', '陳大同'],
+    [1, '未排的人', '家屬甲'],
   ];
   assert.deepEqual(parseSeatingUpload(aoa, 3), [
     { name: '王小明', table: '1' }, { name: '李美麗', table: '1' }, { name: '張三', table: '2' }]);
 });
 
 test('parseSeatingUpload：去掉 (素) 類註記、保留主體名', () => {
-  const aoa = [['桌次', 1, 2], [5, '***REMOVED***(素)', '***REMOVED***（素）']];
+  const aoa = [['桌次', 1, 2], [5, '張三(素)', '李四（素）']];
   assert.deepEqual(parseSeatingUpload(aoa, 2), [
-    { name: '***REMOVED***', table: '5' }, { name: '***REMOVED***', table: '5' }]);
+    { name: '張三', table: '5' }, { name: '李四', table: '5' }]);
 });
 
 test('sortSeats：同仁依順位、來賓最後、同順位穩定', () => {
   const ranks = { '支店長': 1, '主任': 8 };
   const seats = [
     { name: '甲', title: '主任', kind: 'emp' },
-    { name: '***REMOVED***', kind: 'guest' },
+    { name: '家屬甲', kind: 'guest' },
     { name: '乙', title: '支店長', kind: 'emp' },
     { name: '丙', title: '沒登錄', kind: 'emp' },
     { name: '丁', title: '主任', kind: 'emp' },
   ];
-  assert.deepEqual(sortSeats(seats, ranks).map(s => s.name), ['乙', '甲', '丁', '丙', '***REMOVED***']);
+  assert.deepEqual(sortSeats(seats, ranks).map(s => s.name), ['乙', '甲', '丁', '丙', '家屬甲']);
 });
 
 test('buildFormalAoa：一欄一桌直排、桌次照原值、含人數列', () => {
   const seats = [
     { name: '乙', title: '支店長', kind: 'emp', table: '1' },
     { name: '甲', title: '主任', kind: 'emp', table: '1' },
-    { name: '***REMOVED***', kind: 'guest', table: '1' },
+    { name: '家屬甲', kind: 'guest', table: '1' },
     { name: '丙', title: '主任', kind: 'emp', table: '2' },
     { name: '丁', title: '主任', kind: 'emp', table: '' },   // 未排桌不列入
   ];
@@ -82,7 +82,7 @@ test('buildFormalAoa：一欄一桌直排、桌次照原值、含人數列', () 
   assert.deepEqual(aoa[0], ['席位', '1', '2']);
   assert.deepEqual(aoa[1], [1, '乙', '丙']);
   assert.deepEqual(aoa[2], [2, '甲', '']);
-  assert.deepEqual(aoa[3], [3, '***REMOVED***', '']);
+  assert.deepEqual(aoa[3], [3, '家屬甲', '']);
   assert.deepEqual(aoa[aoa.length - 1], ['人數', 3, 1]);
   assert.deepEqual(guestCells, [[3, 1]]);   // 來賓格 (row,col) 供上紅字
 });
@@ -91,8 +91,8 @@ test('parseSeatingUpload：分隔空行被刪掉時，序號列不會被誤當�
   const aoa = [
     ['桌次', 1, 2],
     [1, '王小明', ''],
-    ['序號', '管理部', '***REMOVED***'],   // 表頭非數字→跳過
-    [1, '未排的人', '***REMOVED***'],        // 無分隔行時仍會被讀到（已知限制）
+    ['序號', '管理部', '陳大同'],   // 表頭非數字→跳過
+    [1, '未排的人', '家屬甲'],        // 無分隔行時仍會被讀到（已知限制）
   ];
   const r = parseSeatingUpload(aoa, 2);
   assert.ok(r.some(x => x.name === '王小明'));
