@@ -55,6 +55,7 @@
 <h1>人事資訊看板</h1>
 <div class="sub" id="sub">載入中…</div>
 <div id="main"></div>
+<script src="assets/deny-no-role.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
@@ -65,7 +66,7 @@ function jsonp(action,params){
   var timer=setTimeout(function(){ctrl.abort();},30000);
   return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
     .then(function(r){return r.text();})
-    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時，請重新整理。':'連線失敗'};});}
 // SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。GAS /exec 每發 2-4s 固定往返（快取/暖容器都削不掉），靠此遮掉等待。
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}

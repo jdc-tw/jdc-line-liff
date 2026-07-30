@@ -136,6 +136,22 @@
     <button class="btn btn-pri" onclick="createAct()">建立活動（狀態自動＝開放）</button>
     <div id="na-msg" class="msg"></div>
   </div>
+  <div class="card" id="refill-panel" style="display:none">
+    <div style="font-weight:700;font-size:16px;margin-bottom:6px" id="refill-title">開放補填</div>
+    <input type="hidden" id="refill-act">
+    <div style="font-size:13px;color:#666;line-height:1.7;margin-bottom:10px">
+      系統只負責開門：送出後由本人在 LINE 自己填出席／葷素，用一次即失效、期限到隔天 23:59。
+    </div>
+    <div class="fld"><label>同仁（已完成 LINE 身分驗證者）</label>
+      <select id="refill-person" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"><option value="">載入中…</option></select></div>
+    <div style="font-size:12.5px;color:#b26a00;line-height:1.8;margin-bottom:10px">
+      ※ 名單裡找不到某位同仁＝他還沒完成 LINE 身分驗證。請先把綁定連結（網址加 <code>?mode=bind</code>）給他，綁定完成後這裡才會出現。<br>
+      ※ 若桌次已發布才補進來：座位總覽會顯示「有調整」，需補排位並重新發佈；活動當天各掃描站要按一次「重新載入」才認得他的報到碼。
+    </div>
+    <button class="btn btn-pri" onclick="doGrantRefill()">開放補填並通知</button>
+    <button class="btn btn-sm" onclick="closeRefill()">取消</button>
+    <div id="refill-msg" class="msg"></div>
+  </div>
   <div class="sec">活動列表</div>
   <div id="act-list"><div class="empty">載入中…</div></div>
 </div>
@@ -186,6 +202,7 @@
     <div id="s-dl-msg" class="msg"></div>
   </div>
 </div>
+<script src="assets/deny-no-role.js"></script>
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
@@ -212,7 +229,7 @@ function jsonp(action,params,timeoutMs){
   var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
   return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
     .then(function(r){return r.text();})
-    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
 // SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
@@ -260,6 +277,54 @@ function loadActs(){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     if(!r.rows.length){box.innerHTML='<div class="empty">還沒有活動</div>';return;}
     box.innerHTML=r.rows.slice().reverse().map(actCard).join('');
+  });
+}
+
+// ── 補填開權（活動關閉後讓單一同仁自己補填一次）─────────────────────────
+// 人員清單走 lazy 的 getRefillCandidates：不併進 listActivities，免得管理看板首屏
+// 多讀一張 UserList、又多一次 3 秒級 GAS 往返。
+var refillPeople=null;
+function openRefill(actId,actName,isOpenAct){
+  if(isOpenAct){cardMsg(actId,'本場仍開放填寫中，同仁可自行修改，不需開權。','');return;}
+  document.getElementById('refill-act').value=actId;
+  document.getElementById('refill-title').textContent='開放補填 — '+actName;
+  setMsg('refill-msg','','');
+  var panel=document.getElementById('refill-panel');
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'center'});
+  if(refillPeople) {fillRefillPeople();return;}
+  jsonp('getRefillCandidates',{token:q('t')}).then(function(r){
+    if(!r||!r.ok){document.getElementById('refill-person').innerHTML='<option value="">'+esc((r&&r.msg)||'名單載入失敗')+'</option>';return;}
+    refillPeople=r.people||[];
+    fillRefillPeople();
+  });
+}
+function fillRefillPeople(){
+  var sel=document.getElementById('refill-person');
+  if(!refillPeople.length){sel.innerHTML='<option value="">（沒有已驗證的同仁可選）</option>';return;}
+  sel.innerHTML='<option value="">請選擇同仁</option>'+refillPeople.map(function(p){
+    return '<option value="'+esc(p.userId)+'">'+esc(p.unit||'（未填單位）')+' — '+esc(p.name)+'</option>';
+  }).join('');
+}
+function closeRefill(){document.getElementById('refill-panel').style.display='none';}
+function doGrantRefill(){
+  var actId=document.getElementById('refill-act').value;
+  var uid=document.getElementById('refill-person').value;
+  if(!uid){setMsg('refill-msg','請先選擇同仁','err');return;}
+  setMsg('refill-msg','開放中…','');
+  jsonp('grantRefill',{token:q('t'),act:actId,userId:uid}).then(function(r){
+    if(!r||!r.ok){setMsg('refill-msg',(r&&r.msg)||'開放失敗','err');return;}
+    setMsg('refill-msg',r.msg,'ok');
+    closeRefill();
+    loadActs();     // 重載讓「待補填」那行立刻出現＝承辦人的收據
+  });
+}
+function doRevokeRefill(actId,userId,name){
+  if(!confirm('撤銷 '+(name||'這位同仁')+' 的補填權？')) return;
+  cardMsg(actId,'撤銷中…','');
+  jsonp('revokeRefill',{token:q('t'),act:actId,userId:userId}).then(function(r){
+    if(!r||!r.ok){cardMsg(actId,(r&&r.msg)||'撤銷失敗','err');return;}
+    loadActs();
   });
 }
 
@@ -765,12 +830,21 @@ function actCard(a){
       : '<button class="btn btn-sm" onclick="setSt(\''+esc(a.id)+'\',\'開放\')">重新開放</button>')
     +'<button class="btn btn-sm" onclick="chgDl(\''+esc(a.id)+'\')">改截止日</button>'
     +'<button class="btn btn-sm" onclick="toggleRep(this,\''+esc(a.id)+'\')">回覆明細（'+a.replies+'）</button>'
+    +'<button class="btn btn-sm" onclick="openRefill(\''+esc(a.id)+'\',\''+esc(a.name)+'\','+(a.status==='開放'?'true':'false')+')">✉️ 開放補填</button>'
     +(a.replies===0?'<button class="btn btn-sm warn" onclick="delAct(\''+esc(a.id)+'\',\''+esc(a.name)+'\')">🗑 刪除</button>':'');
   return '<div class="card" id="act-'+esc(a.id)+'">'
     +'<div class="act-h"><span class="nm">'+esc(a.name)+'</span>'+st+'</div>'
     +'<div class="act-meta">截止 '+esc(a.deadline)+(a.eventDate?'　活動日 '+esc(a.eventDate):'')+'　回覆 '+a.replies+' 筆　<span style="color:#bbb">'+esc(a.id)+'</span></div>'
     +(a.question?'<div class="act-meta">說明：'+esc(a.question)+'</div>':'')
     +(a.replies>0?'<div class="act-meta" style="color:#b26a00">※ 已有 '+a.replies+' 筆回覆，不可刪除（避免回覆資料遺失）；不再使用請按「關閉填寫」</div>':'')
+    +((a.refills&&a.refills.length)
+      ? '<div class="act-meta" style="color:#7a5320;background:#fff8e8;border-radius:6px;padding:6px 9px">⏳ 待補填：'
+        +a.refills.map(function(g){
+          return esc(g.name||g.userId)+'（'+esc(g.deadlineText)+' 前'+(g.by?('，'+esc(g.by)+' 開放'):'')+'）'
+            +' <a href="javascript:void 0" style="color:#ac1535" onclick="doRevokeRefill(\''+esc(a.id)+'\',\''+esc(g.userId)+'\',\''+esc(g.name||'')+'\')">撤銷</a>';
+        }).join('　')
+        +'</div>'
+      : '')
     +'<div>'+btns+'</div><div class="msg" data-msg></div><div class="rep" style="display:none" data-rep></div></div>';
 }
 function cardMsg(id,text,cls){var c=document.getElementById('act-'+id);if(!c)return;var el=c.querySelector('[data-msg]');el.textContent=text;el.className='msg '+(cls||'');}
