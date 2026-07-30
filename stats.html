@@ -140,12 +140,15 @@
     <div style="font-weight:700;font-size:16px;margin-bottom:6px" id="refill-title">開放補填</div>
     <input type="hidden" id="refill-act">
     <div style="font-size:13px;color:#666;line-height:1.7;margin-bottom:10px">
-      系統只負責開門：送出後由本人在 LINE 自己填出席／葷素，用一次即失效、期限到隔天 23:59。
+      系統只負責開門，回覆一律由本人自己填——送出後系統會自動發 <b>LINE ＋ Email</b> 給他，您不必再另外通知。<br>
+      已完成驗證者：立即開放補填，期限到隔天 23:59、用一次即失效。<br>
+      尚未完成 LINE 驗證者：系統改寄「綁定邀請信」到他的公司信箱（7 天內有效），<b>他完成驗證後會自動開放補填並通知他</b>，您不需要再操作第二次。
     </div>
-    <div class="fld"><label>同仁（已完成 LINE 身分驗證者）</label>
+    <div class="fld"><label>同仁</label>
       <select id="refill-person" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"><option value="">載入中…</option></select></div>
+    <div id="refill-hint" style="font-size:12.5px;color:#666;line-height:1.8;margin-bottom:10px"></div>
     <div style="font-size:12.5px;color:#b26a00;line-height:1.8;margin-bottom:10px">
-      ※ 名單裡找不到某位同仁＝他還沒完成 LINE 身分驗證。請先把綁定連結（網址加 <code>?mode=bind</code>）給他，綁定完成後這裡才會出現。<br>
+      ※ 離職同仁不會出現在名單中。<br>
       ※ 若桌次已發布才補進來：座位總覽會顯示「有調整」，需補排位並重新發佈；活動當天各掃描站要按一次「重新載入」才認得他的報到碼。
     </div>
     <button class="btn btn-pri" onclick="doGrantRefill()">開放補填並通知</button>
@@ -283,7 +286,7 @@ function loadActs(){
 // ── 補填開權（活動關閉後讓單一同仁自己補填一次）─────────────────────────
 // 人員清單走 lazy 的 getRefillCandidates：不併進 listActivities，免得管理看板首屏
 // 多讀一張 UserList、又多一次 3 秒級 GAS 往返。
-var refillPeople=null;
+var refillPeople=null, refillUnbound=null;
 function openRefill(actId,actName,isOpenAct){
   if(isOpenAct){cardMsg(actId,'本場仍開放填寫中，同仁可自行修改，不需開權。','');return;}
   document.getElementById('refill-act').value=actId;
@@ -295,24 +298,51 @@ function openRefill(actId,actName,isOpenAct){
   if(refillPeople) {fillRefillPeople();return;}
   jsonp('getRefillCandidates',{token:q('t')}).then(function(r){
     if(!r||!r.ok){document.getElementById('refill-person').innerHTML='<option value="">'+esc((r&&r.msg)||'名單載入失敗')+'</option>';return;}
-    refillPeople=r.people||[];
+    refillPeople=r.people||[]; refillUnbound=r.unbound||[];
     fillRefillPeople();
   });
 }
 function fillRefillPeople(){
   var sel=document.getElementById('refill-person');
-  if(!refillPeople.length){sel.innerHTML='<option value="">（沒有已驗證的同仁可選）</option>';return;}
-  sel.innerHTML='<option value="">請選擇同仁</option>'+refillPeople.map(function(p){
-    return '<option value="'+esc(p.userId)+'">'+esc(p.unit||'（未填單位）')+' — '+esc(p.name)+'</option>';
-  }).join('');
+  var v=refillPeople||[], u=refillUnbound||[];
+  if(!v.length&&!u.length){sel.innerHTML='<option value="">（沒有可選的同仁）</option>';return;}
+  var html='<option value="">請選擇同仁</option>';
+  if(v.length){
+    html+='<optgroup label="已完成 LINE 驗證（立即開放補填）">'+v.map(function(p){
+      return '<option value="U:'+esc(p.userId)+'">'+esc(p.unit||'（未填單位）')+' — '+esc(p.name)+'</option>';
+    }).join('')+'</optgroup>';
+  }
+  if(u.length){
+    html+='<optgroup label="尚未完成 LINE 驗證（改寄綁定邀請信）">'+u.map(function(p){
+      return '<option value="E:'+esc(p.empNo)+'"'+(p.hasEmail?'':' disabled')+'>'
+        +esc(p.unit||'（未填單位）')+' — '+esc(p.name)+(p.hasEmail?'':'（名冊缺公司信箱·無法寄信）')+'</option>';
+    }).join('')+'</optgroup>';
+  }
+  sel.innerHTML=html;
+  sel.onchange=refillHint;
+  refillHint();
+}
+function refillHint(){
+  var v=document.getElementById('refill-person').value||'';
+  var el=document.getElementById('refill-hint');
+  if(v.indexOf('E:')===0){
+    el.innerHTML='➜ 這位同仁尚未完成 LINE 驗證。送出後系統會寄<b>綁定邀請信</b>到他的公司信箱；他完成驗證後會<b>自動開放補填</b>並發 LINE＋Email 通知他。';
+    el.style.color='#7a5320';
+  }else if(v.indexOf('U:')===0){
+    el.innerHTML='➜ 送出後立即開放補填，並自動發 <b>LINE ＋ Email</b> 給他（期限到隔天 23:59）。';
+    el.style.color='#2d6a4f';
+  }else{ el.textContent=''; }
 }
 function closeRefill(){document.getElementById('refill-panel').style.display='none';}
 function doGrantRefill(){
   var actId=document.getElementById('refill-act').value;
-  var uid=document.getElementById('refill-person').value;
-  if(!uid){setMsg('refill-msg','請先選擇同仁','err');return;}
-  setMsg('refill-msg','開放中…','');
-  jsonp('grantRefill',{token:q('t'),act:actId,userId:uid}).then(function(r){
+  var v=document.getElementById('refill-person').value;
+  if(!v){setMsg('refill-msg','請先選擇同仁','err');return;}
+  var isEmp=v.indexOf('E:')===0;
+  var params={token:q('t'),act:actId};
+  if(isEmp) params.empNo=v.slice(2); else params.userId=v.slice(2);
+  setMsg('refill-msg',isEmp?'寄送綁定邀請中…':'開放中…','');
+  jsonp('grantRefill',params).then(function(r){
     if(!r||!r.ok){setMsg('refill-msg',(r&&r.msg)||'開放失敗','err');return;}
     setMsg('refill-msg',r.msg,'ok');
     closeRefill();
@@ -840,7 +870,9 @@ function actCard(a){
     +((a.refills&&a.refills.length)
       ? '<div class="act-meta" style="color:#7a5320;background:#fff8e8;border-radius:6px;padding:6px 9px">⏳ 待補填：'
         +a.refills.map(function(g){
-          return esc(g.name||g.userId)+'（'+esc(g.deadlineText)+' 前'+(g.by?('，'+esc(g.by)+' 開放'):'')+'）'
+          return (g.pending?'⌛ ':'')+esc(g.name||g.userId)
+            +'（'+(g.pending?'等待完成 LINE 驗證，邀請有效至 ':'')+esc(g.deadlineText)
+            +(g.pending?'':' 前')+(g.by?('，'+esc(g.by)+' 開放'):'')+'）'
             +' <a href="javascript:void 0" style="color:#ac1535" onclick="doRevokeRefill(\''+esc(a.id)+'\',\''+esc(g.userId)+'\',\''+esc(g.name||'')+'\')">撤銷</a>';
         }).join('　')
         +'</div>'
