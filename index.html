@@ -171,6 +171,7 @@
     <div id="section-activity" class="card" style="display:none">
       <h2 id="act-title">活動出席回覆</h2>
       <p id="act-dates" class="hint" style="display:none; margin-bottom:6px; color:#555"></p>
+      <p id="act-refill-note" class="hint" style="display:none; margin-bottom:10px; padding:10px 12px; background:#fff8e8; border-left:4px solid #b9863f; border-radius:6px; color:#7a5320; font-weight:700"></p>
       <p id="act-question" class="hint"></p>
       <label>出席狀況</label>
       <div class="radio-group" id="rg-attend">
@@ -542,6 +543,17 @@
           var _de = document.getElementById('act-dates');
           _de.textContent = _dp.join('　');
           _de.style.display = _dp.length ? '' : 'none';
+          // 補填模式：這場調查其實已結束，是承辦人為他單獨開的一次。不說明的話
+          // 他從 LINE 推播點進來只會看到一場「已截止」的問卷，以為系統壞了。
+          var _rn = document.getElementById('act-refill-note');
+          if (state.activity.refill) {
+            _rn.textContent = '本次調查已結束，承辦人已為您開放一次補填'
+              + (state.activity.refillDeadlineText ? ('，請於 ' + state.activity.refillDeadlineText + ' 前送出' : '')
+              ) + '。送出後即完成。';
+            _rn.style.display = 'block';
+          } else {
+            _rn.style.display = 'none';
+          }
           document.getElementById('act-question').textContent = state.activity.question || '';
           var ea = state.existingAnswer;
           if (ea) {
