@@ -196,8 +196,8 @@ var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
 // 管理者專屬跨看板切換（只有管理者的 token 顯示；受眾分離維持：人事/企劃等其他看板使用者看不到）
 // ⚠️ 本 repo 為 PUBLIC，註解與程式碼都不要寫同仁真實姓名。
-function showAdminSwitch(who){
-  if(who!=='***REMOVED***'||document.getElementById('adm-switch'))return;
+function showAdminSwitch(isAdmin){
+  if(!isAdmin||document.getElementById('adm-switch'))return;
   var a=document.createElement('a');
   a.id='adm-switch';a.textContent='⇄ 人事異動看板';
   a.href='board.html?t='+encodeURIComponent(q('t'));
@@ -871,7 +871,7 @@ function renderStats(r){
   window._curAct=out.actId;
   var sel=document.getElementById('act-picker');
   if(sel.options.length&&out.actId)sel.value=out.actId;
-  showAdminSwitch(r.who);
+  showAdminSwitch(r.admin);
 }
 loadStats(q('act'));
 annivInit(jsonp, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁
