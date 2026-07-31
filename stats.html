@@ -216,6 +216,10 @@
 <script src="assets/seating.js"></script>
 <script src="assets/stats-view.js"></script>
 <script>
+// esc() 住在 assets/stats-view.js，本頁 40 幾處在用（含各種錯誤訊息的組字串）。
+// 那支若沒載進來，連「顯示錯誤」的路徑都會拋例外，畫面只會靜靜停住＝壞掉時沒有任何人看得見
+// （2026-07-31 在 attend.html 踩到，同型）。這條保命索確保至少講得出話。
+if(typeof esc!=='function'){window.esc=function(s){return (s==null?'':s).toString().replace(/</g,'&lt;');};}
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
 // 管理者專屬跨看板切換（只有管理者的 token 顯示；受眾分離維持：人事/企劃等其他看板使用者看不到）
@@ -232,11 +236,14 @@ function showAdminSwitch(isAdmin){
 // fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕（2026-07-24 verify 實證後全站換）
 function jsonp(action,params,timeoutMs){
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
-  var ctrl=new AbortController();
-  var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
-  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+  // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
+  // 讓整段初始化同步當掉 → 畫面永遠停在「載入中」且不顯示任何錯誤（2026-07-31 查 attend.html 時發現，全站同型）。
+  // 改用 Promise.race 計時：舊瀏覽器一樣有逾時，代價只是底層請求不會被真的取消（低頻看板無影響）。
+  var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||15000);});
+  return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
     .then(function(r){return r.text();})
-    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})
+    .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})])
+    .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
 // SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}

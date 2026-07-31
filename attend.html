@@ -55,16 +55,30 @@
 <div id="content"><div class="empty">載入中…</div></div>
 <script src="assets/stats-view.js"></script>
 <script>
+// 失效面（2026-07-31 補）：esc() 與 renderStatsHtml() 都住在 assets/stats-view.js。
+// 原本連「顯示錯誤訊息」那行也呼叫 esc()，所以那支一旦沒載進來，連錯誤訊息都會拋例外，
+// 畫面就靜靜停在「載入中」——跟 7/31 index.html 卡住一天是同一個形狀：壞掉時沒有任何人看得見。
+// 以下讓「載入失敗」一定講得出話來。
+if(typeof esc!=='function'){window.esc=function(s){return (s==null?'':s).toString().replace(/</g,'&lt;');};}
+function fatal(msg){
+  try{
+    var m=document.getElementById('meta'); if(m)m.textContent='';
+    var c=document.getElementById('content'); if(c)c.innerHTML='<div class="empty">'+esc(msg)+'</div>';
+  }catch(e){}
+}
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
 // fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕
 function jsonp(action,params,timeoutMs){
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
-  var ctrl=new AbortController();
-  var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
-  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+  // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
+  // 讓整段 init 同步當掉 → 畫面永遠停在「載入中」且不顯示任何錯誤（2026-07-31 查本頁時發現）。
+  // 改用 Promise.race 計時：舊瀏覽器一樣有逾時，代價只是底層請求不會被真的取消（低頻看板無影響）。
+  var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||15000);});
+  return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
     .then(function(r){return r.text();})
-    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
+    .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
 // SWR：sessionStorage 秒顯上次結果、背景重抓校正
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
@@ -107,7 +121,11 @@ function load(actId){
 // 進頁：兩支 GAS 同時發，不串接等待（GAS 每支固定 3 秒起跳，串接＝首屏 6 秒以上）。
 // 樂觀那支直接問「開放中那場」的統計——多數情況命中，畫面 3 秒就出來；
 // 只有在全部活動皆關閉（樂觀那支撲空）時，才退回用清單挑最新一場再問一次。
-(function init(){
+(function init(){ try{
+  if(typeof renderStatsHtml!=='function'){    // stats-view.js 沒載進來＝後面每條路都會拋，先講清楚
+    fatal('頁面元件載入失敗，請重新整理。若從主畫面圖示開啟仍不行，請改用 Safari 開一次連結。');
+    return;
+  }
   var t=q('t'), urlAct=q('act');
   var pList = jsonp('listActivities',{token:t});
   var pFast = jsonp('getActivityStats',{token:t,act:urlAct||''});
@@ -142,7 +160,7 @@ function load(actId){
       load(pickDefaultActivity(r.rows,urlAct));       // 全部關閉 → 挑最新一場
     });
   });
-})();
+}catch(e){ fatal('頁面載入失敗（'+((e&&e.message)||e)+'），請重新整理。'); } })();
 
 // 切回這個分頁就重抓一次（不做定時輪詢，省 GAS 配額）
 document.addEventListener('visibilitychange',function(){

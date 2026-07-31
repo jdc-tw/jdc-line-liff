@@ -53,16 +53,21 @@
         return encodeURIComponent(k) + '=' + encodeURIComponent(params[k] == null ? '' : params[k]);
       }).join('&');
       var url = GAS_URL + '?action=' + encodeURIComponent(action) + (qs ? ('&' + qs) : '') + '&callback=cb';
-      var ctrl = new AbortController();
-      var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs || 30000);
-      return fetch(url, { credentials: 'omit', redirect: 'follow', signal: ctrl.signal })
+      // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
+      // 讓整段初始化同步當掉 → 畫面永遠停著且不顯示任何錯誤（2026-07-31 查 attend.html 時發現，全站同型）。
+      // 本頁是綁定驗證的最後一哩（同仁從信件點進來），掛掉等於他驗不了但看不出原因。
+      // 改用 Promise.race 計時：舊瀏覽器一樣有逾時，代價只是底層請求不會被真的取消。
+      var timer, timeout = new Promise(function (_, rej) {
+        timer = setTimeout(function () { var e = new Error('逾時'); e.name = 'AbortError'; rej(e); }, timeoutMs || 30000);
+      });
+      return Promise.race([timeout, fetch(url, { credentials: 'omit', redirect: 'follow' })
         .then(function (r) { return r.text(); })
         .then(function (txt) {
-          clearTimeout(timer);
           var a = txt.indexOf('('), b = txt.lastIndexOf(')');
           if (a === -1 || b === -1) throw new Error('回應格式不符');
           return JSON.parse(txt.slice(a + 1, b));
-        })
+        })])
+        .then(function (v) { clearTimeout(timer); return v; })
         .catch(function (err) {
           clearTimeout(timer);
           if (err && err.name === 'AbortError') throw new Error('逾時');

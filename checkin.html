@@ -55,11 +55,15 @@ var TOKEN=q('t'), ACT=q('act');
 // 半殘 Google session 的電腦帶著瀏覽器登入態反被擋）
 function jget(action, params, timeoutMs){
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
-  var ctrl=new AbortController();
-  var timer=setTimeout(function(){ctrl.abort();},timeoutMs||15000);
-  return fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow',signal:ctrl.signal})
+  // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
+  // 讓整段初始化同步當掉 → 畫面永遠停在「載入中」且不顯示任何錯誤（2026-07-31 查 attend.html 時發現，全站同型）。
+  // 改用 Promise.race 計時：舊瀏覽器一樣有逾時，代價只是底層請求不會被真的取消。
+  // ⚠️ 本頁是 8/28 現場掃描站，工作人員手機機齡不可控，這條相容性特別要緊。
+  var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||15000);});
+  return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
     .then(function(r){return r.text();})
-    .then(function(t){clearTimeout(timer);var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})
+    .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
+    .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});
 }
 
