@@ -67,6 +67,7 @@
     .msg-ok   { background: #e6f9ee; color: #1a7d44; }
     .msg-err  { background: #fdecea; color: #b71c1c; }
     .msg-info { background: #e8f0fe; color: #1a56c4; }
+    .msg-warn { background: #fff4e5; color: #8a5300; }   /* 畫面可能不準（非操作失敗）＝與 msg-err 語意不同 */
     #loading { text-align: center; padding: 40px 0; color: #888; font-size: 15px; }
     #main { display: none; }
     .email-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
@@ -128,6 +129,8 @@
   <div id="loading">載入中，請稍候…</div>
   <div id="main">
     <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+    <!-- 樂觀渲染的畫面沒被真實狀態校正到時的警示（見 showStateError） -->
+    <div id="state-warn"></div>
     <p id="greeting" style="display:none; font-size:16px; color:#06c755; font-weight:700; margin:6px 0 16px"></p>
 
     <!-- 未綁定：綁定表單。2026-07-29 起不再是預設入口，只在 ?mode=bind 或「重新填寫」時出現。 -->
@@ -342,6 +345,7 @@
     var gRendered = false;     // 主畫面已顯示
     var gRosterReady = false;  // 名單(同源)已到
     var gRealState = undefined; // getBindingState 的真實結果（背景回來）
+    var gStateFailed = false;   // getBindingState 失敗＝畫面上的狀態沒被校正過（見 showStateError）
     var gObReady = false;      // setupOnboard 只初始化一次
 
     // ─── UI helpers ────────────────────────────────────────────────────────────
@@ -406,6 +410,9 @@
         else if (gRealState !== undefined) renderState(gRealState);
         else if (optState) renderState(optState);
         // else: 待驗證 → 保持「載入中」，等 getBindingState 回來才顯示正確畫面
+        // 順序競態：getBindingState 可能比 roster 早失敗，那時錯誤畫在 #loading 上，
+        // 而這裡的 renderState 會把 #loading 藏起來＝錯誤被蓋掉。所以渲染後補判一次。
+        showStateError();
         lg('④ roster ready');
       }).catch(function (err) {
         lg('④ roster catch: ' + (err && err.message));
@@ -422,7 +429,8 @@
         renderState(state);
       }).catch(function (err) {
         lg('④ getBindingState catch: ' + (err && err.message));
-        // 背景失敗：若已樂觀顯示(綁定首頁/活動)仍可用；若在等(待驗證)則維持載入中
+        gStateFailed = true;
+        showStateError();   // 沒畫面→錯誤＋重試；有畫面→掛「可能不準」橫幅，不砸掉可用的畫面
       });
       }
     }
@@ -683,6 +691,26 @@
       var el = document.getElementById('loading');
       if (el) el.innerHTML = '<div class="msg msg-err">載入失敗：' + (err && err.message ? err.message : err) +
         '</div><button class="btn btn-secondary" onclick="location.reload()">重新整理</button>';
+    }
+
+    // getBindingState 失敗時的失效面（2026-07-31 補）。
+    // 原本這裡是一個只寫飛行紀錄、不做事的 catch，註解寫「背景失敗…仍可用」。實際有兩種後果，
+    // 都不會讓任何人看見出事了：
+    //   ① 還沒渲染（待驗證過渡態，optState=null）→ 畫面永遠停在「驗證確認中，馬上好…」。
+    //   ② 已樂觀渲染 → 畫面停在「猜測值」而且永遠不會被校正。最危險的是無本機快取時猜的是
+    //      「未綁定」：一位已驗證的同仁會被永久告知自己沒驗證過（7/31 那個查無原因的案例）。
+    // 所以：沒東西可看就給錯誤＋重試；已有畫面就不砸掉它，改掛一條「這畫面可能不準」的橫幅。
+    function showStateError() {
+      if (!gStateFailed) return;
+      if (!gRendered) {
+        showLoadError(new Error('無法取得您的驗證狀態，請確認網路後重新整理。'));
+        return;
+      }
+      var el = document.getElementById('state-warn');
+      if (!el || el.innerHTML) return;   // 已掛過就不重複
+      el.innerHTML = '<div class="msg msg-warn">目前連不上伺服器，<b>以下畫面可能不是您最新的狀態</b>。'
+        + '若您其實已完成驗證卻看到要求驗證的畫面，請稍後重新整理；持續異常請洽工務管理組 柯佳岑（02-2523-0950 #224）。'
+        + '</div><button class="btn btn-secondary" style="margin:0 0 14px" onclick="location.reload()">重新整理</button>';
     }
 
     // ─── 綁定送出 ──────────────────────────────────────────────────────────────
