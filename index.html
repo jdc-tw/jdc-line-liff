@@ -548,8 +548,10 @@
           var _rn = document.getElementById('act-refill-note');
           if (state.activity.refill) {
             _rn.textContent = '本次調查已結束，承辦人已為您開放一次補填'
-              + (state.activity.refillDeadlineText ? ('，請於 ' + state.activity.refillDeadlineText + ' 前送出' : '')
-              ) + '。送出後即完成。';
+              + (state.activity.refillDeadlineText
+                  ? ('，請於 ' + state.activity.refillDeadlineText + ' 前送出')
+                  : '')
+              + '。送出後即完成。';
             _rn.style.display = 'block';
           } else {
             _rn.style.display = 'none';

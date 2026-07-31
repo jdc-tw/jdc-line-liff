@@ -1,0 +1,60 @@
+name: 前端語法檢查
+
+# 為什麼有這支（2026-07-31 事故）：
+# index.html 是全體同仁的入口（綁定／活動填答／報到／獎金卡）。一次改動把三元運算子的
+# 括號放錯位置（`(cond ? ('a' : '')` ），整段 inline script 從載入就 SyntaxError 掛掉，
+# 頁面永遠停在「載入中，請稍待」——而且**沒有任何人會收到錯誤通知**，是使用者收到系統
+# 信、點連結打不開才發現。
+#
+# 這類錯誤本機一秒就能抓（node --check），但當時的驗收方式是「開頁面、手動注入 DOM 看
+# 元素長相」，剛好繞過了頁面自己的啟動流程，也沒看 console。加這道閘門後，語法壞掉的
+# 版本推不上 main。
+
+on:
+  push:
+    branches: [main]
+    paths: ['**.html', 'assets/**.js', '.github/workflows/syntax-check.yml']
+  pull_request:
+    paths: ['**.html', 'assets/**.js']
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - name: 檢查所有 HTML 的 inline script 與 assets/*.js
+        run: |
+          node -e '
+          const fs=require("fs"), path=require("path"), cp=require("child_process");
+          const os=require("os");
+          const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"syn-"));
+          let bad=[];
+
+          // 1) 每個 .html 的 inline <script>（排除有 src 的外部引用）
+          for (const f of fs.readdirSync(".").filter(x=>x.endsWith(".html"))) {
+            const html=fs.readFileSync(f,"utf8");
+            const re=/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+            let m,i=0;
+            while ((m=re.exec(html))!==null) {
+              const p=path.join(tmp,`${f.replace(/\W/g,"_")}_${i++}.js`);
+              fs.writeFileSync(p,m[1]);
+              const r=cp.spawnSync("node",["--check",p],{encoding:"utf8"});
+              if (r.status!==0) bad.push(`${f} inline#${i-1}\n${r.stderr.split("\n").slice(0,5).join("\n")}`);
+            }
+          }
+
+          // 2) assets 下自有的 js（第三方 min 檔跳過）
+          if (fs.existsSync("assets")) {
+            for (const f of fs.readdirSync("assets").filter(x=>x.endsWith(".js") && !x.endsWith("min.js"))) {
+              const r=cp.spawnSync("node",["--check",path.join("assets",f)],{encoding:"utf8"});
+              if (r.status!==0) bad.push(`assets/${f}\n${r.stderr.split("\n").slice(0,5).join("\n")}`);
+            }
+          }
+
+          if (bad.length) { console.error("❌ 語法錯誤：\n\n"+bad.join("\n\n")); process.exit(1); }
+          console.log("✅ 所有頁面與模組語法通過");
+          '
