@@ -144,15 +144,19 @@
       已完成驗證者：立即開放補填，期限到隔天 23:59、用一次即失效。<br>
       尚未完成 LINE 驗證者：系統改寄「綁定邀請信」到他的公司信箱（7 天內有效），<b>他完成驗證後會自動開放補填並通知他</b>，您不需要再操作第二次。
     </div>
+    <div class="fld"><label>單位</label>
+      <select id="refill-unit" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="fillRefillPeople()"><option value="">載入中…</option></select></div>
     <div class="fld"><label>同仁</label>
-      <select id="refill-person" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"><option value="">載入中…</option></select></div>
+      <select id="refill-person" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"><option value="">請先選單位</option></select></div>
     <div id="refill-hint" style="font-size:12.5px;color:#666;line-height:1.8;margin-bottom:10px"></div>
     <div style="font-size:12.5px;color:#b26a00;line-height:1.8;margin-bottom:10px">
       ※ 離職同仁不會出現在名單中。<br>
       ※ 若桌次已發布才補進來：座位總覽會顯示「有調整」，需補排位並重新發佈；活動當天各掃描站要按一次「重新載入」才認得他的報到碼。
     </div>
-    <button class="btn btn-pri" onclick="doGrantRefill()">開放補填並通知</button>
-    <button class="btn btn-sm" onclick="closeRefill()">取消</button>
+    <div class="btnrow">
+      <button class="btn btn-grey" onclick="closeRefill()">取消</button>
+      <button class="btn btn-pri2" style="flex:2" onclick="doGrantRefill()">開放補填並通知</button>
+    </div>
     <div id="refill-msg" class="msg"></div>
   </div>
   <div class="sec">活動列表</div>
@@ -295,27 +299,45 @@ function openRefill(actId,actName,isOpenAct){
   var panel=document.getElementById('refill-panel');
   panel.style.display='block';
   panel.scrollIntoView({behavior:'smooth',block:'center'});
-  if(refillPeople) {fillRefillPeople();return;}
+  if(refillPeople) {fillRefillUnits();return;}
   jsonp('getRefillCandidates',{token:q('t')}).then(function(r){
     if(!r||!r.ok){document.getElementById('refill-person').innerHTML='<option value="">'+esc((r&&r.msg)||'名單載入失敗')+'</option>';return;}
     refillPeople=r.people||[]; refillUnbound=r.unbound||[];
-    fillRefillPeople();
+    fillRefillUnits();
   });
 }
+// 兩段式：先選單位再選人。150 人擠在一個下拉要拉很久，且看不出誰在哪個單位。
+function fillRefillUnits(){
+  var sel=document.getElementById('refill-unit');
+  var seen={}, units=[];
+  (refillPeople||[]).concat(refillUnbound||[]).forEach(function(p){
+    var u=p.unit||'（未填單位）';
+    if(!seen[u]){seen[u]=1;units.push(u);}
+  });
+  units.sort(function(a,b){return a.localeCompare(b,'zh-Hant');});
+  if(!units.length){sel.innerHTML='<option value="">（沒有可選的同仁）</option>';return;}
+  sel.innerHTML='<option value="">請選擇單位</option>'+units.map(function(u){
+    return '<option value="'+esc(u)+'">'+esc(u)+'</option>';
+  }).join('');
+  fillRefillPeople();
+}
 function fillRefillPeople(){
+  var unit=document.getElementById('refill-unit').value;
   var sel=document.getElementById('refill-person');
-  var v=refillPeople||[], u=refillUnbound||[];
-  if(!v.length&&!u.length){sel.innerHTML='<option value="">（沒有可選的同仁）</option>';return;}
+  if(!unit){sel.innerHTML='<option value="">請先選單位</option>';refillHint();return;}
+  var inUnit=function(p){return (p.unit||'（未填單位）')===unit;};
+  var v=(refillPeople||[]).filter(inUnit), u=(refillUnbound||[]).filter(inUnit);
+  if(!v.length&&!u.length){sel.innerHTML='<option value="">（此單位沒有可選的同仁）</option>';refillHint();return;}
   var html='<option value="">請選擇同仁</option>';
   if(v.length){
     html+='<optgroup label="已完成 LINE 驗證（立即開放補填）">'+v.map(function(p){
-      return '<option value="U:'+esc(p.userId)+'">'+esc(p.unit||'（未填單位）')+' — '+esc(p.name)+'</option>';
+      return '<option value="U:'+esc(p.userId)+'">'+esc(p.name)+'</option>';
     }).join('')+'</optgroup>';
   }
   if(u.length){
     html+='<optgroup label="尚未完成 LINE 驗證（改寄綁定邀請信）">'+u.map(function(p){
       return '<option value="E:'+esc(p.empNo)+'"'+(p.hasEmail?'':' disabled')+'>'
-        +esc(p.unit||'（未填單位）')+' — '+esc(p.name)+(p.hasEmail?'':'（名冊缺公司信箱·無法寄信）')+'</option>';
+        +esc(p.name)+(p.hasEmail?'':'（名冊缺公司信箱·無法寄信）')+'</option>';
     }).join('')+'</optgroup>';
   }
   sel.innerHTML=html;
