@@ -547,11 +547,14 @@
           // 他從 LINE 推播點進來只會看到一場「已截止」的問卷，以為系統壞了。
           var _rn = document.getElementById('act-refill-note');
           if (state.activity.refill) {
-            _rn.textContent = '本次調查已結束，承辦人已為您開放一次補填'
+            // 一次一用是刻意的設計，但收到通知的人不會知道——不講清楚，他填錯了
+            // 只會在按下送出後發現自己改不了。
+            _rn.innerHTML = '本次調查已結束，承辦人已為您開放一次補填'
               + (state.activity.refillDeadlineText
-                  ? ('，請於 ' + state.activity.refillDeadlineText + ' 前送出')
+                  ? ('，請於 ' + escHtml(state.activity.refillDeadlineText) + ' 前送出')
                   : '')
-              + '。送出後即完成。';
+              + '。<br><b>只能送出一次，送出後無法自行修改</b>，請確認選項無誤再送出；'
+              + '若送出後才發現填錯，請聯絡工務管理組 柯佳岑（02-2523-0950 #224）。';
             _rn.style.display = 'block';
           } else {
             _rn.style.display = 'none';
