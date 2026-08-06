@@ -237,7 +237,15 @@ function jsonp(action,params){
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
 function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 var TOKEN=getToken();
-annivInit(jsonp, TOKEN);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
+// 首載合併（2026-08-06）：4 支 /exec → 1 支 batch。/exec 每請求固定成本 2-4s、偶發 8-17s 長尾，
+// 多支並行佔執行位是「連線逾時」爆量排隊的火種。pick(a) 把整包切片給既有 render 函式；
+// batch 整包失敗時每個 key 都拿到 {ok:false,msg:…} → 各區塊走原本的錯誤路徑，行為與單支失敗相同。
+// 互動後的重抓（切活動、核定後刷新）仍走單支 jsonp——batch 只管首載這一發。
+var FIRST=jsonp('batch',{token:TOKEN,list:JSON.stringify([
+  {a:'getCheckinOptions'},{a:'getCheckinPending'},{a:'getHrPending'},{a:'getAnniversaries'}])});
+function pick(a){return FIRST.then(function(r){
+  return (r&&r.ok&&r.results&&r.results[a])||{ok:false,msg:(r&&r.msg)||'連線失敗'};});}
+annivInit(function(){return pick('getAnniversaries');}, TOKEN);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
 function updateBadge(n){
   document.getElementById('tabbtn-checkin').textContent = n>0 ? '新人報到（'+n+'）' : '新人報到';
 }
@@ -582,8 +590,12 @@ function saveOptionGo(){
     else setMsg(msg,(r&&r.msg)||'失敗','err');
   });
 }
+var hrFirst=true;
 function loadHr(){
-  jsonp('getHrPending',{token:TOKEN}).then(function(r){
+  // 首發吃 batch 切片；之後的刷新（核定/駁回/轉移後）必須重打，不能回舊快照
+  var src=hrFirst?pick('getHrPending'):jsonp('getHrPending',{token:TOKEN});
+  hrFirst=false;
+  src.then(function(r){
     var box=document.getElementById('hr-pending');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     hrData={units:r.units||[],namesByUnit:r.namesByUnit||{},titles:r.titles||[]};
@@ -657,8 +669,8 @@ function load(){
   var cached=swrGet(key);
   if(cached){renderLoad(cached);}
   else{document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';}
-  // options 與 pending 彼此不相依 → 並行發送，等待時間由「相加」降為「較慢的那個」
-  Promise.all([jsonp('getCheckinOptions',{}), jsonp('getCheckinPending',{token:TOKEN})]).then(function(rs){
+  // 兩份資料改由首載 batch 一次帶回（load() 只在開頁呼叫一次，直接吃切片即可）
+  Promise.all([pick('getCheckinOptions'), pick('getCheckinPending')]).then(function(rs){
     if(rs[1]&&rs[1].ok){swrSet(key,rs);renderLoad(rs);}else if(!cached){renderLoad(rs);}
   });
 }

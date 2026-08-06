@@ -975,8 +975,15 @@ function toggleRep(btn,id){
   });
 }
 
+// 首載合併（2026-08-06）：3 支 /exec → 1 支 batch（成因與手法見 board.html 同段註解）。
+// getActivityStats 空 act＝後端自選開放中活動，與原本 loadStats(q('act')) 語意等價。
+var FIRST=jsonp('batch',{token:q('t'),list:JSON.stringify([
+  {a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}},{a:'getAnniversaries'}])});
+function pick(a){return FIRST.then(function(r){
+  return (r&&r.ok&&r.results&&r.results[a])||{ok:false,msg:(r&&r.msg)||'連線失敗'};});}
+
 // 活動切換下拉（歷史場次也能回看統計）
-jsonp('listActivities',{token:q('t')}).then(function(r){
+pick('listActivities').then(function(r){
   if(!r||!r.ok||!r.rows.length)return;
   var sel=document.getElementById('act-picker');
   sel.innerHTML=r.rows.slice().reverse().map(function(a){
@@ -987,12 +994,16 @@ jsonp('listActivities',{token:q('t')}).then(function(r){
   sel.style.display='';
 });
 
+var statsFirst=true;
 function loadStats(act){
   var key='swr:getActivityStats:'+(act||'');
   var cached=swrGet(key);
   if(cached){renderStats(cached);}
   else{document.getElementById('meta').textContent='載入中…';document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
-  jsonp('getActivityStats',{token:q('t'),act:act||''}).then(function(r){
+  // 首發吃 batch 切片（act 已在 batch 的 p 帶上）；之後切場次重打單支
+  var src=statsFirst?pick('getActivityStats'):jsonp('getActivityStats',{token:q('t'),act:act||''});
+  statsFirst=false;
+  src.then(function(r){
     if(r&&r.ok){swrSet(key,r);renderStats(r);}else if(!cached){renderStats(r);}
   });
 }
@@ -1009,7 +1020,7 @@ function renderStats(r){
   if(sel.options.length&&out.actId)sel.value=out.actId;
 }
 loadStats(q('act'));
-annivInit(jsonp, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁
+annivInit(function(){return pick('getAnniversaries');}, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁（吃首載 batch 切片）
 rosterDlInit({ jsonp: jsonp, token: q('t'), leaversId: 's-dl-leavers',
   msg: function (t, ty) { setMsg('s-dl-msg', t, ty === 'info' ? '' : ty); } });
 </script></body></html>
