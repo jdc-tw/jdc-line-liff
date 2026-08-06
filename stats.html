@@ -239,12 +239,18 @@ function jsonp(action,params,timeoutMs){
   // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
   // 讓整段初始化同步當掉 → 畫面永遠停在「載入中」且不顯示任何錯誤（2026-07-31 查 attend.html 時發現，全站同型）。
   // 改用 Promise.race 計時：舊瀏覽器一樣有逾時，代價只是底層請求不會被真的取消（低頻看板無影響）。
-  var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||15000);});
-  return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
-    .then(function(r){return r.text();})
-    .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})])
-    .then(function(v){clearTimeout(timer);return v;})
-    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
+  function attempt(){
+    var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||30000);});
+    return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
+      .then(function(r){return r.text();})
+      .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})])
+      .then(function(v){clearTimeout(timer);return v;},function(e){clearTimeout(timer);throw e;});
+  }
+  // 30s＋逾時/斷線自動重試一次（隔 2s，8/6 對策 1）——僅限「讀取」（未帶 timeoutMs 的呼叫）：
+  // 寫入類走 jsonpW（45s＋ok:false 重試），逾時它已會重試，這裡再重試會疊成雙重、有重複送出風險。
+  var p=attempt();
+  if(timeoutMs==null){p=p.catch(function(){return new Promise(function(res){setTimeout(res,2000);}).then(attempt);});}
+  return p.catch(function(e){return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
 // SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
 function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
