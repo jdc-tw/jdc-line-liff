@@ -1,7 +1,20 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
-        buildFormalAoa, pastelPalette, SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
+        buildFormalAoa, pastelPalette, guestGradient, SEAT_ROWS, TABLE_COLS, GUEST_HUE } = require('../assets/seating.js');
+
+/** 十六進位色 → 色相（0-360）／明度（0-1），供「同色相不同明度」的斷言用。 */
+function hueLight(hex) {
+  const r = parseInt(hex.slice(0, 2), 16) / 255, g = parseInt(hex.slice(2, 4), 16) / 255, b = parseInt(hex.slice(4, 6), 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) {
+    if (mx === r) h = 60 * (((g - b) / d) % 6);
+    else if (mx === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  return { h: (h + 360) % 360, l: (mx + mn) / 2 };
+}
 
 test('expandGuests：一席一列展開（seatNo>0 才佔位）', () => {
   const guests = [
@@ -65,11 +78,47 @@ test('buildSeatingAoa：fills 只上在表頭與有名字的格，一欄一色�
   fills.forEach(([r, c]) => { if (r > h) assert.ok(aoa[r][c], `第${r}列第${c}欄應有名字`); });
 });
 
-test('pastelPalette：n 色互不重複', () => {
+test('pastelPalette：n 色互不重複，且都避開來賓色相帶', () => {
   const p = pastelPalette(27);
   assert.equal(p.length, 27);
   assert.equal(new Set(p).size, 27);
-  p.forEach(c => assert.match(c, /^[0-9A-F]{6}$/));
+  p.forEach(c => {
+    assert.match(c, /^[0-9A-F]{6}$/);
+    const { h } = hueLight(c);
+    const d = Math.min(Math.abs(h - GUEST_HUE), 360 - Math.abs(h - GUEST_HUE));
+    assert.ok(d >= 15, `單位色 ${c} 色相 ${h.toFixed(0)} 太接近來賓色 ${GUEST_HUE}`);
+  });
+});
+
+test('guestGradient：同一色相、明度由淺到深、彼此不重複', () => {
+  const g = guestGradient(11);
+  assert.equal(g.length, 11);
+  assert.equal(new Set(g).size, 11, '11 位負責人要分得出來');
+  const hl = g.map(hueLight);
+  hl.forEach(x => assert.ok(Math.abs(x.h - GUEST_HUE) < 2, `色相應一致：${x.h}`));
+  for (let i = 1; i < hl.length; i++) assert.ok(hl[i].l < hl[i - 1].l, '明度要單調變深');
+  assert.equal(guestGradient(1).length, 1, 'n=1 不得除以零');
+});
+
+test('buildSeatingAoa：單位雜色、來賓同色相漸層（一眼分得出哪些是來賓）', () => {
+  const units = ['管理部', '施工部', '工務管理組'];
+  const owners = ['王小明', '李美麗', '陳大同'];
+  const { aoa, fills } = buildSeatingAoa(
+    units, { 管理部: ['甲'], 施工部: ['乙'], 工務管理組: ['丙'] },
+    owners, { 王小明: ['賓1'], 李美麗: ['賓2'], 陳大同: ['賓3'] }, 6);
+  const h = SEAT_ROWS + 2;
+  const colorOf = (ci) => (fills.find(f => f[0] === h && f[1] === ci) || [])[2];
+  const unitCols = [1, 2, 3].map(colorOf), guestCols = [4, 5, 6].map(colorOf);
+  // 表頭順序確認：前三欄單位、後三欄負責人
+  assert.deepEqual(aoa[h].slice(1), units.concat(owners));
+  // 來賓：同色相、明度遞減
+  const gl = guestCols.map(hueLight);
+  gl.forEach(x => assert.ok(Math.abs(x.h - GUEST_HUE) < 2));
+  assert.ok(gl[0].l > gl[1].l && gl[1].l > gl[2].l);
+  // 單位：色相彼此不同，且都不是來賓色
+  const ul = unitCols.map(hueLight);
+  assert.equal(new Set(ul.map(x => Math.round(x.h))).size, 3);
+  ul.forEach(x => assert.ok(Math.min(Math.abs(x.h - GUEST_HUE), 360 - Math.abs(x.h - GUEST_HUE)) >= 15));
 });
 
 test('parseSeatingUpload（新版）：表頭桌號、逐欄收人', () => {

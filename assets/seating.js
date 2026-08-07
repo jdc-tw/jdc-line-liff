@@ -44,10 +44,10 @@ function buildSeatingAoa(unitNames, attendeesByUnit, ownerNames, guestsByOwner, 
     aoa.push(row);
   }
   var cols = [];
-  (unitNames || []).forEach(function (u) { cols.push({ name: u, names: (attendeesByUnit[u] || []).slice() }); });
-  (ownerNames || []).forEach(function (o) { cols.push({ name: o, names: (guestsByOwner[o] || []).slice() }); });
+  (unitNames || []).forEach(function (u) { cols.push({ name: u, kind: 'unit', names: (attendeesByUnit[u] || []).slice() }); });
+  (ownerNames || []).forEach(function (o) { cols.push({ name: o, kind: 'guest', names: (guestsByOwner[o] || []).slice() }); });
   if (guestsByOwner && guestsByOwner['其他'] && (ownerNames || []).indexOf('其他') < 0) {
-    cols.push({ name: '其他', names: guestsByOwner['其他'].slice() });
+    cols.push({ name: '其他', kind: 'guest', names: guestsByOwner['其他'].slice() });
   }
   aoa.push([]);                                   // 空行分隔
   var hdrRow = aoa.length;                        // 0-based index of 分類表頭
@@ -85,12 +85,18 @@ function buildSeatingAoa(unitNames, attendeesByUnit, ownerNames, guestsByOwner, 
   aoa[4][CK] = '檢核差額（0＝沒漏）';
   aoa[4][CV] = '=' + VL + '3-' + VL + '2-' + VL + '4';
 
-  // 分類欄底色：一欄一色（表頭＋該欄有名字的格），方便剪貼時辨認來源欄
-  var palette = pastelPalette(cols.length);
+  // 分類欄底色（表頭＋該欄有名字的格）：
+  //   單位＝各自不同色相（一眼分得出是哪個單位）
+  //   廠商來賓＝同一色相、依負責人做明度漸層（一眼看出「這些都是來賓」，又分得出誰帶的）
+  var units = cols.filter(function (c) { return c.kind !== 'guest'; });
+  var guests = cols.filter(function (c) { return c.kind === 'guest'; });
+  var uPal = pastelPalette(units.length), gPal = guestGradient(guests.length);
+  var ui = 0, gi = 0;
   var fills = [];
   cols.forEach(function (c, ci) {
-    fills.push([hdrRow, ci + 1, palette[ci]]);
-    for (var i = 0; i < c.names.length; i++) fills.push([hdrRow + 1 + i, ci + 1, palette[ci]]);
+    var rgb = (c.kind === 'guest') ? gPal[gi++] : uPal[ui++];
+    fills.push([hdrRow, ci + 1, rgb]);
+    for (var i = 0; i < c.names.length; i++) fills.push([hdrRow + 1 + i, ci + 1, rgb]);
   });
   return {
     aoa: aoa,
@@ -99,13 +105,32 @@ function buildSeatingAoa(unitNames, attendeesByUnit, ownerNames, guestsByOwner, 
   };
 }
 
-/** n 個彼此分得開的淡色：黃金角跳色相＋兩段明度交錯（相鄰欄不會撞成同一片）。 */
+var GUEST_HUE = 35;   // 來賓/廠商統一色相（暖橘）——與單位的雜色相區隔
+
+/**
+ * 單位用：n 個彼此分得開的淡色。
+ * 色相取「排除來賓色帶（GUEST_HUE±22）之後剩下的區間」，再用黃金比例均勻鋪開
+ * ——**不可用「算完再把撞到的往旁邊推」**：推過去會跟別人重疊，27 欄只剩 25 色（2026-08-07 測試抓到）。
+ * 明度兩段交錯，色相接近時也分得出。
+ */
 function pastelPalette(n) {
+  var BAND = 22, span = 360 - BAND * 2;
   var out = [];
   for (var i = 0; i < n; i++) {
-    var h = (i * 137.508) % 360;               // 黃金角＝相鄰序號色相差最大
-    var l = (i % 2 === 0) ? 0.88 : 0.80;       // 明度交錯，同色相也分得出
+    var frac = (i * 0.618033988749895) % 1;         // 黃金比例＝低差異序列，分布最勻
+    var h = (GUEST_HUE + BAND + frac * span) % 360;
+    var l = (i % 2 === 0) ? 0.88 : 0.80;
     out.push(hslHex_(h, 0.55, l));
+  }
+  return out;
+}
+
+/** 來賓用：同一色相、明度由淺到深的漸層（n=1 時取最淺）。 */
+function guestGradient(n) {
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    var t = (n > 1) ? i / (n - 1) : 0;
+    out.push(hslHex_(GUEST_HUE, 0.62, 0.91 - 0.22 * t));
   }
   return out;
 }
@@ -232,5 +257,5 @@ function buildFormalAoa(seats, ranks) {
 
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
-                     pastelPalette, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
+                     pastelPalette, guestGradient, countNonEmpty_, SEAT_ROWS, TABLE_COLS, GUEST_HUE };
 }

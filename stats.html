@@ -176,7 +176,7 @@
   </div>
 
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🪑 座位表</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🪑 座位表 <span id="s-sum" style="color:#888;font-weight:400;font-size:14px"></span></div>
     <div class="btnrow"><button class="btn btn-pri2" onclick="dlSeatingFile()">⬇ 排位用檔</button>
       <button class="btn btn-up" onclick="document.getElementById('s-file').click()">⬆ 排位結果</button></div>
     <input type="file" id="s-file" accept=".xlsx,.xls" style="display:none" onchange="upSeating(this)">
@@ -419,6 +419,9 @@ function loadSeating(){
     if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     SB=r; seatSel=null;
     document.getElementById('g-sum').textContent='共 '+r.guestVendors+' 家・'+r.guestSeats+' 人';
+    // 座位表小字：實際出席＝員工＋廠商（同一份 SB.seats，與排位用檔的預定人數同源）
+    var _emp=r.seats.filter(function(s){return s.kind==='emp';}).length;
+    document.getElementById('s-sum').textContent='員工 '+_emp+' ＋ 廠商 '+r.guestSeats+' ＝ '+(_emp+r.guestSeats)+' 人';
     var b=document.getElementById('pub-btn');
     if(r.pubState==='none'){b.className='btn btn-amber';b.textContent='發佈桌次';}
     else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
