@@ -60,6 +60,18 @@ function freezeSheetXml(xml, topLeft) {
   return xml.slice(0, anchor) + block + xml.slice(anchor);
 }
 
+/**
+ * workbook.xml 加 <calcPr fullCalcOnLoad="1"/>：開檔強制重算。
+ * 為何：xlsxPostFormulas 刻意不留快取值（避免假數字），但少數 Excel 版本不會自動補算，
+ * 檢核區就會顯示空白／0＝「公式對但數字不出現」。這個旗標要求開檔時整本重算。
+ * writer 目前不產 calcPr（已實測）；有的話就補屬性、沒有就插在 </workbook> 前（schema 允許的位置）。
+ */
+function forceRecalcXml(xml) {
+  if (/<calcPr[^>]*fullCalcOnLoad="1"/.test(xml)) return xml;
+  if (/<calcPr/.test(xml)) return xml.replace(/<calcPr/, '<calcPr fullCalcOnLoad="1"');
+  return xml.replace('</workbook>', '<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { xlsxPostFormulas, splitOfTopLeft, freezeSheetXml };
+  module.exports = { xlsxPostFormulas, splitOfTopLeft, freezeSheetXml, forceRecalcXml };
 }

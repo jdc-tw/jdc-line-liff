@@ -754,9 +754,10 @@ function writeSeatXlsx_(aoa,fname,sheetName,opts){
     var bytes=XLSX.write(wb,{type:'array',bookType:'xlsx'});
     return JSZip.loadAsync(bytes);
   }).then(function(zip){
-    var p='xl/worksheets/sheet1.xml';
-    return zip.file(p).async('string').then(function(xml){
-      zip.file(p,freezeSheetXml(xml,opts.freeze));
+    var p='xl/worksheets/sheet1.xml', wbp='xl/workbook.xml';
+    return Promise.all([zip.file(p).async('string'),zip.file(wbp).async('string')]).then(function(xs){
+      zip.file(p,freezeSheetXml(xs[0],opts.freeze));
+      zip.file(wbp,forceRecalcXml(xs[1]));   // 開檔強制重算（公式無快取值時保險）
       return zip.generateAsync({type:'arraybuffer'});
     });
   }).then(function(buf){

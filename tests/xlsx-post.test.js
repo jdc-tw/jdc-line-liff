@@ -1,6 +1,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { xlsxPostFormulas, splitOfTopLeft, freezeSheetXml } = require('../assets/xlsx-post.js');
+const { xlsxPostFormulas, splitOfTopLeft, freezeSheetXml, forceRecalcXml } = require('../assets/xlsx-post.js');
+
+test('forceRecalcXml：無 calcPr 補整段／有 calcPr 補屬性／已有旗標不重複', () => {
+  const bare = '<workbook><sheets/></workbook>';
+  assert.match(forceRecalcXml(bare), /<calcPr calcId="191029" fullCalcOnLoad="1"\/><\/workbook>/);
+  const withCalc = '<workbook><sheets/><calcPr calcId="123"/></workbook>';
+  assert.match(forceRecalcXml(withCalc), /<calcPr fullCalcOnLoad="1" calcId="123"\/>/);
+  const already = '<workbook><calcPr fullCalcOnLoad="1"/></workbook>';
+  assert.strictEqual(forceRecalcXml(already), already);
+});
 
 // ── splitOfTopLeft ──────────────────────────────────────────────────────
 
@@ -87,6 +96,7 @@ test('整合：排位用檔產出＝真公式＋B32 凍結（用實際函式庫�
   const path = 'xl/worksheets/sheet1.xml';
   const xml = await zip.file(path).async('string');
   zip.file(path, freezeSheetXml(xml, topLeft));
+  zip.file('xl/workbook.xml', forceRecalcXml(await zip.file('xl/workbook.xml').async('string')));
   const out = await zip.generateAsync({ type: 'nodebuffer' });
 
   // 用 zip 內容直接驗（不依賴外部工具）：pane 在、公式以 <f> 存在、不再有文字型 '=…'
