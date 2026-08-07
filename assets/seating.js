@@ -105,32 +105,35 @@ function buildSeatingAoa(unitNames, attendeesByUnit, ownerNames, guestsByOwner, 
   };
 }
 
-var GUEST_HUE = 35;   // 來賓/廠商統一色相（暖橘）——與單位的雜色相區隔
+// 單位＝有彩度的淡色；來賓＝純灰階（s=0），兩類天然分得開。
+// 彩度 0.55 在淡階（l=0.88）算出來的實際色差只有 0.13，跟灰階分不太開（2026-08-07 測試抓到），
+// 故拉到 0.75——淡階色差 0.18、深階 0.30，仍是淡色底、黑字清楚。
+var UNIT_SAT = 0.75;
 
 /**
- * 單位用：n 個彼此分得開的淡色。
- * 色相取「排除來賓色帶（GUEST_HUE±22）之後剩下的區間」，再用黃金比例均勻鋪開
- * ——**不可用「算完再把撞到的往旁邊推」**：推過去會跟別人重疊，27 欄只剩 25 色（2026-08-07 測試抓到）。
- * 明度兩段交錯，色相接近時也分得出。
+ * 單位用：n 個彼此分得開的淡色。色相用黃金比例鋪開（低差異序列，分布最勻）、明度兩段交錯。
+ * ⚠️ 不可用「算完發現撞到就往旁邊推」：推過去會跟別人重疊，27 欄只產生 25 色
+ *（2026-08-07 測試抓到，正好破壞「底色不重複」的要求）。
  */
 function pastelPalette(n) {
-  var BAND = 22, span = 360 - BAND * 2;
   var out = [];
   for (var i = 0; i < n; i++) {
-    var frac = (i * 0.618033988749895) % 1;         // 黃金比例＝低差異序列，分布最勻
-    var h = (GUEST_HUE + BAND + frac * span) % 360;
+    var h = ((i * 0.618033988749895) % 1) * 360;
     var l = (i % 2 === 0) ? 0.88 : 0.80;
-    out.push(hslHex_(h, 0.55, l));
+    out.push(hslHex_(h, UNIT_SAT, l));
   }
   return out;
 }
 
-/** 來賓用：同一色相、明度由淺到深的漸層（n=1 時取最淺）。 */
+/**
+ * 來賓（廠商）用：**灰階**漸層，由淺到深（使用者 2026-08-07 指定）。
+ * 無彩度＝與單位的彩色欄一眼分流；明度序列＝分得出是哪位負責人帶的。n=1 時取最淺。
+ */
 function guestGradient(n) {
   var out = [];
   for (var i = 0; i < n; i++) {
     var t = (n > 1) ? i / (n - 1) : 0;
-    out.push(hslHex_(GUEST_HUE, 0.62, 0.91 - 0.22 * t));
+    out.push(hslHex_(0, 0, 0.93 - 0.27 * t));       // 0.93 → 0.66，黑字仍清楚
   }
   return out;
 }
@@ -257,5 +260,5 @@ function buildFormalAoa(seats, ranks) {
 
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
-                     pastelPalette, guestGradient, countNonEmpty_, SEAT_ROWS, TABLE_COLS, GUEST_HUE };
+                     pastelPalette, guestGradient, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
 }

@@ -1,19 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
-        buildFormalAoa, pastelPalette, guestGradient, SEAT_ROWS, TABLE_COLS, GUEST_HUE } = require('../assets/seating.js');
+        buildFormalAoa, pastelPalette, guestGradient, SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
-/** 十六進位色 → 色相（0-360）／明度（0-1），供「同色相不同明度」的斷言用。 */
+/** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
 function hueLight(hex) {
-  const r = parseInt(hex.slice(0, 2), 16) / 255, g = parseInt(hex.slice(2, 4), 16) / 255, b = parseInt(hex.slice(4, 6), 16) / 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-  let h = 0;
-  if (d) {
-    if (mx === r) h = 60 * (((g - b) / d) % 6);
-    else if (mx === g) h = 60 * ((b - r) / d + 2);
-    else h = 60 * ((r - g) / d + 4);
-  }
-  return { h: (h + 360) % 360, l: (mx + mn) / 2 };
+  const r = parseInt(hex.slice(0, 2), 16), g = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+  const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
+  return { l: (mx + mn) / 2, sat: mx - mn, gray: (r === g && g === b) };
 }
 
 test('expandGuests：一席一列展開（seatNo>0 才佔位）', () => {
@@ -78,29 +72,29 @@ test('buildSeatingAoa：fills 只上在表頭與有名字的格，一欄一色�
   fills.forEach(([r, c]) => { if (r > h) assert.ok(aoa[r][c], `第${r}列第${c}欄應有名字`); });
 });
 
-test('pastelPalette：n 色互不重複，且都避開來賓色相帶', () => {
+test('pastelPalette：27 色互不重複，且都是有彩度的（不會與來賓灰階混淆）', () => {
   const p = pastelPalette(27);
   assert.equal(p.length, 27);
   assert.equal(new Set(p).size, 27);
   p.forEach(c => {
     assert.match(c, /^[0-9A-F]{6}$/);
-    const { h } = hueLight(c);
-    const d = Math.min(Math.abs(h - GUEST_HUE), 360 - Math.abs(h - GUEST_HUE));
-    assert.ok(d >= 15, `單位色 ${c} 色相 ${h.toFixed(0)} 太接近來賓色 ${GUEST_HUE}`);
+    const { gray, sat } = hueLight(c);
+    assert.ok(!gray && sat > 0.15, `單位色 ${c} 太接近灰階（sat=${sat.toFixed(2)}）`);
   });
 });
 
-test('guestGradient：同一色相、明度由淺到深、彼此不重複', () => {
+test('guestGradient：純灰階、由淺到深、彼此不重複', () => {
   const g = guestGradient(11);
   assert.equal(g.length, 11);
   assert.equal(new Set(g).size, 11, '11 位負責人要分得出來');
   const hl = g.map(hueLight);
-  hl.forEach(x => assert.ok(Math.abs(x.h - GUEST_HUE) < 2, `色相應一致：${x.h}`));
+  hl.forEach((x, i) => assert.ok(x.gray, `第 ${i + 1} 位不是純灰：${g[i]}`));
   for (let i = 1; i < hl.length; i++) assert.ok(hl[i].l < hl[i - 1].l, '明度要單調變深');
+  assert.ok(hl[hl.length - 1].l > 0.6, '最深的一階仍要能襯黑字');
   assert.equal(guestGradient(1).length, 1, 'n=1 不得除以零');
 });
 
-test('buildSeatingAoa：單位雜色、來賓同色相漸層（一眼分得出哪些是來賓）', () => {
+test('buildSeatingAoa：單位彩色、來賓灰階漸層（一眼分得出哪些是廠商）', () => {
   const units = ['管理部', '施工部', '工務管理組'];
   const owners = ['王小明', '李美麗', '陳大同'];
   const { aoa, fills } = buildSeatingAoa(
@@ -108,17 +102,16 @@ test('buildSeatingAoa：單位雜色、來賓同色相漸層（一眼分得出�
     owners, { 王小明: ['賓1'], 李美麗: ['賓2'], 陳大同: ['賓3'] }, 6);
   const h = SEAT_ROWS + 2;
   const colorOf = (ci) => (fills.find(f => f[0] === h && f[1] === ci) || [])[2];
-  const unitCols = [1, 2, 3].map(colorOf), guestCols = [4, 5, 6].map(colorOf);
   // 表頭順序確認：前三欄單位、後三欄負責人
   assert.deepEqual(aoa[h].slice(1), units.concat(owners));
-  // 來賓：同色相、明度遞減
-  const gl = guestCols.map(hueLight);
-  gl.forEach(x => assert.ok(Math.abs(x.h - GUEST_HUE) < 2));
+  // 來賓：純灰、明度遞減
+  const gl = [4, 5, 6].map(ci => hueLight(colorOf(ci)));
+  gl.forEach(x => assert.ok(x.gray, '廠商欄必須是純灰階'));
   assert.ok(gl[0].l > gl[1].l && gl[1].l > gl[2].l);
-  // 單位：色相彼此不同，且都不是來賓色
-  const ul = unitCols.map(hueLight);
-  assert.equal(new Set(ul.map(x => Math.round(x.h))).size, 3);
-  ul.forEach(x => assert.ok(Math.min(Math.abs(x.h - GUEST_HUE), 360 - Math.abs(x.h - GUEST_HUE)) >= 15));
+  // 單位：都是彩色且彼此不同
+  const uc = [1, 2, 3].map(colorOf);
+  assert.equal(new Set(uc).size, 3);
+  uc.forEach(c => assert.ok(!hueLight(c).gray, '單位欄不得是灰階'));
 });
 
 test('parseSeatingUpload（新版）：表頭桌號、逐欄收人', () => {
