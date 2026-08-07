@@ -72,7 +72,7 @@ test('freezeSheetXml：A1（無凍結量）與壞 topLeft 原樣返回', () => {
 
 // ── 整合：真的走一遍 aoa → xlsx → zip 後製，驗最終檔案 ────────────────────
 
-test('整合：排位用檔產出＝真公式＋B32 凍結（用實際函式庫與 JSZip 走完全程）', async () => {
+test('整合：排位用檔產出＝真公式＋凍結到分類表頭（用實際函式庫與 JSZip 走完全程）', async () => {
   // 瀏覽器版 xlsx-style 在 node 下會去 require('./cpexcel.js')（codepage 表）；
   // 我們只寫 UTF-8 xlsx 用不到 codepage 轉換，墊 stub 讓它載得起來即可。
   global.cptable = { utils: {
@@ -81,9 +81,10 @@ test('整合：排位用檔產出＝真公式＋B32 凍結（用實際函式庫�
   } };
   const XLSX = require('../assets/xlsx-style.min.js');
   const JSZip = require('../assets/jszip.min.js');
-  const { buildSeatingAoa, TABLE_ROWS } = require('../assets/seating.js');
+  const { buildSeatingAoa } = require('../assets/seating.js');
 
-  const aoa = buildSeatingAoa(['工務管理組', '管理部'], { 工務管理組: ['甲', '乙'], 管理部: ['丙'] }, ['負責人A'], { 負責人A: ['來賓1'] }, 4);
+  const sb = buildSeatingAoa(['工務管理組', '管理部'], { 工務管理組: ['甲', '乙'], 管理部: ['丙'] }, ['負責人A'], { 負責人A: ['來賓1'] }, 4);
+  const aoa = sb.aoa;
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const n = xlsxPostFormulas(ws);
   assert.ok(n >= 5, '至少檢核區4格+每欄剩餘: 轉了 ' + n);
@@ -91,7 +92,7 @@ test('整合：排位用檔產出＝真公式＋B32 凍結（用實際函式庫�
   XLSX.utils.book_append_sheet(wb, ws, '座位表');
   const bytes = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
 
-  const topLeft = 'B' + (TABLE_ROWS + 4);
+  const topLeft = sb.freezeTopLeft;
   const zip = await JSZip.loadAsync(bytes);
   const path = 'xl/worksheets/sheet1.xml';
   const xml = await zip.file(path).async('string');
@@ -102,11 +103,55 @@ test('整合：排位用檔產出＝真公式＋B32 凍結（用實際函式庫�
   // 用 zip 內容直接驗（不依賴外部工具）：pane 在、公式以 <f> 存在、不再有文字型 '=…'
   const zip2 = await JSZip.loadAsync(out);
   const xml2 = await zip2.file(path).async('string');
-  assert.match(xml2, /<pane xSplit="1" ySplit="31" topLeftCell="B32"[^>]*state="frozen"\/>/);
-  assert.match(xml2, /<f>COUNTA\(/);
+  assert.strictEqual(topLeft, 'B16', '12 席版面的分類表頭在第 15 列');
+  assert.match(xml2, /<pane xSplit="1" ySplit="15" topLeftCell="B16"[^>]*state="frozen"\/>/);
+  assert.match(xml2, /<f>SUMPRODUCT\(/);
+  assert.doesNotMatch(xml2, /<f>COUNTA\(/, '不得再用 COUNTA（會數到畫格線用的空字串）');
   const shared = zip2.file('xl/sharedStrings.xml');
   if (shared) {
     const ss = await shared.async('string');
-    assert.doesNotMatch(ss, /=COUNTA/, '共享字串裡不得再有文字公式');
+    assert.doesNotMatch(ss, /=SUMPRODUCT|=SUM\(|=AD/, '共享字串裡不得再有文字公式');
   }
+});
+
+test('整合：分類欄底色真的寫進檔案，且沒名字的格不上色', async () => {
+  global.cptable = global.cptable || { utils: { decode: (c, a) => Buffer.from(a).toString('utf8'), encode: (c, s) => Buffer.from(String(s), 'utf8') } };
+  const XLSX = require('../assets/xlsx-style.min.js');
+  const { buildSeatingAoa, SEAT_ROWS } = require('../assets/seating.js');
+  const sb = buildSeatingAoa(['管理部', '施工部'], { 管理部: ['甲', '乙'], 施工部: ['丙'] }, [], {}, 3);
+  const ws = XLSX.utils.aoa_to_sheet(sb.aoa);
+  const fill = {}; sb.fills.forEach(f => { fill[f[0] + ',' + f[1]] = f[2]; });
+  // 模擬 writeSeatXlsx_ 的樣式迴圈（含空格補空字串）
+  for (let r = 0; r < sb.aoa.length; r++) {
+    for (let c = 0; c < (sb.aoa[r] || []).length; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+      const bg = fill[r + ',' + c];
+      ws[ref].s = { fill: bg ? { patternType: 'solid', fgColor: { rgb: bg } } : undefined };
+    }
+  }
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '座位表');
+  const JSZip = require('../assets/jszip.min.js');
+  const zip = await JSZip.loadAsync(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+  const sheetXml = await zip.file('xl/worksheets/sheet1.xml').async('string');
+  const stylesXml = await zip.file('xl/styles.xml').async('string');
+
+  // styles.xml：cellXfs 第 i 個 xf 的 fillId → fills 第 n 個的 fgColor
+  const fillColors = (stylesXml.match(/<fills[\s\S]*?<\/fills>/) || [''])[0]
+    .split('<fill>').slice(1).map(s => (s.match(/fgColor rgb="([0-9A-Fa-f]{6,8})"/) || [])[1] || null);
+  const xfs = (stylesXml.match(/<cellXfs[\s\S]*?<\/cellXfs>/) || [''])[0]
+    .split(/<xf /).slice(1).map(s => Number((s.match(/fillId="(\d+)"/) || [])[1] || 0));
+  const bgOf = (ref) => {
+    const m = sheetXml.match(new RegExp('<c r="' + ref + '"[^>]*s="(\\d+)"'));
+    if (!m) return null;
+    const c = fillColors[xfs[Number(m[1])]];
+    return c ? c.slice(-6).toUpperCase() : null;   // 去掉 alpha
+  };
+  const h = SEAT_ROWS + 2;                       // 分類表頭 0-based → Excel 第 h+1 列
+  const R = (r) => r + 1;
+  assert.strictEqual(bgOf('B' + R(h)), fill[h + ',1'], '管理部表頭底色寫進檔案');
+  assert.strictEqual(bgOf('B' + R(h + 1)), fill[h + ',1'], '甲（有名字）同欄同色');
+  assert.strictEqual(bgOf('B' + R(h + 2)), fill[h + ',1'], '乙（有名字）同欄同色');
+  assert.strictEqual(bgOf('C' + R(h + 2)), null, '施工部只有 1 人 → 第 2 列不得有底色');
+  assert.notStrictEqual(bgOf('B' + R(h)), bgOf('C' + R(h)), '兩欄顏色不同');
 });

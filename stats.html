@@ -702,9 +702,9 @@ function dlSeatingFile(){
       });});}
     Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
     var empCount=SB.seats.filter(function(s){return s.kind==='emp';}).length;
-    var aoa=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner,empCount+guestSeats);
-    // 凍結 A 欄＋前 31 列（B32）：31＝1 表頭＋28 桌＋1 空行＋1 分類表頭（使用者 2026-08-07 指定）
-    return writeSeatXlsx_(aoa,'座位排列用檔_'+SB.actName,'座位表',{freeze:'B'+(TABLE_ROWS+4)}).then(function(){
+    var sb=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner,empCount+guestSeats);
+    // 凍結點由版面自己算（分類表頭那列）；分類欄一欄一底色
+    return writeSeatXlsx_(sb.aoa,'座位排列用檔_'+SB.actName,'座位表',{freeze:sb.freezeTopLeft,fills:sb.fills}).then(function(){
       setMsg('sm-msg','已下載 ✅（出席同仁 '+empCount+' 人＋來賓席位 '+guestSeats+' 格）','ok');
     });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
@@ -730,6 +730,7 @@ function writeSeatXlsx_(aoa,fname,sheetName,opts){
   var border={top:bd,bottom:bd,left:bd,right:bd};
   var leftIdx=(opts.leftAlign||[]).map(function(h){return aoa[0].indexOf(h);}).filter(function(i){return i>=0;});
   var red={};(opts.redCells||[]).forEach(function(rc){red[rc[0]+','+rc[1]]=1;});
+  var fill={};(opts.fills||[]).forEach(function(f){fill[f[0]+','+f[1]]=f[2];});
   var widths=[];
   var wlen=function(v){var n=0,t=String(v==null?'':v);for(var i=0;i<t.length;i++)n+=t.charCodeAt(i)>255?2:1;return n;};
   for(var r=0;r<aoa.length;r++){
@@ -737,8 +738,10 @@ function writeSeatXlsx_(aoa,fname,sheetName,opts){
       widths[c]=Math.max(widths[c]||0,wlen(aoa[r][c]));
       var ref=XLSX.utils.encode_cell({r:r,c:c});
       if(!ws[ref])ws[ref]={t:'s',v:''};
+      var bg=fill[r+','+c];
       ws[ref].s={border:border,
         alignment:{horizontal:(leftIdx.indexOf(c)>=0&&r>0)?'left':'center',vertical:'center'},
+        fill:bg?{patternType:'solid',fgColor:{rgb:bg}}:undefined,
         font:{name:'Microsoft JhengHei',
           bold:(r===0||(opts.boldLastRow&&r===aoa.length-1))||undefined,
           color:red[r+','+c]?{rgb:'C00000'}:undefined}};

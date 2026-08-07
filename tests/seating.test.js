@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
-        buildFormalAoa, SEAT_COLS, TABLE_ROWS } = require('../assets/seating.js');
+        buildFormalAoa, pastelPalette, SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 test('expandGuests：一席一列展開（seatNo>0 才佔位）', () => {
   const guests = [
@@ -13,49 +13,95 @@ test('expandGuests：一席一列展開（seatNo>0 才佔位）', () => {
   assert.deepEqual(expandGuests(guests), { '王小明': ['家屬甲', '家屬甲'], '李美麗': ['家屬丙'] });
 });
 
-test('buildSeatingAoa：28 桌、A 欄純數字、含檢核公式與剩餘列', () => {
-  const aoa = buildSeatingAoa(['管理部'], { '管理部': ['甲', '乙'] }, ['王小明'], { '王小明': ['家屬甲'] }, 3);
-  assert.equal(aoa[0][0], '桌次');
-  assert.equal(aoa[0][SEAT_COLS + 1], '檢核');
-  assert.equal(aoa[1][0], 1);                       // A 欄純數字（不寫主桌）
-  assert.equal(aoa[TABLE_ROWS][0], TABLE_ROWS);
-  assert.equal(TABLE_ROWS, 28);
-  // 檢核區
-  assert.equal(aoa[1][SEAT_COLS + 1], '目前人數');
-  assert.ok(String(aoa[1][SEAT_COLS + 2]).startsWith('=COUNTA('));
-  assert.equal(aoa[2][SEAT_COLS + 1], '預定人數');
-  assert.equal(aoa[2][SEAT_COLS + 2], 3);           // 傳入的 expected
-  assert.equal(aoa[4][SEAT_COLS + 1], '檢核差額（0＝沒漏）');
-  // 分類名單
-  const h = TABLE_ROWS + 2;
+test('buildSeatingAoa：一欄一桌（27 桌 × 12 席），A 欄席次、表頭桌次', () => {
+  const { aoa } = buildSeatingAoa(['管理部'], { '管理部': ['甲', '乙'] }, ['王小明'], { '王小明': ['家屬甲'] }, 3);
+  assert.equal(SEAT_ROWS, 12);
+  assert.equal(TABLE_COLS, 27);
+  assert.equal(aoa[0][0], '席次');
+  assert.equal(aoa[0][1], 1);                        // 表頭＝桌次
+  assert.equal(aoa[0][TABLE_COLS], TABLE_COLS);      // 最後一桌 27
+  assert.equal(aoa[0][TABLE_COLS + 1], '檢核');
+  assert.equal(aoa[1][0], 1);                        // A 欄＝席次
+  assert.equal(aoa[SEAT_ROWS][0], SEAT_ROWS);        // 最後一席 12
+});
+
+test('buildSeatingAoa：檢核區公式不用 COUNTA（空字串會被誤數）', () => {
+  const { aoa } = buildSeatingAoa(['A'], { 'A': ['甲'] }, [], {}, 1);
+  const CV = TABLE_COLS + 2;                          // 值欄 index 29 → Excel AD
+  assert.equal(aoa[1][CV], '=SUMPRODUCT(--(LEN(B2:AB13)>0))');   // 27 桌 B..AB × 12 席 2..13
+  assert.equal(aoa[2][CV], 1);                        // 預定人數＝傳入的 expected
+  assert.equal(aoa[4][CV], '=AD3-AD2-AD4');           // 預定−目前−未排定
+  const rem = aoa[aoa.length - 2];
+  assert.equal(rem[0], '剩餘');
+  assert.match(String(rem[1]), /^=SUMPRODUCT\(--\(LEN\(B\d+:B\d+\)>0\)\)$/);
+  assert.doesNotMatch(JSON.stringify(aoa), /COUNTA/, '整份不得殘留 COUNTA');
+});
+
+test('buildSeatingAoa：分類名單接在座位區下方，凍結點＝分類表頭列', () => {
+  const { aoa, freezeTopLeft } = buildSeatingAoa(['管理部'], { '管理部': ['甲', '乙'] }, ['王小明'], { '王小明': ['家屬甲'] }, 3);
+  const h = SEAT_ROWS + 2;                            // 0-based：表頭1+席次12+空行1 → index 14
   assert.equal(aoa[h][0], '序號');
   assert.equal(aoa[h][1], '管理部');
   assert.equal(aoa[h][2], '王小明');
   assert.equal(aoa[h + 1][1], '甲');
   assert.equal(aoa[h + 1][2], '家屬甲');
-  // 剩餘列（COUNTA）
-  const rem = aoa[aoa.length - 2];
-  assert.equal(rem[0], '剩餘');
-  assert.ok(String(rem[1]).startsWith('=COUNTA('));
+  assert.equal(freezeTopLeft, 'B' + (h + 2), '凍結列＝分類表頭那列（Excel 第 15 列）');
+  assert.equal(freezeTopLeft, 'B16');
 });
 
-test('parseSeatingUpload：讀座位格→{name, table}[]，跳過空格與非座位區', () => {
+test('buildSeatingAoa：fills 只上在表頭與有名字的格，一欄一色且不重複', () => {
+  const { aoa, fills } = buildSeatingAoa(['管理部', '施工部'], { '管理部': ['甲', '乙'], '施工部': ['丙'] }, [], {}, 3);
+  const h = SEAT_ROWS + 2;
+  // 管理部（欄1）：表頭＋2 個名字；施工部（欄2）：表頭＋1 個名字
+  const col1 = fills.filter(f => f[1] === 1), col2 = fills.filter(f => f[1] === 2);
+  assert.equal(col1.length, 3);
+  assert.equal(col2.length, 2);
+  assert.deepEqual(col1.map(f => f[0]), [h, h + 1, h + 2]);
+  assert.equal(new Set(col1.map(f => f[2])).size, 1, '同欄同色');
+  assert.notEqual(col1[0][2], col2[0][2], '不同欄不同色');
+  // 沒名字的格不上色（施工部只有 1 人，第 2 列不該有）
+  assert.ok(!fills.some(f => f[1] === 2 && f[0] === h + 2));
+  // 上色的格都真的有內容
+  fills.forEach(([r, c]) => { if (r > h) assert.ok(aoa[r][c], `第${r}列第${c}欄應有名字`); });
+});
+
+test('pastelPalette：n 色互不重複', () => {
+  const p = pastelPalette(27);
+  assert.equal(p.length, 27);
+  assert.equal(new Set(p).size, 27);
+  p.forEach(c => assert.match(c, /^[0-9A-F]{6}$/));
+});
+
+test('parseSeatingUpload（新版）：表頭桌號、逐欄收人', () => {
+  const aoa = [
+    ['席次', 1, 2, 3, '檢核', '值'],
+    [1, '王小明', '張三', '', '目前人數', 3],
+    [2, '李美麗', '', '', '預定人數', 5],
+    [],
+    ['序號', '管理部', '陳大同'],
+    [1, '未排的人', '家屬甲'],
+  ];
+  assert.deepEqual(parseSeatingUpload(aoa), [
+    { name: '王小明', table: '1' }, { name: '李美麗', table: '1' }, { name: '張三', table: '2' }]);
+});
+
+test('parseSeatingUpload（新版）：去掉 (素) 類註記', () => {
+  const aoa = [['席次', 5, 6], [1, '張三(素)', '李四（素）']];
+  assert.deepEqual(parseSeatingUpload(aoa), [
+    { name: '張三', table: '5' }, { name: '李四', table: '6' }]);
+});
+
+test('parseSeatingUpload（舊版相容）：A1=桌次 → 一列一桌照舊解析', () => {
   const aoa = [
     ['桌次', 1, 2, 3, '檢核', '值'],
     [1, '王小明', '李美麗', '', '目前人數', 2],
     [2, '張三', '', '', '預定人數', 3],
     [],
-    ['序號', '管理部', '陳大同'],
-    [1, '未排的人', '家屬甲'],
+    ['序號', '管理部'],
+    [1, '未排的人'],
   ];
   assert.deepEqual(parseSeatingUpload(aoa, 3), [
     { name: '王小明', table: '1' }, { name: '李美麗', table: '1' }, { name: '張三', table: '2' }]);
-});
-
-test('parseSeatingUpload：去掉 (素) 類註記、保留主體名', () => {
-  const aoa = [['桌次', 1, 2], [5, '張三(素)', '李四（素）']];
-  assert.deepEqual(parseSeatingUpload(aoa, 2), [
-    { name: '張三', table: '5' }, { name: '李四', table: '5' }]);
 });
 
 test('sortSeats：同仁依順位、來賓最後、同順位穩定', () => {
@@ -87,20 +133,11 @@ test('buildFormalAoa：一欄一桌直排、桌次照原值、含人數列', () 
   assert.deepEqual(guestCells, [[3, 1]]);   // 來賓格 (row,col) 供上紅字
 });
 
-test('parseSeatingUpload：分隔空行被刪掉時，序號列不會被誤當桌號（靠 22 欄外的資料形狀無法判斷→至少不重覆收人）', () => {
-  const aoa = [
-    ['桌次', 1, 2],
-    [1, '王小明', ''],
-    ['序號', '管理部', '陳大同'],   // 表頭非數字→跳過
-    [1, '未排的人', '家屬甲'],        // 無分隔行時仍會被讀到（已知限制）
-  ];
-  const r = parseSeatingUpload(aoa, 2);
-  assert.ok(r.some(x => x.name === '王小明'));
-});
-
-test('buildSeatingAoa：檢核公式互相對得上（預定−目前−未排定）', () => {
-  const aoa = buildSeatingAoa(['A'], { 'A': ['甲'] }, [], {}, 1);
-  const CV = SEAT_COLS + 2;                       // 值欄 index 24 → Excel Y
-  assert.equal(aoa[1][CV], '=COUNTA(B2:W29)');    // 目前人數涵蓋 B..W 全 22 席×28 桌
-  assert.equal(aoa[4][CV], '=Y3-Y2-Y4');          // 預定−目前−未排定
+test('排位→上傳→正式表 往返：新版排位檔解析出來的桌次能還原', () => {
+  const { aoa } = buildSeatingAoa(['管理部'], { '管理部': ['甲', '乙'] }, [], {}, 2);
+  // 模擬使用者把「甲」放到 3 桌第 1 席、「乙」放到 5 桌第 2 席
+  aoa[1][3] = '甲';   // 第 2 列（席次1）第 3 桌欄（index 3 → 桌號 aoa[0][3]=3）
+  aoa[2][5] = '乙';
+  const parsed = parseSeatingUpload(aoa);
+  assert.deepEqual(parsed, [{ name: '甲', table: '3' }, { name: '乙', table: '5' }]);
 });
