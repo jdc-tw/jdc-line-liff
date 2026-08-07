@@ -214,6 +214,7 @@
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
 <script src="assets/seating.js"></script>
+<script src="assets/xlsx-post.js"></script>
 <script src="assets/stats-view.js"></script>
 <script>
 // esc() 住在 assets/stats-view.js，本頁 40 幾處在用（含各種錯誤訊息的組字串）。
@@ -702,8 +703,10 @@ function dlSeatingFile(){
     Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
     var empCount=SB.seats.filter(function(s){return s.kind==='emp';}).length;
     var aoa=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner,empCount+guestSeats);
-    writeSeatXlsx_(aoa,'座位排列用檔_'+SB.actName,'座位表',{});
-    setMsg('sm-msg','已下載 ✅（出席同仁 '+empCount+' 人＋來賓席位 '+guestSeats+' 格）','ok');
+    // 凍結 A 欄＋前 31 列（B32）：31＝1 表頭＋28 桌＋1 空行＋1 分類表頭（使用者 2026-08-07 指定）
+    return writeSeatXlsx_(aoa,'座位排列用檔_'+SB.actName,'座位表',{freeze:'B'+(TABLE_ROWS+4)}).then(function(){
+      setMsg('sm-msg','已下載 ✅（出席同仁 '+empCount+' 人＋來賓席位 '+guestSeats+' 格）','ok');
+    });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
 function dlFormal(){
@@ -712,14 +715,17 @@ function dlFormal(){
   setMsg('sm-msg','產生中…','');
   __rdlXlsx().then(function(){
     var r=buildFormalAoa(SB.seats,SB.ranks||{});
-    writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',{redCells:r.guestCells,boldLastRow:true});
-    setMsg('sm-msg','已下載 ✅','ok');
+    // 正式座位表版面不同（首列即表頭）→ 凍 A 欄＋首列
+    return writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',{redCells:r.guestCells,boldLastRow:true,freeze:'B2'}).then(function(){
+      setMsg('sm-msg','已下載 ✅','ok');
+    });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
 /** 黑體＋格線＋置中；opts.redCells=[[r,c]] 上紅字、boldLastRow 末列粗體。 */
 function writeSeatXlsx_(aoa,fname,sheetName,opts){
   opts=opts||{};
   var ws=XLSX.utils.aoa_to_sheet(aoa);
+  xlsxPostFormulas(ws);   // '=…' 字串 → 真公式（aoa_to_sheet 會把公式當純文字，8/7 排位用檔的病根）
   var bd={style:'thin',color:{rgb:'B8B8B8'}};
   var border={top:bd,bottom:bd,left:bd,right:bd};
   var leftIdx=(opts.leftAlign||[]).map(function(h){return aoa[0].indexOf(h);}).filter(function(i){return i>=0;});
@@ -741,7 +747,24 @@ function writeSeatXlsx_(aoa,fname,sheetName,opts){
   ws['!cols']=widths.map(function(w){return {wch:Math.min(Math.max(w+2,6),30)};});
   var wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,sheetName);
-  XLSX.writeFile(wb,fname+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx');
+  var fullName=fname+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx';
+  if(!opts.freeze){XLSX.writeFile(wb,fullName);return Promise.resolve();}
+  // 凍結窗格：xlsx-js-style writer 不支援 → zip 後製改 worksheet XML（freezeSheetXml，JSZip 懶載入）
+  return __tmLib('assets/jszip.min.js','JSZip').then(function(){
+    var bytes=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    return JSZip.loadAsync(bytes);
+  }).then(function(zip){
+    var p='xl/worksheets/sheet1.xml';
+    return zip.file(p).async('string').then(function(xml){
+      zip.file(p,freezeSheetXml(xml,opts.freeze));
+      return zip.generateAsync({type:'arraybuffer'});
+    });
+  }).then(function(buf){
+    var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fullName;
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},0);
+  });
 }
 
 // ── QR ─────────────────────────────────────────────────────────────────
