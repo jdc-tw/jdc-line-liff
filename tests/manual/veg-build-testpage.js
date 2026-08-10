@@ -1,0 +1,75 @@
+/**
+ * 產生 UI 驗收用的測試頁 /tmp/veg-test.html。
+ *
+ * 手法：把 stats.html 原封複製，只在最前面插一段 script 覆寫 window.fetch，
+ * 讓所有 GAS 請求回 veg-fixture。**只換網路層，不碰 DOM**——
+ * 頁面仍走自己的啟動流程（inline script 完整執行、事件照綁），
+ * 所以語法錯誤、初始化早退、CSS 破版這些都還驗得到。
+ *
+ * 為什麼不用 playwright 的 route 攔截：這個 repo 沒有 package.json，
+ * 裝 playwright 要另外拉 ~150MB 的瀏覽器二進位。改用這招後任何瀏覽器都能開。
+ *
+ * 用法：node tests/manual/veg-build-testpage.js
+ *      cd /tmp/veg-ui && python3 -m http.server 8899
+ *      開 http://localhost:8899/veg-test.html?t=dummy
+ *
+ * 產物全在 /tmp/veg-ui/（repo 一個檔都不多）：測試頁 ＋ 一個指回 repo assets/ 的 symlink。
+ * 為什麼不放 repo 根：這是 public repo，多一個測試頁就多一次被 git add -A 掃上去的機會，
+ * 還要為此新增 .gitignore——為了驗收去動 repo 結構，代價不對。
+ * 為什麼要 http 不用 file://：playwright MCP 擋 file: 協定。
+ */
+const fs = require('fs');
+const path = require('path');
+const FIXTURE = require('./veg-fixture.js');
+
+const ACTS = { ok: true, rows: [{ id: 'actTEST', name: '驗收用活動', status: '開放', open: true, replies: 5 }] };
+
+const RESPONSES = {
+  getSeatingBoard: FIXTURE,
+  listActivities: ACTS,
+  getAnniversaries: { ok: true, rows: [] },
+  batch: {
+    ok: true,
+    results: {
+      listActivities: ACTS,
+      getActivityStats: { ok: false, msg: '（驗收頁不驗統計分頁）' },
+      getAnniversaries: { ok: true, rows: [] },
+    },
+  },
+};
+
+const stub = `<script>
+(function () {
+  var R = ${JSON.stringify(RESPONSES)};
+  window.__vegCalls = [];
+  var realFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    var u = String(url);
+    if (u.indexOf('script.google.com') < 0) return realFetch.apply(this, arguments);
+    var action = (u.match(/[?&]action=([^&]*)/) || [])[1] || '';
+    action = decodeURIComponent(action);
+    window.__vegCalls.push(action);
+    var body = R[action] || { ok: true };
+    return Promise.resolve({ text: function () { return Promise.resolve('cb(' + JSON.stringify(body) + ')'); } });
+  };
+})();
+</script>
+`;
+
+const src = fs.readFileSync(path.join(__dirname, '..', '..', 'stats.html'), 'utf8');
+const i = src.indexOf('<head>');
+if (i < 0) { console.error('找不到 <head>，stats.html 結構變了'); process.exit(1); }
+const out = src.slice(0, i + 6) + '\n' + stub + src.slice(i + 6);
+
+// 全部產在 /tmp/veg-ui：測試頁 ＋ 指回 repo assets/ 的 symlink（相對路徑照吃，repo 不多檔）
+const repo = path.join(__dirname, '..', '..');
+const dir = '/tmp/veg-ui';
+fs.mkdirSync(dir, { recursive: true });
+fs.writeFileSync(path.join(dir, 'veg-test.html'), out);
+const link = path.join(dir, 'assets');
+if (!fs.existsSync(link)) fs.symlinkSync(path.join(repo, 'assets'), link, 'dir');
+
+console.log('已產生 /tmp/veg-ui/veg-test.html（assets 走 symlink 指回 repo）');
+console.log('注入的假回應：', Object.keys(RESPONSES).join('、'));
+console.log('接著：cd /tmp/veg-ui && python3 -m http.server 8899');
+console.log('然後開 http://localhost:8899/veg-test.html?t=dummy');

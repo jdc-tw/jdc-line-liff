@@ -87,7 +87,10 @@
   .tile.unit b { font-size: 12.5px; }
   .detail { border: 2px solid #1a5c3a; border-radius: 12px; margin-top: 10px; padding: 10px 14px; background: #fff; }
   .dhead { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
-  .prow { display: flex; align-items: center; gap: 7px; padding: 6px 2px; border-bottom: 1px solid #f2f2f2; font-size: 14px; }
+  /* flex-wrap＋nowrap：窄螢幕塞不下時整顆標籤換到下一行，而不是把「已變更」壓成直排三個字
+     （2026-08-10 素食視圖多了桌號膠囊後在 390px 實測到，功能對但整列爆高） */
+  .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 6px 2px; border-bottom: 1px solid #f2f2f2; font-size: 14px; }
+  .prow > span { white-space: nowrap; }
   .prow:last-child { border-bottom: none; }
   .prow .nm { font-weight: 600; min-width: 58px; }
   .prow .ti { font-size: 11px; color: #888; flex: 1; }
@@ -96,9 +99,12 @@
   .prow .chg { font-size: 10.5px; background: #e5c65a; color: #5d4a00; border-radius: 8px; padding: 0 6px; }
   .prow.chgrow { background: #fff3c2; border-radius: 8px; }
   .prow .tno { font-size: 11px; background: #e6f0ea; color: #1a5c3a; border-radius: 8px; padding: 0 7px; font-weight: 700; }
+  .prow .veg { font-size: 10.5px; background: #e6f9ee; color: #1a7d44; border-radius: 8px; padding: 0 6px; font-weight: 700; }
   .mini { font-size: 11px; color: #1a5c3a; border: 1px solid #cfe3d6; border-radius: 6px; padding: 1px 6px;
     background: #fff; cursor: pointer; }
   .divider { font-size: 11px; color: #bbb; padding: 4px 2px 2px; letter-spacing: .1em; }
+  /* 素食視圖的跨桌廠商提示（份數可能算錯桌，要讓使用者看得到） */
+  .vwarn { font-size: 12.5px; color: #7a5320; background: #fff8e8; border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; line-height: 1.5; }
   @media (min-width: 768px) {
     body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
     h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
@@ -181,7 +187,8 @@
       <button class="btn btn-up" onclick="document.getElementById('s-file').click()">⬆ 排位結果</button></div>
     <input type="file" id="s-file" accept=".xlsx,.xls" style="display:none" onchange="upSeating(this)">
     <div class="pills"><button class="pill on" id="pv-table" onclick="setSeatView('table')">依桌次</button>
-      <button class="pill" id="pv-unit" onclick="setSeatView('unit')">依單位</button></div>
+      <button class="pill" id="pv-unit" onclick="setSeatView('unit')">依單位</button>
+      <button class="pill" id="pv-veg" onclick="setSeatView('veg')">🥬 素食</button></div>
     <div id="scope-row" class="scope"><span style="font-size:13px;color:#666">顯示</span>
       <select id="seat-scope" onchange="renderBoard()" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px">
         <option value="seated">已排桌</option><option value="unseated">未排桌</option></select></div>
@@ -431,6 +438,7 @@ function loadSeating(){
 }
 function setSeatView(v){
   seatView=v; seatSel=null;
+  document.getElementById('pv-veg').className='pill'+(v==='veg'?' on':'');
   document.getElementById('pv-table').className='pill'+(v==='table'?' on':'');
   document.getElementById('pv-unit').className='pill'+(v==='unit'?' on':'');
   document.getElementById('scope-row').style.display=(v==='table')?'':'none';
@@ -445,6 +453,21 @@ function tableKeys_(seats){
 function renderBoard(){
   if(!SB)return;
   var box=document.getElementById('seat-board'),h='';
+  if(seatView==='veg'){
+    box.innerHTML='';
+    if(!SB.vegReady){box.innerHTML='<div class="empty">素食資料尚未就緒（後端未更新）</div>';
+      document.getElementById('seat-detail').innerHTML='';return;}
+    var vs=SB.seats.filter(function(s){return s.veg;});
+    if(!vs.length){box.innerHTML='<div class="empty">這場活動沒有人吃素</div>';
+      document.getElementById('seat-detail').innerHTML='';return;}
+    // 同一家廠商的素食席位被拆到兩桌以上時，份數可能算錯桌——提示要跟著素食視圖走
+    var sv=vegSummary(SB.seats).splitVendors;
+    if(sv.length){box.innerHTML='<div class="vwarn">⚠️ '+esc(sv.join('、'))
+      +' 的席位被拆到兩桌以上，素食份數是算在席位序號較前的那桌，可能與實際不符——請確認後用「移桌」調整。</div>';}
+    // 不經磚、直接列人：現場查一個人時少一次點擊。未排桌者也要在列表裡（否則會漏人）
+    renderDetail('🥬 素食 '+vs.length+' 人',vs,true);
+    return;
+  }
   if(seatView==='table'){
     var scope=document.getElementById('seat-scope').value;
     if(scope==='unseated'){
@@ -459,8 +482,9 @@ function renderBoard(){
     h='<div class="board">'+keys.map(function(t){
       var m=SB.seats.filter(function(s){return String(s.table||'')===t;});
       var dirty=m.some(function(s){return s.changed;});
+      var nv=m.filter(function(s){return s.veg;}).length;   // 0 不顯示：避免整片「素 0」的噪音
       return '<div class="tile'+(seatSel===t?' sel':'')+(dirty?' dirty':'')+'" onclick="pickTile(\''+esc(t)+'\')">'
-        +'<b>'+esc(t)+'桌</b><span class="c">'+m.length+'人'+(dirty?'・有變更':'')+'</span></div>';
+        +'<b>'+esc(t)+'桌</b><span class="c">'+m.length+'人'+(nv?'・素 '+nv:'')+(dirty?'・有變更':'')+'</span></div>';
     }).join('')+'</div>';
   }else{
     var byU={},uks=[];
@@ -471,8 +495,9 @@ function renderBoard(){
     uks.sort(function(a,b){if(a==='🎩來賓')return 1;if(b==='🎩來賓')return -1;return byU[b].length-byU[a].length;});
     h='<div class="board">'+uks.map(function(u){
       var dirty=byU[u].some(function(s){return s.changed;});
+      var nv=byU[u].filter(function(s){return s.veg;}).length;
       return '<div class="tile unit'+(seatSel===u?' sel':'')+(dirty?' dirty':'')+'" onclick="pickTile(\''+esc(u)+'\')">'
-        +'<b>'+esc(u)+'</b><span class="c">'+byU[u].length+'人'+(dirty?'・有變更':'')+'</span></div>';
+        +'<b>'+esc(u)+'</b><span class="c">'+byU[u].length+'人'+(nv?'・素 '+nv:'')+(dirty?'・有變更':'')+'</span></div>';
     }).join('')+'</div>';
   }
   box.innerHTML=h;
@@ -503,13 +528,17 @@ function renderDetail(title,list,showTableTag){
     h+='<div class="prow'+(s.changed?' chgrow':'')+'">';
     if(s.kind==='guest'){
       h+='<span class="gname">'+esc(s.name)+'</span><span class="ti">'+esc(s.note||'')+'</span>';
+      if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
-      if(showTableTag&&s.table)h+='<span class="tno">'+esc(s.table)+' 桌</span>';
+      if(showTableTag)h+=s.table?('<span class="tno">'+esc(s.table)+' 桌</span>')
+                              :'<span class="chg">未排桌</span>';   // 空白會看起來像漏資料
       h+='<span class="gtag">來賓</span>';
     }else{
       h+='<span class="nm">'+esc(s.name)+'</span><span class="ti">'+esc(s.title||'')+'</span>';
+      if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
-      if(showTableTag&&s.table)h+='<span class="tno">'+esc(s.table)+' 桌</span>';
+      if(showTableTag)h+=s.table?('<span class="tno">'+esc(s.table)+' 桌</span>')
+                              :'<span class="chg">未排桌</span>';   // 空白會看起來像漏資料
       h+='<span class="mini" onclick="showQr(\''+esc(s.name)+'\')">🔳</span>'
         +'<span class="mini" onclick="dlOneQr(\''+esc(s.name)+'\')">⬇QR</span>';
     }
@@ -578,9 +607,11 @@ function upGuests(input){
       var base={owner:String(g[ix('負責人員')]||'').trim(),name:raw,
         type:String(g[ix('工程類別')]||'').trim(),fullName:String(g[ix('公司全名')]||'').replace(/[\t\s　]+/g,' ').trim(),
         contact:String(g[ix('聯絡人')]||'').trim(),phone:String(g[ix('聯繫電話')]||'').trim(),note:note,table:''};
-      var n=Number(g[ix('參加人數')])||0;
-      if(n<=0)rows.push(Object.assign({seatNo:0},base));
-      else for(var k=1;k<=n;k++)rows.push(Object.assign({seatNo:k},base));
+      // 「素食人數」是選填：舊格式檔沒有這欄（ix 回 -1）→ 當 0，照收不報錯
+      var vc=(ix('素食人數')>=0?g[ix('素食人數')]:0);
+      expandGuestRow(g[ix('參加人數')],vc).forEach(function(sp){
+        rows.push(Object.assign({seatNo:sp.seatNo,veg:sp.veg},base));
+      });
     }
     if(!rows.length){setMsg('gl-msg','檔案沒有可匯入的資料','err');return;}
     setMsg('gl-msg','寫入中…（'+rows.length+' 列）','');

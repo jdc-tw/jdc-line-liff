@@ -18,6 +18,23 @@ function expandGuests(guests) {
 }
 
 /**
+ * 來賓上傳檔一列（＝一家廠商）→ 席位陣列。
+ * 上傳檔是一列一廠商（參加人數 n），來賓表是一席一列，所以要在這裡展開。
+ * 素食人數 v 上限為 n，落在**席位序號最小的前 v 席**——同一家人分不出誰是誰，
+ * 對「哪一桌幾份」這個用途足夠；同家被拆兩桌時的誤差由 vegSummary 提示。
+ * n<=0 回一列 seatNo:0：不佔位，但保留這家廠商的資料列。
+ * @returns {Array<{seatNo:number, veg:boolean}>}
+ */
+function expandGuestRow(count, vegCount) {
+  var n = Number(count) || 0;
+  if (n <= 0) return [{ seatNo: 0, veg: false }];
+  var v = Math.max(0, Math.min(Number(vegCount) || 0, n));
+  var out = [];
+  for (var i = 1; i <= n; i++) out.push({ seatNo: i, veg: i <= v });
+  return out;
+}
+
+/**
  * 計數公式：**不可用 COUNTA**。產檔時為了畫格線，每一格都寫了空字串（此 writer 丟掉真空白格
  * 會連框線一起丟，2026-08-07 實測），COUNTA 把空字串當有內容 → 9 人被算成 17。
  * LEN>0 只認真的有字的格子，數字或文字都算得到。
@@ -161,9 +178,14 @@ function groupSeatCategories(seats, optionRows, ranks) {
       if (o !== '其他' && owners.indexOf(o) < 0) owners.push(o);
     }
   });
+  // 素食者在分類名單帶「（素）」：排位時才看得出誰吃素、決定集中或分散。
+  // 上傳排位結果時 parseSeatingUpload 的 clean() 會清掉括號註記（既有行為，已有測試鎖住），
+  // 所以整個名字複製到座位格再上傳不會誤判成別人。
   var toNames = function (m) {
     Object.keys(m).forEach(function (k) {
-      m[k] = sortSeats(m[k], ranks || {}).map(function (x) { return x.name; });
+      m[k] = sortSeats(m[k], ranks || {}).map(function (x) {
+        return x.veg ? (x.name + '（素）') : x.name;
+      });
     });
   };
   toNames(byUnit); toNames(guestsByOwner);
@@ -296,6 +318,39 @@ function tableOrder_(a, b) {
 }
 
 /**
+ * 素食彙總：一行一桌的份數與名單，給餐廳報數用。
+ * 只回**有素食**的桌（零素食的桌不列，避免整片「0 份」的噪音）；未排桌的集中成 table:'' 一行、
+ * 靠 tableOrder_ 排在最後——那一行是給使用者看的缺口（還沒定位的份數），不是給餐廳的。
+ * splitVendors＝同一家廠商的素食席位落在兩張以上的桌。展開時素食固定落在席位序號最小的前幾席
+ *（expandGuestRow），同家被拆桌時份數可能算錯桌，所以要在畫面上提示使用者手調。
+ * @returns {{rows:Array<{table:string,count:number,names:string[]}>, total:number, splitVendors:string[]}}
+ */
+function vegSummary(seats) {
+  var byTable = {}, keys = [], total = 0, vendorTables = {};
+  (seats || []).forEach(function (s) {
+    if (!s || !s.veg) return;
+    var t = String(s.table || '');
+    if (!byTable[t]) { byTable[t] = []; keys.push(t); }
+    byTable[t].push(String(s.name || ''));
+    total++;
+    if (s.kind === 'guest' && t) {
+      var v = String(s.name || '');
+      (vendorTables[v] = vendorTables[v] || {})[t] = true;
+    }
+  });
+  keys.sort(tableOrder_);
+  return {
+    rows: keys.map(function (t) {
+      return { table: t, count: byTable[t].length, names: byTable[t].slice() };
+    }),
+    total: total,
+    splitVendors: Object.keys(vendorTables).filter(function (v) {
+      return Object.keys(vendorTables[v]).length > 1;
+    }),
+  };
+}
+
+/**
  * 正式座位表 AOA：一欄一桌、座位直排；同桌內同仁（順位序）前、來賓後。
  * palette＝categoryPalette 的回傳（可省略）：給了就把每個人的格子上他所屬單位／負責人的底色，
  * 與排位用檔分類欄同色——排位時記住的顏色，在正式表上還認得出來。
@@ -329,11 +384,26 @@ function buildFormalAoa(seats, ranks, palette) {
     aoa.push(line);
   }
   aoa.push(['人數'].concat(cols.map(function (c) { return c.length; })));
+
+  // 底部附素食彙總：這份本來就是要印出來給人看的，彙總長在同一張紙上比另開一份可靠
+  //（另開的那份一定會有人忘記帶）。座位格本身不標素食——拍板：只要知道哪桌幾份。
+  // append 在最後，故不影響 fills／guestCells 既有的列索引。
+  var vs = vegSummary(seats);
+  if (vs.total) {
+    aoa.push([]);
+    aoa.push(['素食彙總']);
+    aoa.push(['桌次', '份數', '姓名']);
+    vs.rows.forEach(function (r) {
+      aoa.push([r.table || '未排桌', r.count, r.names.join('、')]);
+    });
+    aoa.push(['合計', vs.total, '']);
+  }
   return { aoa: aoa, guestCells: guestCells, fills: fills };
 }
 
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
                      pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
-                     groupSeatCategories, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
+                     groupSeatCategories, expandGuestRow, vegSummary,
+                     countNonEmpty_, SEAT_ROWS, TABLE_COLS };
 }

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
         buildFormalAoa, pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
-        groupSeatCategories,
+        groupSeatCategories, expandGuestRow, vegSummary,
         SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 /** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
@@ -304,4 +304,136 @@ test('groupSeatCategories → buildSeatingAoa：排好的順序真的落到分�
   assert.equal(aoa[h][1], '管理部');
   assert.equal(aoa[h + 1][1], '甲', '第一列＝位階最高的');
   assert.equal(aoa[h + 2][1], '丙');
+});
+
+// ── 來賓上傳檔的素食人數展開 ──────────────────────────────────────────
+test('expandGuestRow：5 人 2 素 → 席位 1、2 為素食', () => {
+  assert.deepEqual(expandGuestRow(5, 2), [
+    { seatNo: 1, veg: true }, { seatNo: 2, veg: true },
+    { seatNo: 3, veg: false }, { seatNo: 4, veg: false }, { seatNo: 5, veg: false },
+  ]);
+});
+
+test('expandGuestRow：素食人數超過參加人數 → 取小值，不得產生比席位多的素食', () => {
+  assert.deepEqual(expandGuestRow(2, 5), [
+    { seatNo: 1, veg: true }, { seatNo: 2, veg: true },
+  ]);
+});
+
+test('expandGuestRow：舊檔沒有素食人數欄 → 全部 false', () => {
+  assert.deepEqual(expandGuestRow(3, undefined), [
+    { seatNo: 1, veg: false }, { seatNo: 2, veg: false }, { seatNo: 3, veg: false },
+  ]);
+  assert.deepEqual(expandGuestRow(3, ''), [
+    { seatNo: 1, veg: false }, { seatNo: 2, veg: false }, { seatNo: 3, veg: false },
+  ]);
+});
+
+test('expandGuestRow：參加人數 0 → 一列 seatNo 0（不佔位但保留這家廠商）', () => {
+  assert.deepEqual(expandGuestRow(0, 0), [{ seatNo: 0, veg: false }]);
+  assert.deepEqual(expandGuestRow('', 0), [{ seatNo: 0, veg: false }]);
+});
+
+test('expandGuestRow：負數素食人數當 0', () => {
+  assert.deepEqual(expandGuestRow(2, -1), [
+    { seatNo: 1, veg: false }, { seatNo: 2, veg: false },
+  ]);
+});
+
+// ── 素食彙總 ──────────────────────────────────────────────────────────
+test('vegSummary：只列有素食的桌，依桌號排序，未排桌殿後', () => {
+  const seats = [
+    { kind: 'emp', name: '甲', table: '3', veg: true },
+    { kind: 'emp', name: '乙', table: '3', veg: false },
+    { kind: 'emp', name: '丙', table: '1', veg: true },
+    { kind: 'emp', name: '丁', table: '2', veg: false },   // 2 桌零素食 → 不得出現
+    { kind: 'emp', name: '戊', table: '', veg: true },     // 未排桌
+  ];
+  const r = vegSummary(seats);
+  assert.deepEqual(r.rows, [
+    { table: '1', count: 1, names: ['丙'] },
+    { table: '3', count: 1, names: ['甲'] },
+    { table: '', count: 1, names: ['戊'] },
+  ]);
+  assert.equal(r.total, 3);
+});
+
+test('vegSummary：同桌多份彙總成一行', () => {
+  const r = vegSummary([
+    { kind: 'emp', name: '甲', table: '5', veg: true },
+    { kind: 'emp', name: '乙', table: '5', veg: true },
+  ]);
+  assert.deepEqual(r.rows, [{ table: '5', count: 2, names: ['甲', '乙'] }]);
+  assert.equal(r.total, 2);
+});
+
+test('vegSummary：同一家廠商的素食席位落在兩桌 → 列入 splitVendors 提示', () => {
+  const r = vegSummary([
+    { kind: 'guest', name: '某某工程行', table: '1', veg: true },
+    { kind: 'guest', name: '某某工程行', table: '2', veg: true },
+    { kind: 'guest', name: '另一家', table: '1', veg: true },
+  ]);
+  assert.deepEqual(r.splitVendors, ['某某工程行']);
+  assert.equal(r.total, 3);
+});
+
+test('vegSummary：同一家廠商素食都在同一桌 → 不提示', () => {
+  const r = vegSummary([
+    { kind: 'guest', name: '某某工程行', table: '1', veg: true },
+    { kind: 'guest', name: '某某工程行', table: '1', veg: true },
+  ]);
+  assert.deepEqual(r.splitVendors, []);
+});
+
+test('vegSummary：全部無素食 → 空清單、合計 0', () => {
+  const r = vegSummary([{ kind: 'emp', name: '甲', table: '1', veg: false }]);
+  assert.deepEqual(r.rows, []);
+  assert.equal(r.total, 0);
+  assert.deepEqual(r.splitVendors, []);
+});
+
+test('vegSummary：veg 欄不存在（後端未上版）→ 不當成素食', () => {
+  const r = vegSummary([{ kind: 'emp', name: '甲', table: '1' }]);
+  assert.equal(r.total, 0);
+});
+
+// ── 兩份 Excel 帶素食 ─────────────────────────────────────────────────
+test('groupSeatCategories：素食者姓名帶「（素）」後綴', () => {
+  const seats = [
+    { kind: 'emp', name: '甲一', unit: '管理部', title: '副理', veg: true },
+    { kind: 'emp', name: '乙二', unit: '管理部', title: '課長', veg: false },
+    { kind: 'guest', name: '某某工程行', unit: '甲一', veg: true },
+  ];
+  const g = groupSeatCategories(seats, [{ type: '單位', name: '管理部', group: '總公司' }], { '副理': 10, '課長': 20 });
+  assert.deepEqual(g.byUnit['管理部'], ['甲一（素）', '乙二']);
+  assert.deepEqual(g.guestsByOwner['甲一'], ['某某工程行（素）']);
+});
+
+test('parseSeatingUpload：帶「（素）」的名字上傳回來會被清成原名（既有行為，不可壞）', () => {
+  const aoa = [['席次', 1, 2], [1, '甲一（素）', '乙二']];
+  assert.deepEqual(parseSeatingUpload(aoa), [
+    { name: '甲一', table: '1' }, { name: '乙二', table: '2' },
+  ]);
+});
+
+test('buildFormalAoa：正式座位表的座位格不標素食（拍板：只要哪桌幾份）', () => {
+  const { aoa } = buildFormalAoa([{ kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: true }], {});
+  assert.equal(aoa[1][1], '甲一');
+});
+
+test('buildFormalAoa：表格最下方附素食彙總（桌號／份數／姓名）', () => {
+  const { aoa } = buildFormalAoa([
+    { kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: true },
+    { kind: 'emp', name: '乙二', unit: '管理部', table: '1', veg: false },
+    { kind: 'emp', name: '丙三', unit: '工務部', table: '2', veg: true },
+  ], {});
+  const flat = aoa.map((r) => r.join('|'));
+  assert.ok(flat.some((r) => r.indexOf('素食彙總') >= 0), '應有「素食彙總」標題列');
+  assert.ok(flat.some((r) => r.indexOf('甲一') >= 0 && r.indexOf('1') >= 0));
+  assert.ok(flat.some((r) => r.indexOf('合計') >= 0 && r.indexOf('2') >= 0));
+});
+
+test('buildFormalAoa：零素食時不附彙總段（不留空標題）', () => {
+  const { aoa } = buildFormalAoa([{ kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: false }], {});
+  assert.ok(!aoa.map((r) => r.join('|')).some((r) => r.indexOf('素食彙總') >= 0));
 });
