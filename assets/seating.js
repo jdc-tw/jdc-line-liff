@@ -18,6 +18,23 @@ function expandGuests(guests) {
 }
 
 /**
+ * 來賓上傳檔一列（＝一家廠商）→ 席位陣列。
+ * 上傳檔是一列一廠商（參加人數 n），來賓表是一席一列，所以要在這裡展開。
+ * 素食人數 v 上限為 n，落在**席位序號最小的前 v 席**——同一家人分不出誰是誰，
+ * 對「哪一桌幾份」這個用途足夠；同家被拆兩桌時的誤差由 vegSummary 提示。
+ * n<=0 回一列 seatNo:0：不佔位，但保留這家廠商的資料列。
+ * @returns {Array<{seatNo:number, veg:boolean}>}
+ */
+function expandGuestRow(count, vegCount) {
+  var n = Number(count) || 0;
+  if (n <= 0) return [{ seatNo: 0, veg: false }];
+  var v = Math.max(0, Math.min(Number(vegCount) || 0, n));
+  var out = [];
+  for (var i = 1; i <= n; i++) out.push({ seatNo: i, veg: i <= v });
+  return out;
+}
+
+/**
  * 計數公式：**不可用 COUNTA**。產檔時為了畫格線，每一格都寫了空字串（此 writer 丟掉真空白格
  * 會連框線一起丟，2026-08-07 實測），COUNTA 把空字串當有內容 → 9 人被算成 17。
  * LEN>0 只認真的有字的格子，數字或文字都算得到。
@@ -335,5 +352,5 @@ function buildFormalAoa(seats, ranks, palette) {
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
                      pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
-                     groupSeatCategories, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
+                     groupSeatCategories, expandGuestRow, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
 }

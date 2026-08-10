@@ -578,9 +578,11 @@ function upGuests(input){
       var base={owner:String(g[ix('負責人員')]||'').trim(),name:raw,
         type:String(g[ix('工程類別')]||'').trim(),fullName:String(g[ix('公司全名')]||'').replace(/[\t\s　]+/g,' ').trim(),
         contact:String(g[ix('聯絡人')]||'').trim(),phone:String(g[ix('聯繫電話')]||'').trim(),note:note,table:''};
-      var n=Number(g[ix('參加人數')])||0;
-      if(n<=0)rows.push(Object.assign({seatNo:0},base));
-      else for(var k=1;k<=n;k++)rows.push(Object.assign({seatNo:k},base));
+      // 「素食人數」是選填：舊格式檔沒有這欄（ix 回 -1）→ 當 0，照收不報錯
+      var vc=(ix('素食人數')>=0?g[ix('素食人數')]:0);
+      expandGuestRow(g[ix('參加人數')],vc).forEach(function(sp){
+        rows.push(Object.assign({seatNo:sp.seatNo,veg:sp.veg},base));
+      });
     }
     if(!rows.length){setMsg('gl-msg','檔案沒有可匯入的資料','err');return;}
     setMsg('gl-msg','寫入中…（'+rows.length+' 列）','');

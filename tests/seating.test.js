@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
         buildFormalAoa, pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
-        groupSeatCategories,
+        groupSeatCategories, expandGuestRow, vegSummary,
         SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 /** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
@@ -304,4 +304,38 @@ test('groupSeatCategories → buildSeatingAoa：排好的順序真的落到分�
   assert.equal(aoa[h][1], '管理部');
   assert.equal(aoa[h + 1][1], '甲', '第一列＝位階最高的');
   assert.equal(aoa[h + 2][1], '丙');
+});
+
+// ── 來賓上傳檔的素食人數展開 ──────────────────────────────────────────
+test('expandGuestRow：5 人 2 素 → 席位 1、2 為素食', () => {
+  assert.deepEqual(expandGuestRow(5, 2), [
+    { seatNo: 1, veg: true }, { seatNo: 2, veg: true },
+    { seatNo: 3, veg: false }, { seatNo: 4, veg: false }, { seatNo: 5, veg: false },
+  ]);
+});
+
+test('expandGuestRow：素食人數超過參加人數 → 取小值，不得產生比席位多的素食', () => {
+  assert.deepEqual(expandGuestRow(2, 5), [
+    { seatNo: 1, veg: true }, { seatNo: 2, veg: true },
+  ]);
+});
+
+test('expandGuestRow：舊檔沒有素食人數欄 → 全部 false', () => {
+  assert.deepEqual(expandGuestRow(3, undefined), [
+    { seatNo: 1, veg: false }, { seatNo: 2, veg: false }, { seatNo: 3, veg: false },
+  ]);
+  assert.deepEqual(expandGuestRow(3, ''), [
+    { seatNo: 1, veg: false }, { seatNo: 2, veg: false }, { seatNo: 3, veg: false },
+  ]);
+});
+
+test('expandGuestRow：參加人數 0 → 一列 seatNo 0（不佔位但保留這家廠商）', () => {
+  assert.deepEqual(expandGuestRow(0, 0), [{ seatNo: 0, veg: false }]);
+  assert.deepEqual(expandGuestRow('', 0), [{ seatNo: 0, veg: false }]);
+});
+
+test('expandGuestRow：負數素食人數當 0', () => {
+  assert.deepEqual(expandGuestRow(2, -1), [
+    { seatNo: 1, veg: false }, { seatNo: 2, veg: false },
+  ]);
 });
