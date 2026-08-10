@@ -398,15 +398,17 @@ test('vegSummary：veg 欄不存在（後端未上版）→ 不當成素食', ()
 });
 
 // ── 兩份 Excel 帶素食 ─────────────────────────────────────────────────
-test('groupSeatCategories：素食者姓名帶「（素）」後綴', () => {
+// 2026-08-10 使用者拍板：排位用檔不需要素食資訊——排位是照單位與職稱排的，
+// 素食是誰跟坐哪桌無關，標了只是雜訊。素食要查走桌次管理的「🥬 素食」視圖。
+test('groupSeatCategories：分類名單只有姓名，不加素食後綴', () => {
   const seats = [
     { kind: 'emp', name: '甲一', unit: '管理部', title: '副理', veg: true },
     { kind: 'emp', name: '乙二', unit: '管理部', title: '課長', veg: false },
     { kind: 'guest', name: '某某工程行', unit: '甲一', veg: true },
   ];
   const g = groupSeatCategories(seats, [{ type: '單位', name: '管理部', group: '總公司' }], { '副理': 10, '課長': 20 });
-  assert.deepEqual(g.byUnit['管理部'], ['甲一（素）', '乙二']);
-  assert.deepEqual(g.guestsByOwner['甲一'], ['某某工程行（素）']);
+  assert.deepEqual(g.byUnit['管理部'], ['甲一', '乙二']);
+  assert.deepEqual(g.guestsByOwner['甲一'], ['某某工程行']);
 });
 
 test('parseSeatingUpload：帶「（素）」的名字上傳回來會被清成原名（既有行為，不可壞）', () => {
