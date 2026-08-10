@@ -396,3 +396,44 @@ test('vegSummary：veg 欄不存在（後端未上版）→ 不當成素食', ()
   const r = vegSummary([{ kind: 'emp', name: '甲', table: '1' }]);
   assert.equal(r.total, 0);
 });
+
+// ── 兩份 Excel 帶素食 ─────────────────────────────────────────────────
+test('groupSeatCategories：素食者姓名帶「（素）」後綴', () => {
+  const seats = [
+    { kind: 'emp', name: '甲一', unit: '管理部', title: '副理', veg: true },
+    { kind: 'emp', name: '乙二', unit: '管理部', title: '課長', veg: false },
+    { kind: 'guest', name: '某某工程行', unit: '甲一', veg: true },
+  ];
+  const g = groupSeatCategories(seats, [{ type: '單位', name: '管理部', group: '總公司' }], { '副理': 10, '課長': 20 });
+  assert.deepEqual(g.byUnit['管理部'], ['甲一（素）', '乙二']);
+  assert.deepEqual(g.guestsByOwner['甲一'], ['某某工程行（素）']);
+});
+
+test('parseSeatingUpload：帶「（素）」的名字上傳回來會被清成原名（既有行為，不可壞）', () => {
+  const aoa = [['席次', 1, 2], [1, '甲一（素）', '乙二']];
+  assert.deepEqual(parseSeatingUpload(aoa), [
+    { name: '甲一', table: '1' }, { name: '乙二', table: '2' },
+  ]);
+});
+
+test('buildFormalAoa：正式座位表的座位格不標素食（拍板：只要哪桌幾份）', () => {
+  const { aoa } = buildFormalAoa([{ kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: true }], {});
+  assert.equal(aoa[1][1], '甲一');
+});
+
+test('buildFormalAoa：表格最下方附素食彙總（桌號／份數／姓名）', () => {
+  const { aoa } = buildFormalAoa([
+    { kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: true },
+    { kind: 'emp', name: '乙二', unit: '管理部', table: '1', veg: false },
+    { kind: 'emp', name: '丙三', unit: '工務部', table: '2', veg: true },
+  ], {});
+  const flat = aoa.map((r) => r.join('|'));
+  assert.ok(flat.some((r) => r.indexOf('素食彙總') >= 0), '應有「素食彙總」標題列');
+  assert.ok(flat.some((r) => r.indexOf('甲一') >= 0 && r.indexOf('1') >= 0));
+  assert.ok(flat.some((r) => r.indexOf('合計') >= 0 && r.indexOf('2') >= 0));
+});
+
+test('buildFormalAoa：零素食時不附彙總段（不留空標題）', () => {
+  const { aoa } = buildFormalAoa([{ kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: false }], {});
+  assert.ok(!aoa.map((r) => r.join('|')).some((r) => r.indexOf('素食彙總') >= 0));
+});

@@ -178,9 +178,14 @@ function groupSeatCategories(seats, optionRows, ranks) {
       if (o !== '其他' && owners.indexOf(o) < 0) owners.push(o);
     }
   });
+  // 素食者在分類名單帶「（素）」：排位時才看得出誰吃素、決定集中或分散。
+  // 上傳排位結果時 parseSeatingUpload 的 clean() 會清掉括號註記（既有行為，已有測試鎖住），
+  // 所以整個名字複製到座位格再上傳不會誤判成別人。
   var toNames = function (m) {
     Object.keys(m).forEach(function (k) {
-      m[k] = sortSeats(m[k], ranks || {}).map(function (x) { return x.name; });
+      m[k] = sortSeats(m[k], ranks || {}).map(function (x) {
+        return x.veg ? (x.name + '（素）') : x.name;
+      });
     });
   };
   toNames(byUnit); toNames(guestsByOwner);
@@ -379,6 +384,20 @@ function buildFormalAoa(seats, ranks, palette) {
     aoa.push(line);
   }
   aoa.push(['人數'].concat(cols.map(function (c) { return c.length; })));
+
+  // 底部附素食彙總：這份本來就是要印出來給人看的，彙總長在同一張紙上比另開一份可靠
+  //（另開的那份一定會有人忘記帶）。座位格本身不標素食——拍板：只要知道哪桌幾份。
+  // append 在最後，故不影響 fills／guestCells 既有的列索引。
+  var vs = vegSummary(seats);
+  if (vs.total) {
+    aoa.push([]);
+    aoa.push(['素食彙總']);
+    aoa.push(['桌次', '份數', '姓名']);
+    vs.rows.forEach(function (r) {
+      aoa.push([r.table || '未排桌', r.count, r.names.join('、')]);
+    });
+    aoa.push(['合計', vs.total, '']);
+  }
   return { aoa: aoa, guestCells: guestCells, fills: fills };
 }
 
