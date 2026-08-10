@@ -686,28 +686,12 @@ function dlGuestFile(){
   }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
 }
 /**
- * 兩支座位下載共用：把 SB.seats 分成單位／負責人兩組，並取回單位排序（總公司優先）。
+ * 兩支座位下載共用：取選項主檔（決定單位欄序）→ 交給 groupSeatCategories 分組排序。
  * 兩邊走同一支才保證色票發得一樣——單位順序一漂，同一個人在兩份檔就會變色。
  */
 function seatCategories_(){
   return jsonp('listOptions',{token:q('t')}).then(function(op){
-    var byUnit={},guestsByOwner={},owners=[],guestSeats=0;
-    SB.seats.forEach(function(s){
-      if(s.kind==='emp')(byUnit[s.unit||'（未填單位）']=byUnit[s.unit||'（未填單位）']||[]).push(s.name);
-      else{var o=s.unit||'其他';(guestsByOwner[o]=guestsByOwner[o]||[]).push(s.name);guestSeats++;
-        if(o!=='其他'&&owners.indexOf(o)<0)owners.push(o);}
-    });
-    var unitOrder=[];
-    if(op&&op.ok){['總公司',''].forEach(function(_,pass){
-      op.rows.forEach(function(o){
-        if(o.type!=='單位'||!byUnit[o.name]||unitOrder.indexOf(o.name)>=0)return;
-        var isHq=(o.group==='總公司');
-        if((pass===0&&isHq)||(pass===1&&!isHq))unitOrder.push(o.name);
-      });});}
-    Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
-    return {byUnit:byUnit,guestsByOwner:guestsByOwner,owners:owners,unitOrder:unitOrder,
-            guestSeats:guestSeats,
-            empCount:SB.seats.filter(function(s){return s.kind==='emp';}).length};
+    return groupSeatCategories(SB.seats,(op&&op.ok)?op.rows:[],(SB&&SB.ranks)||{});
   });
 }
 /** 兩份檔案共用的色票（單位彩色／廠商灰階漸層）。 */

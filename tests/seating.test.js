@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
         buildFormalAoa, pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
+        groupSeatCategories,
         SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 /** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
@@ -242,4 +243,65 @@ test('排位→上傳→正式表 往返：新版排位檔解析出來的桌次�
   aoa[2][5] = '乙';
   const parsed = parseSeatingUpload(aoa);
   assert.deepEqual(parsed, [{ name: '甲', table: '3' }, { name: '乙', table: '5' }]);
+});
+
+test('groupSeatCategories：欄內依職稱位階排序，且與正式座位表同一套規則', () => {
+  const ranks = { 支店長: 1, 部長: 3, 主任: 8 };
+  const seats = [
+    { name: '丙', kind: 'emp', unit: '管理部', title: '主任' },
+    { name: '甲', kind: 'emp', unit: '管理部', title: '支店長' },
+    { name: '丁', kind: 'emp', unit: '管理部', title: '沒登錄的職稱' },
+    { name: '乙', kind: 'emp', unit: '管理部', title: '部長' },
+  ];
+  const g = groupSeatCategories(seats, [], ranks);
+  assert.deepEqual(g.byUnit['管理部'], ['甲', '乙', '丙', '丁'], '位階小者在前、無順位殿後');
+  // 正式座位表把同一群人放同一桌時，欄內順序必須一致（兩邊都走 sortSeats）
+  const formal = buildFormalAoa(seats.map(s => ({ ...s, table: '1' })), ranks);
+  assert.deepEqual(formal.aoa.slice(1, 5).map(r => r[1]), g.byUnit['管理部'],
+    '排位用檔的單位欄順序＝正式座位表的同桌順序');
+});
+
+test('groupSeatCategories：單位欄序＝選項主檔（總公司優先），未列到的補在後面', () => {
+  const rows = [
+    { type: '單位', name: '施工部', group: '工地' },
+    { type: '單位', name: '管理部', group: '總公司' },
+    { type: '職稱', name: '主任', group: '總公司' },      // 非單位列不得混進來
+    { type: '單位', name: '沒人參加的單位', group: '總公司' },
+  ];
+  const seats = [
+    { name: '甲', kind: 'emp', unit: '施工部' },
+    { name: '乙', kind: 'emp', unit: '管理部' },
+    { name: '丙', kind: 'emp', unit: '主檔沒有的單位' },
+  ];
+  const g = groupSeatCategories(seats, rows, {});
+  assert.deepEqual(g.unitOrder, ['管理部', '施工部', '主檔沒有的單位'],
+    '總公司先、工地次之、主檔沒列到的殿後；沒人參加的單位不出現');
+});
+
+test('groupSeatCategories：來賓歸負責人、無負責人歸「其他」且不進 owners', () => {
+  const seats = [
+    { name: '賓1', kind: 'guest', unit: '王小明' },
+    { name: '賓2', kind: 'guest', unit: '' },
+    { name: '甲', kind: 'emp', unit: '' },
+  ];
+  const g = groupSeatCategories(seats, [], {});
+  assert.deepEqual(g.owners, ['王小明'], '「其他」不列入 owners（欄序由 guestOwnerOrder 補在最後）');
+  assert.deepEqual(g.guestsByOwner['其他'], ['賓2']);
+  assert.deepEqual(g.byUnit['（未填單位）'], ['甲'], '沒填單位的同仁有自己的欄、不被丟掉');
+  assert.equal(g.empCount, 1);
+  assert.equal(g.guestSeats, 2);
+});
+
+test('groupSeatCategories → buildSeatingAoa：排好的順序真的落到分類名單上', () => {
+  const ranks = { 支店長: 1, 主任: 8 };
+  const seats = [
+    { name: '丙', kind: 'emp', unit: '管理部', title: '主任' },
+    { name: '甲', kind: 'emp', unit: '管理部', title: '支店長' },
+  ];
+  const g = groupSeatCategories(seats, [], ranks);
+  const { aoa } = buildSeatingAoa(g.unitOrder, g.byUnit, g.owners, g.guestsByOwner, g.empCount);
+  const h = SEAT_ROWS + 2;
+  assert.equal(aoa[h][1], '管理部');
+  assert.equal(aoa[h + 1][1], '甲', '第一列＝位階最高的');
+  assert.equal(aoa[h + 2][1], '丙');
 });

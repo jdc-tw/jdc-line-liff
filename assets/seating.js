@@ -136,6 +136,52 @@ function guestGradient(n) {
 }
 
 /**
+ * 把出席名單分成「單位」與「廠商負責人」兩組，決定欄序與欄內順序。
+ * 排位用檔與正式座位表的色票都由這裡的 unitOrder／owners 發，故兩支下載必須共用這支——
+ * 單位順序一漂，同一個人在兩份檔就會變色。
+ *
+ * - 欄序：單位依 optionRows 的選項主檔（總公司群組優先），沒列到的照出現順序補在後面。
+ * - 欄內：走 sortSeats（與正式座位表同一支）＝職稱位階小者在前、無順位殿後、同順位穩定。
+ *   收 seat 物件而非姓名字串，就是為了讓這步拿得到 title。
+ *
+ * 回 {byUnit, guestsByOwner, owners, unitOrder, guestSeats, empCount}，
+ * 其中 byUnit／guestsByOwner 的值已降成姓名陣列，可直接餵 buildSeatingAoa。
+ */
+function groupSeatCategories(seats, optionRows, ranks) {
+  var byUnit = {}, guestsByOwner = {}, owners = [], guestSeats = 0, empCount = 0;
+  (seats || []).forEach(function (s) {
+    if (s.kind === 'emp') {
+      var u = String(s.unit || '').trim() || '（未填單位）';
+      (byUnit[u] = byUnit[u] || []).push(s);
+      empCount++;
+    } else {
+      var o = String(s.unit || '').trim() || '其他';
+      (guestsByOwner[o] = guestsByOwner[o] || []).push(s);
+      guestSeats++;
+      if (o !== '其他' && owners.indexOf(o) < 0) owners.push(o);
+    }
+  });
+  var toNames = function (m) {
+    Object.keys(m).forEach(function (k) {
+      m[k] = sortSeats(m[k], ranks || {}).map(function (x) { return x.name; });
+    });
+  };
+  toNames(byUnit); toNames(guestsByOwner);
+
+  var unitOrder = [];
+  [true, false].forEach(function (wantHq) {
+    (optionRows || []).forEach(function (o) {
+      if (o.type !== '單位' || !byUnit[o.name] || unitOrder.indexOf(o.name) >= 0) return;
+      if ((o.group === '總公司') === wantHq) unitOrder.push(o.name);
+    });
+  });
+  Object.keys(byUnit).forEach(function (u) { if (unitOrder.indexOf(u) < 0) unitOrder.push(u); });
+
+  return { byUnit: byUnit, guestsByOwner: guestsByOwner, owners: owners,
+           unitOrder: unitOrder, guestSeats: guestSeats, empCount: empCount };
+}
+
+/**
  * 廠商欄的實際順序：ownerNames 之後，若名單裡有「其他」而 ownerNames 沒列到，補在最後。
  * 兩份檔案都得照這個順序發色票，否則同一位負責人會在兩邊拿到不同灰階。
  */
@@ -289,5 +335,5 @@ function buildFormalAoa(seats, ranks, palette) {
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
                      pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
-                     countNonEmpty_, SEAT_ROWS, TABLE_COLS };
+                     groupSeatCategories, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
 }
