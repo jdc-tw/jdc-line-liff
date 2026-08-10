@@ -1,7 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
-        buildFormalAoa, pastelPalette, guestGradient, SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
+        buildFormalAoa, pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
+        SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 /** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
 function hueLight(hex) {
@@ -112,6 +113,65 @@ test('buildSeatingAoa：單位彩色、來賓灰階漸層（一眼分得出哪�
   const uc = [1, 2, 3].map(colorOf);
   assert.equal(new Set(uc).size, 3);
   uc.forEach(c => assert.ok(!hueLight(c).gray, '單位欄不得是灰階'));
+});
+
+test('guestOwnerOrder：ownerNames 之後補「其他」，已列到就不重複', () => {
+  assert.deepEqual(guestOwnerOrder(['王小明'], { 王小明: ['賓1'], 其他: ['賓2'] }), ['王小明', '其他']);
+  assert.deepEqual(guestOwnerOrder(['王小明', '其他'], { 其他: ['賓2'] }), ['王小明', '其他']);
+  assert.deepEqual(guestOwnerOrder(['王小明'], { 王小明: ['賓1'] }), ['王小明'], '沒有「其他」就不硬加');
+});
+
+test('buildFormalAoa：每格上該員所屬分類的底色，與排位用檔同一張色票', () => {
+  const units = ['管理部', '施工部'], owners = ['王小明'];
+  const byUnit = { 管理部: ['甲'], 施工部: ['乙'] };
+  const guestsByOwner = { 王小明: ['賓1'], 其他: ['賓2'] };
+  const seats = [
+    { name: '甲', title: '主任', kind: 'emp', unit: '管理部', table: '1' },
+    { name: '乙', title: '主任', kind: 'emp', unit: '施工部', table: '1' },
+    { name: '賓1', kind: 'guest', unit: '王小明', table: '1' },
+    { name: '賓2', kind: 'guest', unit: '', table: '2' },       // 沒負責人 → 歸「其他」
+  ];
+  const pal = categoryPalette(units, guestOwnerOrder(owners, guestsByOwner));
+  const { aoa, fills } = buildFormalAoa(seats, { 主任: 8 }, pal);
+  const at = (r, c) => (fills.find(f => f[0] === r && f[1] === c) || [])[2];
+  // 正式表：1 桌＝甲(第1席)、乙(第2席)、賓1(第3席)；2 桌＝賓2
+  assert.deepEqual(aoa[1].slice(0, 3), [1, '甲', '賓2']);
+  assert.equal(at(1, 1), pal.unit['管理部']);
+  assert.equal(at(2, 1), pal.unit['施工部']);
+  assert.equal(at(3, 1), pal.guest['王小明']);
+  assert.equal(at(1, 2), pal.guest['其他'], '沒填負責人的來賓歸「其他」色');
+  assert.notEqual(pal.unit['管理部'], pal.unit['施工部']);
+
+  // ⭐ 真正要守的：同一個人在兩份檔案的底色一模一樣（色票只有 categoryPalette 一個來源）
+  const sb = buildSeatingAoa(units, byUnit, owners, guestsByOwner, 4);
+  const h = SEAT_ROWS + 2;                                  // 分類表頭列
+  const colOf = (name) => sb.aoa[h].indexOf(name);
+  const seatingColor = (name) => (sb.fills.find(f => f[0] === h && f[1] === colOf(name)) || [])[2];
+  assert.equal(at(1, 1), seatingColor('管理部'), '甲：排位用檔與正式表同色');
+  assert.equal(at(2, 1), seatingColor('施工部'), '乙：排位用檔與正式表同色');
+  assert.equal(at(3, 1), seatingColor('王小明'), '賓1：排位用檔與正式表同色');
+  assert.equal(at(1, 2), seatingColor('其他'), '賓2：排位用檔與正式表同色');
+});
+
+test('buildFormalAoa：不給 palette 就完全不上色（舊呼叫方式不會炸）', () => {
+  const seats = [{ name: '甲', kind: 'emp', unit: '管理部', table: '1' }];
+  const { fills, guestCells } = buildFormalAoa(seats, {});
+  assert.deepEqual(fills, []);
+  assert.deepEqual(guestCells, []);
+});
+
+test('buildFormalAoa：查不到分類的人不上色（不亂配一個顏色）', () => {
+  const seats = [{ name: '甲', kind: 'emp', unit: '不在名單的單位', table: '1' }];
+  const { fills } = buildFormalAoa(seats, {}, categoryPalette(['管理部'], []));
+  assert.deepEqual(fills, [], '查無對應時寧可留白，也不套到別人的顏色');
+});
+
+test('buildFormalAoa：表頭列與人數列不上色（那兩列是桌號與統計，不屬於任何單位）', () => {
+  const seats = [{ name: '甲', kind: 'emp', unit: '管理部', table: '1' }];
+  const { aoa, fills } = buildFormalAoa(seats, {}, categoryPalette(['管理部'], []));
+  assert.ok(!fills.some(f => f[0] === 0), '表頭列不得上色');
+  assert.ok(!fills.some(f => f[0] === aoa.length - 1), '人數列不得上色');
+  assert.ok(!fills.some(f => f[1] === 0), '席位序號欄不得上色');
 });
 
 test('parseSeatingUpload（新版）：表頭桌號、逐欄收人', () => {

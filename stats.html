@@ -685,11 +685,12 @@ function dlGuestFile(){
     setMsg('gl-msg','已下載 ✅','ok');
   }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
 }
-function dlSeatingFile(){
-  if(!SB){setMsg('sm-msg','請先選活動','err');return;}
-  setMsg('sm-msg','產生中…','');
-  Promise.all([__rdlXlsx(),jsonp('listOptions',{token:q('t')})]).then(function(rs){
-    var op=rs[1];
+/**
+ * 兩支座位下載共用：把 SB.seats 分成單位／負責人兩組，並取回單位排序（總公司優先）。
+ * 兩邊走同一支才保證色票發得一樣——單位順序一漂，同一個人在兩份檔就會變色。
+ */
+function seatCategories_(){
+  return jsonp('listOptions',{token:q('t')}).then(function(op){
     var byUnit={},guestsByOwner={},owners=[],guestSeats=0;
     SB.seats.forEach(function(s){
       if(s.kind==='emp')(byUnit[s.unit||'（未填單位）']=byUnit[s.unit||'（未填單位）']||[]).push(s.name);
@@ -704,11 +705,24 @@ function dlSeatingFile(){
         if((pass===0&&isHq)||(pass===1&&!isHq))unitOrder.push(o.name);
       });});}
     Object.keys(byUnit).forEach(function(u){if(unitOrder.indexOf(u)<0)unitOrder.push(u);});
-    var empCount=SB.seats.filter(function(s){return s.kind==='emp';}).length;
-    var sb=buildSeatingAoa(unitOrder,byUnit,owners,guestsByOwner,empCount+guestSeats);
+    return {byUnit:byUnit,guestsByOwner:guestsByOwner,owners:owners,unitOrder:unitOrder,
+            guestSeats:guestSeats,
+            empCount:SB.seats.filter(function(s){return s.kind==='emp';}).length};
+  });
+}
+/** 兩份檔案共用的色票（單位彩色／廠商灰階漸層）。 */
+function seatPalette_(g){
+  return categoryPalette(g.unitOrder,guestOwnerOrder(g.owners,g.guestsByOwner));
+}
+function dlSeatingFile(){
+  if(!SB){setMsg('sm-msg','請先選活動','err');return;}
+  setMsg('sm-msg','產生中…','');
+  Promise.all([__rdlXlsx(),seatCategories_()]).then(function(rs){
+    var g=rs[1];
+    var sb=buildSeatingAoa(g.unitOrder,g.byUnit,g.owners,g.guestsByOwner,g.empCount+g.guestSeats);
     // 凍結點由版面自己算（分類表頭那列）；分類欄一欄一底色
     return writeSeatXlsx_(sb.aoa,'座位排列用檔_'+SB.actName,'座位表',{freeze:sb.freezeTopLeft,fills:sb.fills}).then(function(){
-      setMsg('sm-msg','已下載 ✅（出席同仁 '+empCount+' 人＋來賓席位 '+guestSeats+' 格）','ok');
+      setMsg('sm-msg','已下載 ✅（出席同仁 '+g.empCount+' 人＋來賓席位 '+g.guestSeats+' 格）','ok');
     });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
@@ -716,10 +730,12 @@ function dlFormal(){
   if(!SB){setMsg('sm-msg','請先選活動','err');return;}
   if(!SB.seats.some(function(s){return String(s.table||'');})){setMsg('sm-msg','還沒有人排桌','err');return;}
   setMsg('sm-msg','產生中…','');
-  __rdlXlsx().then(function(){
-    var r=buildFormalAoa(SB.seats,SB.ranks||{});
+  Promise.all([__rdlXlsx(),seatCategories_()]).then(function(rs){
+    // 每格上該員所屬單位／負責人的底色，與排位用檔分類欄同色
+    var r=buildFormalAoa(SB.seats,SB.ranks||{},seatPalette_(rs[1]));
     // 正式座位表版面不同（首列即表頭）→ 凍 A 欄＋首列
-    return writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',{redCells:r.guestCells,boldLastRow:true,freeze:'B2'}).then(function(){
+    return writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',
+      {redCells:r.guestCells,fills:r.fills,boldLastRow:true,freeze:'B2'}).then(function(){
       setMsg('sm-msg','已下載 ✅','ok');
     });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});

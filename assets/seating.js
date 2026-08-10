@@ -45,10 +45,9 @@ function buildSeatingAoa(unitNames, attendeesByUnit, ownerNames, guestsByOwner, 
   }
   var cols = [];
   (unitNames || []).forEach(function (u) { cols.push({ name: u, kind: 'unit', names: (attendeesByUnit[u] || []).slice() }); });
-  (ownerNames || []).forEach(function (o) { cols.push({ name: o, kind: 'guest', names: (guestsByOwner[o] || []).slice() }); });
-  if (guestsByOwner && guestsByOwner['其他'] && (ownerNames || []).indexOf('其他') < 0) {
-    cols.push({ name: '其他', kind: 'guest', names: guestsByOwner['其他'].slice() });
-  }
+  guestOwnerOrder(ownerNames, guestsByOwner).forEach(function (o) {
+    cols.push({ name: o, kind: 'guest', names: ((guestsByOwner || {})[o] || []).slice() });
+  });
   aoa.push([]);                                   // 空行分隔
   var hdrRow = aoa.length;                        // 0-based index of 分類表頭
   aoa.push(['序號'].concat(cols.map(function (c) { return c.name; })));
@@ -85,16 +84,14 @@ function buildSeatingAoa(unitNames, attendeesByUnit, ownerNames, guestsByOwner, 
   aoa[4][CK] = '檢核差額（0＝沒漏）';
   aoa[4][CV] = '=' + VL + '3-' + VL + '2-' + VL + '4';
 
-  // 分類欄底色（表頭＋該欄有名字的格）：
-  //   單位＝各自不同色相（一眼分得出是哪個單位）
-  //   廠商來賓＝同一色相、依負責人做明度漸層（一眼看出「這些都是來賓」，又分得出誰帶的）
-  var units = cols.filter(function (c) { return c.kind !== 'guest'; });
-  var guests = cols.filter(function (c) { return c.kind === 'guest'; });
-  var uPal = pastelPalette(units.length), gPal = guestGradient(guests.length);
-  var ui = 0, gi = 0;
+  // 分類欄底色（表頭＋該欄有名字的格）：色票由 categoryPalette 統一發，
+  // 正式座位表用同一張表上色 → 同一個人在兩份檔案的底色一致。
+  var pal = categoryPalette(
+    cols.filter(function (c) { return c.kind !== 'guest'; }).map(function (c) { return c.name; }),
+    cols.filter(function (c) { return c.kind === 'guest'; }).map(function (c) { return c.name; }));
   var fills = [];
   cols.forEach(function (c, ci) {
-    var rgb = (c.kind === 'guest') ? gPal[gi++] : uPal[ui++];
+    var rgb = (c.kind === 'guest') ? pal.guest[c.name] : pal.unit[c.name];
     fills.push([hdrRow, ci + 1, rgb]);
     for (var i = 0; i < c.names.length; i++) fills.push([hdrRow + 1 + i, ci + 1, rgb]);
   });
@@ -136,6 +133,30 @@ function guestGradient(n) {
     out.push(hslHex_(0, 0, 0.93 - 0.27 * t));       // 0.93 → 0.66，黑字仍清楚
   }
   return out;
+}
+
+/**
+ * 廠商欄的實際順序：ownerNames 之後，若名單裡有「其他」而 ownerNames 沒列到，補在最後。
+ * 兩份檔案都得照這個順序發色票，否則同一位負責人會在兩邊拿到不同灰階。
+ */
+function guestOwnerOrder(ownerNames, guestsByOwner) {
+  var out = (ownerNames || []).slice();
+  if (guestsByOwner && guestsByOwner['其他'] && out.indexOf('其他') < 0) out.push('其他');
+  return out;
+}
+
+/**
+ * 分類→底色對照表：排位用檔與正式座位表的**唯一**色票來源。
+ * 兩邊各自算一次調色盤（而不是共用這支）就會漂移，故色票只在這裡發。
+ * 回 {unit:{單位名:RGB}, guest:{負責人:RGB}}。
+ */
+function categoryPalette(unitNames, ownerNames) {
+  var units = unitNames || [], owners = ownerNames || [];
+  var uPal = pastelPalette(units.length), gPal = guestGradient(owners.length);
+  var map = { unit: {}, guest: {} };
+  units.forEach(function (u, i) { map.unit[u] = uPal[i]; });
+  owners.forEach(function (o, i) { map.guest[o] = gPal[i]; });
+  return map;
 }
 
 function hslHex_(h, s, l) {
@@ -230,9 +251,11 @@ function tableOrder_(a, b) {
 
 /**
  * 正式座位表 AOA：一欄一桌、座位直排；同桌內同仁（順位序）前、來賓後。
- * 回 {aoa, guestCells:[[rowIdx, colIdx], ...]}（0-based，供上紅字）。
+ * palette＝categoryPalette 的回傳（可省略）：給了就把每個人的格子上他所屬單位／負責人的底色，
+ * 與排位用檔分類欄同色——排位時記住的顏色，在正式表上還認得出來。
+ * 回 {aoa, guestCells:[[rowIdx, colIdx], ...], fills:[[r,c,rgb], ...]}（皆 0-based）。
  */
-function buildFormalAoa(seats, ranks) {
+function buildFormalAoa(seats, ranks, palette) {
   var byTable = {}, keys = [];
   (seats || []).forEach(function (s) {
     var t = String(s.table || '');
@@ -244,21 +267,27 @@ function buildFormalAoa(seats, ranks) {
   var cols = keys.map(function (t) { return sortSeats(byTable[t], ranks); });
   var maxLen = cols.reduce(function (m, c) { return Math.max(m, c.length); }, 0);
   var aoa = [['席位'].concat(keys)];
-  var guestCells = [];
+  var guestCells = [], fills = [];
   for (var r = 0; r < maxLen; r++) {
     var line = [r + 1];
     cols.forEach(function (c, ci) {
       var p = c[r];
       line.push(p ? p.name : '');
-      if (p && p.kind === 'guest') guestCells.push([r + 1, ci + 1]);
+      if (!p) return;
+      if (p.kind === 'guest') guestCells.push([r + 1, ci + 1]);
+      var rgb = palette && (p.kind === 'guest'
+        ? palette.guest[String(p.unit || '').trim() || '其他']
+        : palette.unit[String(p.unit || '').trim() || '（未填單位）']);
+      if (rgb) fills.push([r + 1, ci + 1, rgb]);   // 查不到分類就不上色，不亂配一個顏色
     });
     aoa.push(line);
   }
   aoa.push(['人數'].concat(cols.map(function (c) { return c.length; })));
-  return { aoa: aoa, guestCells: guestCells };
+  return { aoa: aoa, guestCells: guestCells, fills: fills };
 }
 
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
-                     pastelPalette, guestGradient, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
+                     pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
+                     countNonEmpty_, SEAT_ROWS, TABLE_COLS };
 }

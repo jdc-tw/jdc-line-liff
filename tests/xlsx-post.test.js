@@ -155,3 +155,69 @@ test('整合：分類欄底色真的寫進檔案，且沒名字的格不上色',
   assert.strictEqual(bgOf('C' + R(h + 2)), null, '施工部只有 1 人 → 第 2 列不得有底色');
   assert.notStrictEqual(bgOf('B' + R(h)), bgOf('C' + R(h)), '兩欄顏色不同');
 });
+
+test('整合：正式座位表的底色與紅字同時寫進檔案，且與排位用檔同色', async () => {
+  global.cptable = global.cptable || { utils: { decode: (c, a) => Buffer.from(a).toString('utf8'), encode: (c, s) => Buffer.from(String(s), 'utf8') } };
+  const XLSX = require('../assets/xlsx-style.min.js');
+  const { buildSeatingAoa, buildFormalAoa, categoryPalette, guestOwnerOrder, SEAT_ROWS } = require('../assets/seating.js');
+  const units = ['管理部', '施工部'], owners = ['王小明'];
+  const byUnit = { 管理部: ['甲'], 施工部: ['乙'] };
+  const guestsByOwner = { 王小明: ['賓1'] };
+  const seats = [
+    { name: '甲', kind: 'emp', unit: '管理部', table: '1' },
+    { name: '乙', kind: 'emp', unit: '施工部', table: '1' },
+    { name: '賓1', kind: 'guest', unit: '王小明', table: '1' },
+  ];
+  const pal = categoryPalette(units, guestOwnerOrder(owners, guestsByOwner));
+  const r = buildFormalAoa(seats, {}, pal);
+
+  // 模擬 writeSeatXlsx_ 的樣式迴圈（底色與紅字疊在同一格上）
+  const ws = XLSX.utils.aoa_to_sheet(r.aoa);
+  const fill = {}; r.fills.forEach(f => { fill[f[0] + ',' + f[1]] = f[2]; });
+  const red = {}; r.guestCells.forEach(rc => { red[rc[0] + ',' + rc[1]] = 1; });
+  for (let rr = 0; rr < r.aoa.length; rr++) {
+    for (let c = 0; c < (r.aoa[rr] || []).length; c++) {
+      const ref = XLSX.utils.encode_cell({ r: rr, c });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+      const bg = fill[rr + ',' + c];
+      ws[ref].s = { fill: bg ? { patternType: 'solid', fgColor: { rgb: bg } } : undefined,
+                    font: { name: 'Microsoft JhengHei', color: red[rr + ',' + c] ? { rgb: 'C00000' } : undefined } };
+    }
+  }
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '正式座位表');
+  const JSZip = require('../assets/jszip.min.js');
+  const zip = await JSZip.loadAsync(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+  const sheetXml = await zip.file('xl/worksheets/sheet1.xml').async('string');
+  const stylesXml = await zip.file('xl/styles.xml').async('string');
+  const fillColors = (stylesXml.match(/<fills[\s\S]*?<\/fills>/) || [''])[0]
+    .split('<fill>').slice(1).map(s => (s.match(/fgColor rgb="([0-9A-Fa-f]{6,8})"/) || [])[1] || null);
+  const fontColors = (stylesXml.match(/<fonts[\s\S]*?<\/fonts>/) || [''])[0]
+    .split('<font>').slice(1).map(s => (s.match(/color rgb="([0-9A-Fa-f]{6,8})"/) || [])[1] || null);
+  const xf = (ref) => {
+    const m = sheetXml.match(new RegExp('<c r="' + ref + '"[^>]*s="(\\d+)"'));
+    return m ? (stylesXml.match(/<cellXfs[\s\S]*?<\/cellXfs>/) || [''])[0].split(/<xf /).slice(1)[Number(m[1])] : null;
+  };
+  const pick = (ref, attr, table) => {
+    const s = xf(ref); if (!s) return null;
+    const c = table[Number((s.match(new RegExp(attr + '="(\\d+)"')) || [])[1] || 0)];
+    return c ? c.slice(-6).toUpperCase() : null;
+  };
+  const bgOf = (ref) => pick(ref, 'fillId', fillColors);
+  const fgOf = (ref) => pick(ref, 'fontId', fontColors);
+
+  // 正式表：1 桌那欄＝甲(B2)、乙(B3)、賓1(B4)
+  assert.strictEqual(bgOf('B2'), pal.unit['管理部']);
+  assert.strictEqual(bgOf('B3'), pal.unit['施工部']);
+  assert.strictEqual(bgOf('B4'), pal.guest['王小明']);
+  assert.strictEqual(fgOf('B4'), 'C00000', '來賓格底色與紅字要能並存（不會被彼此蓋掉）');
+  assert.strictEqual(bgOf('B1'), null, '表頭（桌號）不上色');
+  assert.strictEqual(bgOf('A2'), null, '席位序號欄不上色');
+
+  // 同一份資料的排位用檔：同一個人取到同一個色（跨兩份檔案、都走真 writer）
+  const sb = buildSeatingAoa(units, byUnit, owners, guestsByOwner, 3);
+  const h = SEAT_ROWS + 2;
+  const seatingHdrColor = (name) => (sb.fills.find(f => f[0] === h && f[1] === sb.aoa[h].indexOf(name)) || [])[2];
+  assert.strictEqual(bgOf('B2'), seatingHdrColor('管理部'), '甲：兩份檔案同色');
+  assert.strictEqual(bgOf('B3'), seatingHdrColor('施工部'), '乙：兩份檔案同色');
+  assert.strictEqual(bgOf('B4'), seatingHdrColor('王小明'), '賓1：兩份檔案同色');
+});
