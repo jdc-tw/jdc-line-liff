@@ -103,6 +103,14 @@
   .mini { font-size: 11px; color: #1a5c3a; border: 1px solid #cfe3d6; border-radius: 6px; padding: 1px 6px;
     background: #fff; cursor: pointer; }
   .divider { font-size: 11px; color: #bbb; padding: 4px 2px 2px; letter-spacing: .1em; }
+  /* 素食彙總卡：一行一桌，給餐廳報數用 */
+  .vrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 7px 2px; border-bottom: 1px solid #f2f2f2; font-size: 14px; }
+  .vrow:last-child { border-bottom: none; }
+  .vrow .vt { font-weight: 700; min-width: 60px; white-space: nowrap; }
+  .vrow .vc { background: #e6f9ee; color: #1a7d44; border-radius: 8px; padding: 0 8px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .vrow .vn { font-size: 12.5px; color: #777; flex: 1; min-width: 120px; }
+  .vtot { display: flex; justify-content: space-between; border-top: 2px solid #1a5c3a; margin-top: 6px; padding-top: 7px; font-weight: 700; }
+  .vwarn { font-size: 12.5px; color: #7a5320; background: #fff8e8; border-radius: 6px; padding: 6px 9px; margin-top: 8px; line-height: 1.5; }
   @media (min-width: 768px) {
     body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
     h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
@@ -195,6 +203,11 @@
     <div class="btnrow"><button class="btn btn-pri2" onclick="dlFormal()">⬇ 正式座位表</button>
       <button class="btn" id="pub-btn" onclick="seatPublish()">發佈桌次</button></div>
     <div id="sm-msg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🥬 素食彙總 <span id="veg-sum" style="color:#888;font-weight:400;font-size:14px"></span></div>
+    <div id="veg-box"><div class="empty">載入中…</div></div>
   </div>
 
   <div class="card">
@@ -420,8 +433,10 @@ function loadSeating(){
   if(!id)return;
   document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
   document.getElementById('seat-detail').innerHTML='';
+  document.getElementById('veg-box').innerHTML='<div class="empty">載入中…</div>';
   jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r){
-    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      document.getElementById('veg-box').innerHTML='<div class="empty">載入失敗</div>';return;}
     SB=r; seatSel=null;
     document.getElementById('g-sum').textContent='共 '+r.guestVendors+' 家・'+r.guestSeats+' 人';
     // 座位表小字：實際出席＝員工＋廠商（同一份 SB.seats，與排位用檔的預定人數同源）
@@ -432,6 +447,7 @@ function loadSeating(){
     else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
     else {b.className='btn btn-red';b.textContent='重新發佈';}
     renderBoard();
+    renderVegSummary();   // moveSeat 成功後也走 loadSeating，故移桌完彙總會自動跟上
   });
 }
 function setSeatView(v){
@@ -496,6 +512,27 @@ function renderBoard(){
   }
   box.innerHTML=h;
   if(seatSel)pickTile(seatSel,true);else document.getElementById('seat-detail').innerHTML='';
+}
+/** 素食彙總卡：以桌為單位、唯讀。常駐不必切換——現場最急的兩個用途都不該多一個動作。 */
+function renderVegSummary(){
+  var box=document.getElementById('veg-box'),sum=document.getElementById('veg-sum');
+  if(!SB){box.innerHTML='<div class="empty">請先選活動</div>';sum.textContent='';return;}
+  // 後端沒上版時 s.veg 全是 undefined → 會算出「0 份」這種看似正常、卻會讓人少訂餐點的數字
+  if(!SB.vegReady){box.innerHTML='<div class="empty">素食資料尚未就緒（後端未更新）</div>';sum.textContent='';return;}
+  var v=vegSummary(SB.seats);
+  if(!v.total){box.innerHTML='<div class="empty">這場活動沒有人吃素</div>';sum.textContent='';return;}
+  sum.textContent='合計 '+v.total+' 份';
+  var h=v.rows.map(function(r){
+    return '<div class="vrow"><span class="vt">'+(r.table?esc(r.table)+' 桌':'未排桌')+'</span>'
+      +'<span class="vc">'+r.count+' 份</span>'
+      +'<span class="vn">'+esc(r.names.join('、'))+'</span></div>';
+  }).join('');
+  h+='<div class="vtot"><span>合計</span><span>'+v.total+' 份</span></div>';
+  if(v.splitVendors.length){
+    h+='<div class="vwarn">⚠️ '+esc(v.splitVendors.join('、'))
+      +' 的席位被拆到兩桌以上，素食份數是算在席位序號較前的那桌，可能與實際不符——請確認後用「移桌」調整。</div>';
+  }
+  box.innerHTML=h;
 }
 function pickTile(key,keep){
   if(!keep&&seatSel===key){seatSel=null;renderBoard();return;}
