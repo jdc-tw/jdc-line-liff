@@ -178,14 +178,11 @@ function groupSeatCategories(seats, optionRows, ranks) {
       if (o !== '其他' && owners.indexOf(o) < 0) owners.push(o);
     }
   });
-  // 素食者在分類名單帶「（素）」：排位時才看得出誰吃素、決定集中或分散。
-  // 上傳排位結果時 parseSeatingUpload 的 clean() 會清掉括號註記（既有行為，已有測試鎖住），
-  // 所以整個名字複製到座位格再上傳不會誤判成別人。
+  // 排位用檔不放素食資訊（2026-08-10 使用者拍板）：排位是照單位與職稱排的，
+  // 誰吃素跟坐哪桌無關，標在名單上只是雜訊。素食要查走桌次管理的「🥬 素食」視圖。
   var toNames = function (m) {
     Object.keys(m).forEach(function (k) {
-      m[k] = sortSeats(m[k], ranks || {}).map(function (x) {
-        return x.veg ? (x.name + '（素）') : x.name;
-      });
+      m[k] = sortSeats(m[k], ranks || {}).map(function (x) { return x.name; });
     });
   };
   toNames(byUnit); toNames(guestsByOwner);
