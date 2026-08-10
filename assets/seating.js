@@ -289,7 +289,28 @@ function parseSeatingUpload(aoa, seatColsLegacy) {
   return out;
 }
 
-/** 座位排序：同仁依職稱順位（小=高）、無順位殿後；來賓恆最後；同順位穩定。 */
+/**
+ * 員工編號比較（同職稱時的第二排序鍵，2026-08-11 使用者指定）。
+ * 兩邊都是純數字 → 數值比（真實資料是 5 碼帶前導零，如 00008／06003，數值比才對）；
+ * 否則退回字串比（日後格式若變成帶字母也不會排錯或丟例外）；
+ * 空員編殿後——沒有編號的人排在有編號的同職稱者之後。
+ */
+function empNoOrder_(a, b) {
+  var x = String(a == null ? '' : a).trim(), y = String(b == null ? '' : b).trim();
+  if (!x && !y) return 0;
+  if (!x) return 1;
+  if (!y) return -1;
+  if (/^\d+$/.test(x) && /^\d+$/.test(y)) return Number(x) - Number(y);
+  return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+/**
+ * 座位排序：來賓恆最後；同仁**先依職稱順位**（小=高、無順位殿後），
+ * **同職稱再依員工編號**（小在前，2026-08-11 使用者指定：「排序一職稱、排序二員工編號」）；
+ * 兩者都相同才回退到原順序（穩定）。
+ * 排位用檔的分類名單（groupSeatCategories）與正式座位表同桌內順序（buildFormalAoa）共用這支，
+ * 所以兩份檔案的人員順序一定一致——這正是使用者要的「通用到排位檔跟正式座位表」。
+ */
 function sortSeats(seats, ranks) {
   return (seats || []).map(function (s, i) { return { s: s, i: i }; }).sort(function (a, b) {
     var ga = a.s.kind === 'guest' ? 1 : 0, gb = b.s.kind === 'guest' ? 1 : 0;
@@ -297,6 +318,8 @@ function sortSeats(seats, ranks) {
     if (!ga) {
       var ra = (ranks && ranks[a.s.title]) || 9999, rb = (ranks && ranks[b.s.title]) || 9999;
       if (ra !== rb) return ra - rb;
+      var e = empNoOrder_(a.s.empNo, b.s.empNo);
+      if (e !== 0) return e;
     }
     return a.i - b.i;
   }).map(function (x) { return x.s; });

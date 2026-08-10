@@ -439,3 +439,62 @@ test('buildFormalAoa：零素食時不附彙總段（不留空標題）', () => 
   const { aoa } = buildFormalAoa([{ kind: 'emp', name: '甲一', unit: '管理部', table: '1', veg: false }], {});
   assert.ok(!aoa.map((r) => r.join('|')).some((r) => r.indexOf('素食彙總') >= 0));
 });
+
+// ── 排序：單位內＝職稱順位優先，同職稱再依員工編號 ────────────────────
+// 2026-08-11 使用者指定：「排序一職稱、排序二員工編號」，通用到排位用檔與正式座位表。
+test('sortSeats：同職稱時依員工編號小到大（11401 排在 11403 前）', () => {
+  const seats = [
+    { kind: 'emp', name: '乙', title: '主任', empNo: '11403' },
+    { kind: 'emp', name: '甲', title: '主任', empNo: '11401' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['甲', '乙']);
+});
+
+test('sortSeats：職稱順位優先於員工編號（高職稱即使員編大也在前）', () => {
+  const seats = [
+    { kind: 'emp', name: '小主任', title: '主任', empNo: '00001' },
+    { kind: 'emp', name: '大副理', title: '副理', empNo: '99999' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 副理: 10, 主任: 30 }).map(s => s.name), ['大副理', '小主任']);
+});
+
+test('sortSeats：前導零的員編走數值比較（00008 在 06003 前）', () => {
+  const seats = [
+    { kind: 'emp', name: '乙', title: '主任', empNo: '06003' },
+    { kind: 'emp', name: '甲', title: '主任', empNo: '00008' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['甲', '乙']);
+});
+
+test('sortSeats：沒有員編的人殿後（同職稱者中）', () => {
+  const seats = [
+    { kind: 'emp', name: '無編', title: '主任', empNo: '' },
+    { kind: 'emp', name: '有編', title: '主任', empNo: '11401' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['有編', '無編']);
+});
+
+test('sortSeats：非數字員編退回字串比較，不得丟例外', () => {
+  const seats = [
+    { kind: 'emp', name: '乙', title: '主任', empNo: 'B002' },
+    { kind: 'emp', name: '甲', title: '主任', empNo: 'A001' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['甲', '乙']);
+});
+
+test('sortSeats：來賓仍恆最後，不受員編規則影響', () => {
+  const seats = [
+    { kind: 'guest', name: '廠商', title: '', empNo: '' },
+    { kind: 'emp', name: '員工', title: '主任', empNo: '99999' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['員工', '廠商']);
+});
+
+test('sortSeats：無職稱順位者仍殿後，但彼此之間依員編排', () => {
+  const seats = [
+    { kind: 'emp', name: '無銜乙', title: '', empNo: '11403' },
+    { kind: 'emp', name: '無銜甲', title: '', empNo: '11401' },
+    { kind: 'emp', name: '主任', title: '主任', empNo: '99999' },
+  ];
+  assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['主任', '無銜甲', '無銜乙']);
+});
