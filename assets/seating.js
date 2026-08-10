@@ -313,6 +313,39 @@ function tableOrder_(a, b) {
 }
 
 /**
+ * 素食彙總：一行一桌的份數與名單，給餐廳報數用。
+ * 只回**有素食**的桌（零素食的桌不列，避免整片「0 份」的噪音）；未排桌的集中成 table:'' 一行、
+ * 靠 tableOrder_ 排在最後——那一行是給使用者看的缺口（還沒定位的份數），不是給餐廳的。
+ * splitVendors＝同一家廠商的素食席位落在兩張以上的桌。展開時素食固定落在席位序號最小的前幾席
+ *（expandGuestRow），同家被拆桌時份數可能算錯桌，所以要在畫面上提示使用者手調。
+ * @returns {{rows:Array<{table:string,count:number,names:string[]}>, total:number, splitVendors:string[]}}
+ */
+function vegSummary(seats) {
+  var byTable = {}, keys = [], total = 0, vendorTables = {};
+  (seats || []).forEach(function (s) {
+    if (!s || !s.veg) return;
+    var t = String(s.table || '');
+    if (!byTable[t]) { byTable[t] = []; keys.push(t); }
+    byTable[t].push(String(s.name || ''));
+    total++;
+    if (s.kind === 'guest' && t) {
+      var v = String(s.name || '');
+      (vendorTables[v] = vendorTables[v] || {})[t] = true;
+    }
+  });
+  keys.sort(tableOrder_);
+  return {
+    rows: keys.map(function (t) {
+      return { table: t, count: byTable[t].length, names: byTable[t].slice() };
+    }),
+    total: total,
+    splitVendors: Object.keys(vendorTables).filter(function (v) {
+      return Object.keys(vendorTables[v]).length > 1;
+    }),
+  };
+}
+
+/**
  * 正式座位表 AOA：一欄一桌、座位直排；同桌內同仁（順位序）前、來賓後。
  * palette＝categoryPalette 的回傳（可省略）：給了就把每個人的格子上他所屬單位／負責人的底色，
  * 與排位用檔分類欄同色——排位時記住的顏色，在正式表上還認得出來。
@@ -352,5 +385,6 @@ function buildFormalAoa(seats, ranks, palette) {
 if (typeof module !== 'undefined') {
   module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
                      pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
-                     groupSeatCategories, expandGuestRow, countNonEmpty_, SEAT_ROWS, TABLE_COLS };
+                     groupSeatCategories, expandGuestRow, vegSummary,
+                     countNonEmpty_, SEAT_ROWS, TABLE_COLS };
 }

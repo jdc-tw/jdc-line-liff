@@ -339,3 +339,60 @@ test('expandGuestRow：負數素食人數當 0', () => {
     { seatNo: 1, veg: false }, { seatNo: 2, veg: false },
   ]);
 });
+
+// ── 素食彙總 ──────────────────────────────────────────────────────────
+test('vegSummary：只列有素食的桌，依桌號排序，未排桌殿後', () => {
+  const seats = [
+    { kind: 'emp', name: '甲', table: '3', veg: true },
+    { kind: 'emp', name: '乙', table: '3', veg: false },
+    { kind: 'emp', name: '丙', table: '1', veg: true },
+    { kind: 'emp', name: '丁', table: '2', veg: false },   // 2 桌零素食 → 不得出現
+    { kind: 'emp', name: '戊', table: '', veg: true },     // 未排桌
+  ];
+  const r = vegSummary(seats);
+  assert.deepEqual(r.rows, [
+    { table: '1', count: 1, names: ['丙'] },
+    { table: '3', count: 1, names: ['甲'] },
+    { table: '', count: 1, names: ['戊'] },
+  ]);
+  assert.equal(r.total, 3);
+});
+
+test('vegSummary：同桌多份彙總成一行', () => {
+  const r = vegSummary([
+    { kind: 'emp', name: '甲', table: '5', veg: true },
+    { kind: 'emp', name: '乙', table: '5', veg: true },
+  ]);
+  assert.deepEqual(r.rows, [{ table: '5', count: 2, names: ['甲', '乙'] }]);
+  assert.equal(r.total, 2);
+});
+
+test('vegSummary：同一家廠商的素食席位落在兩桌 → 列入 splitVendors 提示', () => {
+  const r = vegSummary([
+    { kind: 'guest', name: '某某工程行', table: '1', veg: true },
+    { kind: 'guest', name: '某某工程行', table: '2', veg: true },
+    { kind: 'guest', name: '另一家', table: '1', veg: true },
+  ]);
+  assert.deepEqual(r.splitVendors, ['某某工程行']);
+  assert.equal(r.total, 3);
+});
+
+test('vegSummary：同一家廠商素食都在同一桌 → 不提示', () => {
+  const r = vegSummary([
+    { kind: 'guest', name: '某某工程行', table: '1', veg: true },
+    { kind: 'guest', name: '某某工程行', table: '1', veg: true },
+  ]);
+  assert.deepEqual(r.splitVendors, []);
+});
+
+test('vegSummary：全部無素食 → 空清單、合計 0', () => {
+  const r = vegSummary([{ kind: 'emp', name: '甲', table: '1', veg: false }]);
+  assert.deepEqual(r.rows, []);
+  assert.equal(r.total, 0);
+  assert.deepEqual(r.splitVendors, []);
+});
+
+test('vegSummary：veg 欄不存在（後端未上版）→ 不當成素食', () => {
+  const r = vegSummary([{ kind: 'emp', name: '甲', table: '1' }]);
+  assert.equal(r.total, 0);
+});
