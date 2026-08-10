@@ -96,6 +96,7 @@
   .prow .chg { font-size: 10.5px; background: #e5c65a; color: #5d4a00; border-radius: 8px; padding: 0 6px; }
   .prow.chgrow { background: #fff3c2; border-radius: 8px; }
   .prow .tno { font-size: 11px; background: #e6f0ea; color: #1a5c3a; border-radius: 8px; padding: 0 7px; font-weight: 700; }
+  .prow .veg { font-size: 10.5px; background: #e6f9ee; color: #1a7d44; border-radius: 8px; padding: 0 6px; font-weight: 700; }
   .mini { font-size: 11px; color: #1a5c3a; border: 1px solid #cfe3d6; border-radius: 6px; padding: 1px 6px;
     background: #fff; cursor: pointer; }
   .divider { font-size: 11px; color: #bbb; padding: 4px 2px 2px; letter-spacing: .1em; }
@@ -459,8 +460,9 @@ function renderBoard(){
     h='<div class="board">'+keys.map(function(t){
       var m=SB.seats.filter(function(s){return String(s.table||'')===t;});
       var dirty=m.some(function(s){return s.changed;});
+      var nv=m.filter(function(s){return s.veg;}).length;   // 0 不顯示：避免整片「素 0」的噪音
       return '<div class="tile'+(seatSel===t?' sel':'')+(dirty?' dirty':'')+'" onclick="pickTile(\''+esc(t)+'\')">'
-        +'<b>'+esc(t)+'桌</b><span class="c">'+m.length+'人'+(dirty?'・有變更':'')+'</span></div>';
+        +'<b>'+esc(t)+'桌</b><span class="c">'+m.length+'人'+(nv?'・素 '+nv:'')+(dirty?'・有變更':'')+'</span></div>';
     }).join('')+'</div>';
   }else{
     var byU={},uks=[];
@@ -471,8 +473,9 @@ function renderBoard(){
     uks.sort(function(a,b){if(a==='🎩來賓')return 1;if(b==='🎩來賓')return -1;return byU[b].length-byU[a].length;});
     h='<div class="board">'+uks.map(function(u){
       var dirty=byU[u].some(function(s){return s.changed;});
+      var nv=byU[u].filter(function(s){return s.veg;}).length;
       return '<div class="tile unit'+(seatSel===u?' sel':'')+(dirty?' dirty':'')+'" onclick="pickTile(\''+esc(u)+'\')">'
-        +'<b>'+esc(u)+'</b><span class="c">'+byU[u].length+'人'+(dirty?'・有變更':'')+'</span></div>';
+        +'<b>'+esc(u)+'</b><span class="c">'+byU[u].length+'人'+(nv?'・素 '+nv:'')+(dirty?'・有變更':'')+'</span></div>';
     }).join('')+'</div>';
   }
   box.innerHTML=h;
@@ -503,11 +506,13 @@ function renderDetail(title,list,showTableTag){
     h+='<div class="prow'+(s.changed?' chgrow':'')+'">';
     if(s.kind==='guest'){
       h+='<span class="gname">'+esc(s.name)+'</span><span class="ti">'+esc(s.note||'')+'</span>';
+      if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
       if(showTableTag&&s.table)h+='<span class="tno">'+esc(s.table)+' 桌</span>';
       h+='<span class="gtag">來賓</span>';
     }else{
       h+='<span class="nm">'+esc(s.name)+'</span><span class="ti">'+esc(s.title||'')+'</span>';
+      if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
       if(showTableTag&&s.table)h+='<span class="tno">'+esc(s.table)+' 桌</span>';
       h+='<span class="mini" onclick="showQr(\''+esc(s.name)+'\')">🔳</span>'
