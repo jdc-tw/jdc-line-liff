@@ -11,13 +11,17 @@ function annivInit(jsonpFn, token, opts) {
       if (emptyText) { box.innerHTML = '<div class="empty">' + annivEsc_((r && !r.ok && r.msg) || emptyText) + '</div>'; box.style.display = ''; }
       return;
     }
-    box.innerHTML = '<div class="card" style="border-left:4px solid #b8860b">'
-      + '<div style="font-weight:700;margin-bottom:6px">🎖 年資里程碑（' + r.year + ' 年度期滿）</div>'
+    // 2026-08-16 改版：拿掉 🎖 與 border-left:4px solid #b8860b（使用者看到的那條「奇怪的黃色直線」），
+    // 也不再自己包一層 .card ——呼叫端（stats/board）已經把它放在卡片裡，內層再包一張就是卡中卡。
+    // 年度改成標題旁的小字，不另起一行搶版面。
+    box.innerHTML = '<div style="font-size:12px;color:#9a9a96;margin-bottom:6px">'
+      + annivEsc_(r.year) + ' 年度期滿</div>'
       + rows.map(function (o) {
-          return '<div style="font-size:15px;margin:2px 0">' + annivEsc_(o.name) + '（' + annivEsc_(o.unit) + '）滿 <b>'
-            + o.years + '</b> 年・入社日 ' + annivEsc_(o.date) + '</div>';
-        }).join('')
-      + '</div>';
+          return '<div style="font-size:14.5px;margin:3px 0">' + annivEsc_(o.name)
+            + '<span style="color:#9a9a96;font-size:12.5px">（' + annivEsc_(o.unit) + '）</span>滿 '
+            + o.years + ' 年<span style="color:#9a9a96;font-size:12.5px">・'
+            + annivEsc_(o.date) + '</span></div>';
+        }).join('');
     box.style.display = '';
   });
 }

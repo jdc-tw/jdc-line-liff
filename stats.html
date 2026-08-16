@@ -29,8 +29,15 @@
     --ln: #ececea;         /* 一般細線 */
     --warn: #8a6a2f;       /* 提醒（降飽和的琥珀） */
     --warn-bg: #f7f2e6;
-    --bad: #a3453d;        /* 錯誤（降飽和的磚紅） */
-    --bad-bg: #f7ecea;
+    /* 補償色＝logo 那道紅（實測 logo-full.svg 取得 rgb(67.5%,7.5%,20.4%)＝#ac1335）。
+       2026-08-16 使用者：「全部都是綠色很奇怪，可以再利用 logo 的紅色」。
+       用在「另一類東西」而不是只用在錯誤上——來賓（相對於員工）、錯誤、刪除，
+       綠管自己人與正常流程，紅管外部與例外，兩色各有職責才不是隨機點綴。 */
+    --r: #ac1335;
+    --r-dim: #8f3040;      /* 大面積文字用，純 logo 紅在小字上太跳 */
+    --r-bg: #fbeef1;
+    --bad: var(--r-dim);   /* 錯誤沿用同一族紅，不再另開一個磚紅 */
+    --bad-bg: var(--r-bg);
   }
   *, *::before, *::after { box-sizing: border-box; }
   body {
@@ -47,7 +54,7 @@
   .card { background: #fff; border: 1px solid var(--ln); border-radius: 10px; padding: 18px; margin-bottom: 14px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; }
   .num { font-size: 26px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
-  .num.green { color: var(--g); } .num.red { color: var(--bad); } .num.grey { color: var(--ink3); }
+  .num.green { color: var(--g); } .num.red { color: var(--r); } .num.grey { color: var(--ink3); }
   .cap { font-size: 12.5px; color: var(--ink3); }
   .sub { font-size: 13.5px; color: var(--ink2); margin-top: 12px; text-align: center; }
   .sec { font-size: 13px; color: var(--ink3); margin: 22px 0 8px; font-weight: 600; letter-spacing: .06em; }
@@ -72,7 +79,7 @@
   .tabs button { flex: 1; padding: 9px 0 10px; font-size: 14.5px; font-weight: 500; color: var(--ink3);
     background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
     font-family: inherit; transition: color .15s, border-color .15s; }
-  .tabs button.on { color: var(--g); border-bottom-color: var(--g); font-weight: 600; }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--r); font-weight: 600; }
   /* 活動選擇器：橫向滑動的純文字，無邊框、無捲軸 */
   .actbar { display: flex; gap: 18px; overflow-x: auto; scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
@@ -82,7 +89,7 @@
     font-family: inherit; font-size: 15px; font-weight: 500; color: var(--ink3); cursor: pointer;
     white-space: nowrap; transition: color .18s; }
   .actbar button.on { color: var(--ink); font-weight: 600; }
-  .actbar button.on::after { content: ''; display: block; height: 2px; background: var(--g);
+  .actbar button.on::after { content: ''; display: block; height: 2px; background: var(--r);
     border-radius: 1px; margin-top: 4px; }
   /* 活動管理 */
   .fld { margin-bottom: 12px; }
@@ -139,7 +146,7 @@
   .prow:last-child { border-bottom: none; }
   .prow .nm { font-weight: 600; min-width: 58px; }
   .prow .ti { font-size: 11px; color: var(--ink3); flex: 1; }
-  .prow .gname { color: #8f5a52; font-weight: 600; min-width: 58px; }
+  .prow .gname { color: var(--r-dim); font-weight: 600; min-width: 58px; }
   .prow .gtag { font-size: 10.5px; background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 0 6px; }
   .prow .chg { font-size: 10.5px; background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 0 6px; }
   .prow.chgrow { background: var(--warn-bg); border-radius: 6px; }
@@ -169,12 +176,14 @@
      改用深一階的 --g-ln。仍然是同一族的綠，不破壞低調。 */
   .tpl-mirror mark { background: var(--g-ln); color: transparent; border-radius: 3px; }
   .tpl-wrap textarea { position: relative; background: transparent; resize: vertical; display: block; }
-  /* {　打字時跳出的佔位符選單 */
-  .ph-pop { position: absolute; z-index: 40; background: #fff; border: 1px solid var(--ln);
-    border-radius: 8px; padding: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.09); }
-  .ph-pop button { display: block; width: 100%; text-align: left; background: none; border: none;
-    padding: 6px 10px; font-size: 13px; font-family: inherit; color: var(--ink); cursor: pointer; border-radius: 5px; }
-  .ph-pop button:hover, .ph-pop button.on { background: var(--g-bg); color: var(--g); }
+  /* 打「{」時跳出的佔位符選單：貼在欄位正下方、橫向一排，位置可預期又不蓋住剛打的字 */
+  .ph-pop { position: absolute; z-index: 40; left: 0; right: 0; top: 100%; margin-top: 4px;
+    background: #fff; border: 1px solid var(--ln); border-radius: 8px; padding: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08); display: flex; flex-wrap: wrap; gap: 4px; }
+  .ph-pop button { background: var(--g-bg); border: none; padding: 5px 10px; font-size: 12.5px;
+    font-family: inherit; color: var(--g); cursor: pointer; border-radius: 5px; }
+  .ph-pop button:active { background: var(--g-ln); }
+  .ph-lead { font-size: 11.5px; color: var(--ink3); align-self: center; margin-right: 2px; }
   @media (min-width: 768px) {
     body { max-width: 720px; padding: 32px 24px 60px; font-size: 17px; }
     h1 { font-size: 23px; } .num { font-size: 32px; } .cap { font-size: 13px; }
@@ -231,8 +240,8 @@
       <button class="btn btn-sm" onclick="snAddTpl()" style="margin:0">新增</button>
       <button class="btn btn-sm" onclick="snDelTpl()" style="margin:0">刪除</button>
     </div>
-    <input id="sn-title" placeholder="這則的名稱" maxlength="30" oninput="snTplChanged()"
-      style="margin-top:8px;font-size:13.5px;padding:7px 10px">
+    <!-- 名稱欄拿掉（2026-08-16 使用者：多餘）——上面的下拉已經顯示名稱，
+         名稱在「新增」時輸入一次即可，不必每次編輯內容都盯著一個重複的欄位。 -->
     <div class="tpl-wrap" style="margin-top:8px">
       <div class="tpl-mirror" id="sn-mirror" aria-hidden="true"></div>
       <textarea id="sn-tpl" rows="8" oninput="snTplChanged()"></textarea>
@@ -360,6 +369,7 @@
          按鈕若在裡面就沒有任何重試入口，畫面只會停在錯誤訊息。 -->
     <div class="btnrow" style="margin-top:8px">
       <button class="btn" onclick="bcPreview()">套用並預覽</button>
+      <button class="btn" onclick="bcSaveTpl()">儲存</button>
       <button class="btn" onclick="bcTplReset()">還原預設</button></div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
@@ -433,29 +443,37 @@ function renderActBar(selId,barId){
    一處定義、三處共用（清單顯示／點擊插入／打「{」跳選單／鏡像上底色）。
    使用者要求：「到底有多少佔位符，都請一次提供給需要佔位符的地方」。 */
 var PH_SETS={
-  bc:[{k:'活動名'},{k:'日期'},{k:'桌次'},{k:'連結',lock:true,why:'沒有它同仁點不到報到碼'}],
-  sn:[{k:'姓名'},{k:'年資'},{k:'年度'}]
+  bc:[{k:'姓名'},{k:'單位'},{k:'活動名'},{k:'日期'},{k:'桌次'},
+      {k:'連結',lock:true,why:'沒有它同仁點不到報到碼'}],
+  sn:[{k:'姓名'},{k:'單位'},{k:'年資'},{k:'年度'},{k:'入社日'}]
 };
 function phList(set){return PH_SETS[set]||[];}
-/** 把佔位符畫成一排可點的碼標；點一下插進游標處。 */
+/**
+ * 把佔位符畫成一排可點的碼標；點一下插進游標處。
+ * ⚠️ 用 mousedown/touchstart ＋ preventDefault，不用 click：
+ *    click 之前 textarea 已經失焦，行動裝置上游標位置會跑掉，插到的地方不是你按之前的位置。
+ */
 function renderPhs(set,boxId,taId){
   var box=document.getElementById(boxId);if(!box)return;
-  box.innerHTML='';
+  box.innerHTML='<span class="ph-lead">點一下插入，或直接打「{」</span>';
   phList(set).forEach(function(p){
     var b=document.createElement('button');
     b.type='button';b.className=p.lock?'ph lock':'ph';
     b.textContent='{'+p.k+'}';
     if(p.why)b.title=p.why;
-    b.onclick=function(){insertAtCursor(taId,'{'+p.k+'}');};
+    var ins=function(e){e.preventDefault();insertAtCursor(taId,'{'+p.k+'}');};
+    b.addEventListener('mousedown',ins);
+    b.addEventListener('touchstart',ins,{passive:false});
     box.appendChild(b);
   });
 }
 function insertAtCursor(taId,text){
   var ta=document.getElementById(taId);if(!ta)return;
   var s=ta.selectionStart,e=ta.selectionEnd;
+  if(s==null){s=e=ta.value.length;}                 // 從沒點過欄位時插到最後
   ta.value=ta.value.slice(0,s)+text+ta.value.slice(e);
-  ta.selectionStart=ta.selectionEnd=s+text.length;
   ta.focus();
+  ta.selectionStart=ta.selectionEnd=s+text.length;  // focus 之後才設，否則會被 focus 重置到尾端
   ta.dispatchEvent(new Event('input'));
 }
 /** 鏡像圖層：把 {…} 包成 <mark> 上底色。textarea 本身不能上色，只能疊一層同規格的 div。 */
@@ -469,28 +487,36 @@ function paintMirror(taId,mirrorId,set){
   mi.innerHTML=html+'\n';                     // 補一行，讓最後一行換行時高度跟得上
   mi.scrollTop=ta.scrollTop;
 }
-/** 打出「{」就跳出選單，選了自動補完整個佔位符。 */
-function phPopup(taId,set,ev){
+/**
+ * 打出「{」（半形或全形）就跳出選單，選了自動補完整個佔位符。
+ * 選單固定貼在欄位正下方、橫向一排——位置可預期，也不會蓋住剛打的字。
+ * 全形「｛」也接：中文輸入法下打出來的多半是全形，只認半形等於這個功能對中文使用者不存在。
+ */
+function phPopup(taId,set){
   closePhPop();
   var ta=document.getElementById(taId);
-  if(!ta||ta.value.charAt(ta.selectionStart-1)!=='{')return;
+  if(!ta)return;
+  var s=ta.selectionStart,ch=ta.value.charAt(s-1);
+  if(ch!=='{'&&ch!=='｛')return;
   var pop=document.createElement('div');
   pop.className='ph-pop';pop.id='ph-pop';
   phList(set).forEach(function(p){
     var b=document.createElement('button');
-    b.type='button';b.textContent='{'+p.k+'}';
-    b.onmousedown=b.ontouchstart=function(e){
+    b.type='button';b.textContent=p.k;
+    var pick=function(e){
       e.preventDefault();
-      var s=ta.selectionStart;
-      ta.value=ta.value.slice(0,s-1)+'{'+p.k+'}'+ta.value.slice(s);   // 吃掉剛打的那個 {
-      ta.selectionStart=ta.selectionEnd=s+p.k.length+1;
-      closePhPop();ta.focus();ta.dispatchEvent(new Event('input'));
+      var at=ta.selectionStart;
+      ta.value=ta.value.slice(0,at-1)+'{'+p.k+'}'+ta.value.slice(at);   // 吃掉剛打的那個括號
+      closePhPop();
+      ta.focus();
+      ta.selectionStart=ta.selectionEnd=at+p.k.length+1;
+      ta.dispatchEvent(new Event('input'));
     };
+    b.addEventListener('mousedown',pick);
+    b.addEventListener('touchstart',pick,{passive:false});
     pop.appendChild(b);
   });
-  var w=ta.closest('.tpl-wrap')||ta.parentNode;
-  w.appendChild(pop);
-  pop.style.left='10px';pop.style.top=(ta.offsetTop+28)+'px';
+  (ta.closest('.tpl-wrap')||ta.parentNode).appendChild(pop);
   setTimeout(function(){document.addEventListener('click',closePhPop,{once:true});},0);
 }
 function closePhPop(){var p=document.getElementById('ph-pop');if(p)p.remove();}
@@ -965,7 +991,6 @@ function snPickMsg(){
   if(!SN)return;
   var i=Number(document.getElementById('sn-idx').value||0);
   document.getElementById('sn-tpl').value=SN.templates[i]||'';
-  document.getElementById('sn-title').value=SN.titles[i]||'';
   renderPhs('sn','sn-phs','sn-tpl');
   paintMirror('sn-tpl','sn-mirror','sn');
   var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
@@ -981,8 +1006,7 @@ function snTplChanged(){
 function snSaveTpl(){
   var i=Number(document.getElementById('sn-idx').value||0);
   jsonp('saveSeniorTemplate',{token:q('t'),idx:i,
-    text:document.getElementById('sn-tpl').value,
-    title:document.getElementById('sn-title').value}).then(function(r){
+    text:document.getElementById('sn-tpl').value}).then(function(r){
     if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'儲存失敗','err');return;}
     setMsg('sn-msg','已儲存。','ok');
     snLoad();
@@ -1122,13 +1146,20 @@ function bcTplReset(){
   document.getElementById('bc-tpl').value=BC_DEFAULT_TPL;
   bcPreview();
 }
+/** 存範本（2026-08-16 補：原本改了根本沒存，重新整理就變回預設，而畫面沒講）。 */
+function bcSaveTpl(){
+  jsonp('savePassTemplate',{token:q('t'),tpl:document.getElementById('bc-tpl').value}).then(function(r){
+    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'儲存失敗','err');return;}
+    setMsg('bc-msg','已儲存，下次打開就是這一份。','ok');
+  });
+}
 function bcPreview(){
   setMsg('bc-msg','查詢中…','ok');
   var tplEl=document.getElementById('bc-tpl');
   jsonp('previewPassBroadcast',{token:q('t'),actId:ckActId(),tpl:tplEl.value||''}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'查詢失敗','err');return;}
     BC=r;
-    if(!BC_DEFAULT_TPL&&!tplEl.value)BC_DEFAULT_TPL=r.template;   // 第一次預覽時記下預設，供「還原預設」用
+    BC_DEFAULT_TPL=r.defaultTemplate||r.template;   // 出廠預設由伺服器給，不是「目前這份」
     if(!tplEl.value)tplEl.value=r.template;
     document.getElementById('bc-edit').style.display='block';
     renderPhs('bc','bc-phs','bc-tpl');
