@@ -806,10 +806,10 @@ function renderBoard(){
       document.getElementById('seat-detail').innerHTML='';return;}
     // 同一家廠商的素食席位被拆到兩桌以上時，份數可能算錯桌——提示要跟著素食視圖走
     var sv=vegSummary(SB.seats).splitVendors;
-    if(sv.length){box.innerHTML='<div class="vwarn">⚠️ '+esc(sv.join('、'))
+    if(sv.length){box.innerHTML='<div class="vwarn">'+esc(sv.join('、'))
       +' 的席位被拆到兩桌以上，素食份數是算在席位序號較前的那桌，可能與實際不符——請確認後用「移桌」調整。</div>';}
     // 不經磚、直接列人：現場查一個人時少一次點擊。未排桌者也要在列表裡（否則會漏人）
-    renderDetail('🥬 素食 '+vs.length+' 人',vs,true);
+    renderDetail('素食 '+vs.length+' 人',vs,true);
     return;
   }
   if(seatView==='table'){
@@ -826,10 +826,10 @@ function renderBoard(){
   }else{
     var byU={},uks=[];
     SB.seats.forEach(function(s){
-      var k=(s.kind==='guest')?'🎩來賓':(s.unit||'（未填單位）');
+      var k=(s.kind==='guest')?'來賓':(s.unit||'（未填單位）');
       if(!byU[k]){byU[k]=[];uks.push(k);}byU[k].push(s);
     });
-    uks.sort(function(a,b){if(a==='🎩來賓')return 1;if(b==='🎩來賓')return -1;return byU[b].length-byU[a].length;});
+    uks.sort(function(a,b){if(a==='來賓')return 1;if(b==='來賓')return -1;return byU[b].length-byU[a].length;});
     h='<div class="board">'+uks.map(function(u){
       var dirty=byU[u].some(function(s){return s.changed;});
       var nv=byU[u].filter(function(s){return s.veg;}).length;
@@ -856,7 +856,7 @@ function pickTile(key,keep){
     title=key+' 桌・'+list.length+' 人';
   }else{
     list=SB.seats.filter(function(s){
-      var k=(s.kind==='guest')?'🎩來賓':(s.unit||'（未填單位）');return k===key;});
+      var k=(s.kind==='guest')?'來賓':(s.unit||'（未填單位）');return k===key;});
     title=key+'・'+list.length+' 人';
   }
   renderDetail(title,list,seatView==='unit');
@@ -901,7 +901,7 @@ function moveSeat(kind,id,name){
     :jsonp('setGuestTable',{token:q('t'),actId:actId(),row:id,table:to});
   p.then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
-    setMsg('sm-msg','已移動 ✅','ok');loadSeating();
+    setMsg('sm-msg','已移動','ok');loadSeating();
   });
 }
 function seatPublish(){
@@ -911,7 +911,7 @@ function seatPublish(){
   if(!confirm(st==='dirty'?'桌次有調整，要重新發佈給同仁看嗎？':'發佈後同仁在 LINE 活動頁就看得到自己的桌次。確定發佈？'))return;
   jsonp('publishTables',{token:q('t'),actId:actId()}).then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'發佈失敗','err');return;}
-    setMsg('sm-msg','已發佈 ✅','ok');loadSeating();
+    setMsg('sm-msg','已發佈','ok');loadSeating();
   });
 }
 function seatUnpublish(){
@@ -921,7 +921,7 @@ function seatUnpublish(){
   if(!confirm('取消發佈？\n\n同仁看不到自己的桌次，活動當天各掃描站掃出來的桌號也會變成空白（不會報錯）。\n\n要恢復就再按一次「發佈桌次」。'))return;
   jsonp('unpublishTables',{token:q('t'),actId:actId()}).then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'取消發佈失敗','err');return;}
-    setMsg('sm-msg','已取消發佈 ✅','ok');loadSeating();
+    setMsg('sm-msg','已取消發佈','ok');loadSeating();
   });
 }
 
@@ -1022,7 +1022,7 @@ function snSend(){
   var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
   // 三則又跨兩個日曆年，重複發最容易發生；把「已經發過」寫進確認框而不是只放在小字
   if(!confirm('把「'+title+'」發給 '+uids.length+' 位 '+SN.year+' 年度的資深同仁？\n\n'
-      +(rec?'⚠️ 這則已於 '+rec.at+' 發送過一次。\n\n':'')
+      +(rec?'這則已於 '+rec.at+' 發送過一次。\n\n':'')
       +'LINE 訊息送出後收不回來。'))return;
   document.getElementById('sn-send').disabled=true;
   setMsg('sn-msg','發送中…','ok');
@@ -1256,7 +1256,7 @@ function upGuests(input){
       var total=chunks.length,done=0,added=0;
       (function next(){
         var c=chunks.shift();
-        if(!c){setMsg('gl-msg','完成 ✅ 已匯入 '+added+' 列','ok');loadSeating();return;}
+        if(!c){setMsg('gl-msg','完成 已匯入 '+added+' 列','ok');loadSeating();return;}
         setMsg('gl-msg','寫入中… '+(done)+'/'+total,'');
         jsonpW('addGuests',{token:q('t'),actId:actId(),rows:JSON.stringify(c)}).then(function(r){
           if(!r||!r.ok){
@@ -1313,7 +1313,7 @@ function upSeating(input){
           var gc=gchunks.shift();
           if(!gc){
             jsonpW('clearSeatMarks',{token:q('t'),actId:actId()}).then(function(){
-              setMsg('sm-msg','匯入完成 ✅ 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席（此版成為新基準，變更標記已歸零）','ok');
+              setMsg('sm-msg','匯入完成 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席（此版成為新基準，變更標記已歸零）','ok');
               loadSeating();
             });return;
           }
@@ -1348,7 +1348,7 @@ function dlGuestFile(){
     order.forEach(function(k){var g=agg[k];
       aoa.push([g.owner,g.name,g.seats,g.type,g.fullName,g.contact,g.phone,g.note,g.tables.join('、')]);});
     writeSeatXlsx_(aoa,'來賓名單_'+(SB?SB.actName:actId()),'來賓名單',{leftAlign:['公司全名','聯繫電話']});
-    setMsg('gl-msg','已下載 ✅','ok');
+    setMsg('gl-msg','已下載','ok');
   }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
 }
 /**
@@ -1372,7 +1372,7 @@ function dlSeatingFile(){
     var sb=buildSeatingAoa(g.unitOrder,g.byUnit,g.owners,g.guestsByOwner,g.empCount+g.guestSeats);
     // 凍結點由版面自己算（分類表頭那列）；分類欄一欄一底色
     return writeSeatXlsx_(sb.aoa,'座位排列用檔_'+SB.actName,'座位表',{freeze:sb.freezeTopLeft,fills:sb.fills}).then(function(){
-      setMsg('sm-msg','已下載 ✅（出席同仁 '+g.empCount+' 人＋來賓席位 '+g.guestSeats+' 格）','ok');
+      setMsg('sm-msg','已下載（出席同仁 '+g.empCount+' 人＋來賓席位 '+g.guestSeats+' 格）','ok');
     });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
@@ -1386,7 +1386,7 @@ function dlFormal(){
     // 正式座位表版面不同（首列即表頭）→ 凍 A 欄＋首列
     return writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',
       {redCells:r.guestCells,fills:r.fills,boldLastRow:true,freeze:'B2'}).then(function(){
-      setMsg('sm-msg','已下載 ✅','ok');
+      setMsg('sm-msg','已下載','ok');
     });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
@@ -1592,14 +1592,14 @@ function dlAllQr(){
       a.href=URL.createObjectURL(blob);
       a.download='員工QR_'+ckActName()+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
       a.click();URL.revokeObjectURL(a.href);
-      setMsg('qr-msg','已下載 ✅（'+rows.length+' 張）','ok');
+      setMsg('qr-msg','已下載（'+rows.length+' 張）','ok');
     });
   }).catch(function(e){setMsg('qr-msg',String(e&&e.message||e),'err');});
 }
 var LIFF_URL='https://liff.line.me/2010451233-a781rqsm';
 function copyLink(id,btn){
   var url=LIFF_URL+'?act='+encodeURIComponent(id);
-  function done(ok){btn.textContent=ok?'✅ 已複製':'複製失敗';setTimeout(function(){btn.textContent='📋 複製問卷網址';},2000);}
+  function done(ok){btn.textContent=ok?'已複製':'複製失敗';setTimeout(function(){btn.textContent='複製問卷網址';},2000);}
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(function(){done(true);},function(){fallback();});}
   else fallback();
   function fallback(){
@@ -1610,7 +1610,7 @@ function copyLink(id,btn){
 function actCard(a){
   var st = a.status==='開放' ? (a.open?'<span class="st st-open">開放中</span>':'<span class="st st-due">已截止</span>')
                              : '<span class="st st-closed">已關閉</span>';
-  var btns = '<button class="btn btn-sm" onclick="copyLink(\''+esc(a.id)+'\',this)">📋 複製問卷網址</button>'
+  var btns = '<button class="btn btn-sm" onclick="copyLink(\''+esc(a.id)+'\',this)">複製問卷網址</button>'
     +(a.status==='開放'
       ? '<button class="btn btn-sm warn" onclick="setSt(\''+esc(a.id)+'\',\'關閉\')">關閉填寫</button>'
       : '<button class="btn btn-sm" onclick="setSt(\''+esc(a.id)+'\',\'開放\')">重新開放</button>')
@@ -1650,7 +1650,7 @@ function createAct(){
   setMsg('na-msg','建立中…','');
   jsonp('addActivity',{token:q('t'),name:name,deadlineDate:dl,eventDate:document.getElementById('na-event').value,question:document.getElementById('na-q').value.trim(),lotterySsId:lotterySsId}).then(function(r){
     if(!r||!r.ok){setMsg('na-msg',(r&&r.msg)||'建立失敗','err');return;}
-    setMsg('na-msg','✅ 已建立（'+r.id+'），截止 '+r.deadline,'ok');
+    setMsg('na-msg','已建立（'+r.id+'），截止 '+r.deadline,'ok');
     document.getElementById('na-name').value='';document.getElementById('na-q').value='';
     document.getElementById('act-lottery-chk').checked=false;document.getElementById('act-lottery-ssid').style.display='none';
     loadActs();
