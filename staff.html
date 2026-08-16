@@ -1,34 +1,151 @@
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <title>報到掃描</title>
+<script>
+  // 在第一次繪製前就套用主題，否則深色使用者會先閃一下白底。預設淺色（不跟隨系統設定）。
+  try { if (localStorage.getItem('evtchk_theme') === 'dark') document.documentElement.setAttribute('data-theme','dark'); } catch (e) {}
+</script>
 <style>
-  body{margin:0;font-family:-apple-system,"PingFang TC",sans-serif;background:#111;color:#fff}
-  #cam{width:100vw;height:52vh;object-fit:cover;display:block;background:#000}
-  #panel{padding:14px 16px}
-  .card{border-radius:14px;padding:18px;margin-bottom:10px;font-size:22px;line-height:1.5}
-  .ok{background:#0a6b34}.dup{background:#6b5d0a}.bad{background:#7a1f1f}
-  .meta{font-size:14px;opacity:.75}
-  #manual{width:100%;font-size:18px;padding:10px;border-radius:10px;border:0;margin-top:6px;box-sizing:border-box}
-  #stat{font-size:13px;opacity:.6;margin-top:8px}
-  #hits{margin-top:6px}
-  #hits div{padding:10px;border-radius:8px;background:#222;margin-bottom:4px;font-size:16px}
+  /* 淺色值全數沿用平台既有語言（index.html／checkin.html 同源）：主色 #06c755、
+     語意四色 msg-ok/warn/err、白卡 12px 圓角、480 置中。
+     深色是本頁新增的——平台原本沒有深色定義，色相沿用、只換明度，語意不變。 */
+  :root{
+    --bg:#f7f7f7; --card:#fff; --sub:#fafafa; --line:#eee; --line2:#ddd;
+    --ink:#1a1a1a; --txt:#333; --mut:#888; --faint:#aaa;
+    --ok-bg:#e6f9ee; --ok-fg:#1a7d44;
+    --wa-bg:#fff4e5; --wa-fg:#8a5300;
+    --er-bg:#fdecea; --er-fg:#b71c1c;
+    --primary:#06c755;
+    --shadow:0 1px 4px rgba(0,0,0,.08);
+    --frame:rgba(255,255,255,.85);
+  }
+  :root[data-theme="dark"]{
+    --bg:#121415; --card:#1c1f21; --sub:#191c1e; --line:#2a2e30; --line2:#3a4143;
+    --ink:#f0f2f2; --txt:#d6dadb; --mut:#8f9698; --faint:#6d7476;
+    --ok-bg:#102a1d; --ok-fg:#5fd48f;
+    --wa-bg:#2e2210; --wa-fg:#e9b063;
+    --er-bg:#2e1614; --er-fg:#f0908f;
+    --primary:#06c755;
+    --shadow:0 1px 4px rgba(0,0,0,.5);
+    --frame:rgba(255,255,255,.75);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body{
+    margin:0 auto; max-width:480px; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans TC",sans-serif;
+    font-size:17px; line-height:1.6;
+  }
+
+  /* 頂列＝這台手機的身分證：6 台長得一樣，沒有它就分不出自己是哪站、連的是哪場。 */
+  #bar{display:flex;align-items:center;gap:10px;padding:10px 14px;
+       background:var(--card);border-bottom:1px solid var(--line)}
+  #bar img{height:22px;width:auto;flex:none}
+  #tbAct{font-size:14px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #tbStation{margin-left:auto;flex:none;font-size:13px;font-weight:700;letter-spacing:.06em;
+             color:var(--ok-fg);background:var(--ok-bg);border-radius:999px;padding:4px 12px}
+  #tbStation.unset{color:var(--er-fg);background:var(--er-bg)}
+  #theme{flex:none;width:32px;height:32px;border-radius:999px;border:1px solid var(--line2);
+         background:transparent;color:var(--mut);font-size:15px;line-height:1;cursor:pointer;padding:0}
+  #theme:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+  /* 相機：對焦框是四個角括號，掃到就閃一下判定色——工作人員不必讀字就知道成不成。 */
+  #view{position:relative;background:#000}
+  #cam{display:block;width:100%;height:38vh;object-fit:cover;background:#000}
+  #frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+         width:min(52vw,190px);height:min(52vw,190px);pointer-events:none}
+  #frame span{position:absolute;width:24px;height:24px;border:3px solid var(--frame);
+              transition:border-color .18s ease}
+  #frame .tl{top:0;left:0;border-right:0;border-bottom:0;border-radius:4px 0 0 0}
+  #frame .tr{top:0;right:0;border-left:0;border-bottom:0;border-radius:0 4px 0 0}
+  #frame .bl{bottom:0;left:0;border-right:0;border-top:0;border-radius:0 0 0 4px}
+  #frame .br{bottom:0;right:0;border-left:0;border-top:0;border-radius:0 0 4px 0}
+  #frame.hit-ok  span{border-color:#06c755}
+  #frame.hit-dup span{border-color:#f5a524}
+  #frame.hit-bad span{border-color:#e5484d}
+  @media (prefers-reduced-motion:reduce){ #frame span{transition:none} }
+
+  #panel{padding:14px 16px 28px}
+
+  /* 判定卡＝平台 msg-* 的放大版：淡色底＋深色字（不是深底白字，那個在強光下會糊）。 */
+  .card{border-radius:12px;padding:16px 18px;margin-bottom:12px;
+        box-shadow:var(--shadow);background:var(--card)}
+  .card.ok  {background:var(--ok-bg);color:var(--ok-fg)}
+  .card.dup {background:var(--wa-bg);color:var(--wa-fg)}
+  .card.bad {background:var(--er-bg);color:var(--er-fg)}
+  .eyebrow{font-size:13px;font-weight:700;letter-spacing:.12em}
+  .who{font-size:22px;font-weight:700;color:var(--ink);margin-top:2px;line-height:1.3}
+  /* 唯一主角＝桌次。大數字＋小字「桌」，像登機口顯示器那樣一眼讀完。 */
+  .seat{font-size:64px;font-weight:800;line-height:1.05;margin:6px 0 2px;
+        font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .seat .u{font-size:20px;font-weight:600;margin-left:6px;letter-spacing:0}
+  .seat.word{font-size:40px}
+  .seat.none{font-size:20px;font-weight:700;line-height:1.4;margin:8px 0 2px}
+  .unit{font-size:14px;color:var(--mut)}
+  .msg{font-size:17px;line-height:1.6}
+  .msg .sub{display:block;font-size:14px;margin-top:4px;opacity:.85}
+
+  /* 掃不到時的正路：先選單位、再選姓名（與綁定頁同一種操作，現場不必打中文）。 */
+  #pick .eyebrow{color:var(--mut);letter-spacing:.06em}
+  #pick label{display:block;font-size:13px;font-weight:700;color:var(--mut);margin:12px 0 6px}
+  #pick select{width:100%;font-size:17px;padding:12px 14px;border-radius:8px;
+               border:1px solid var(--line2);background:var(--card);color:var(--txt);font-family:inherit}
+  #pick select:disabled{color:var(--faint);background:var(--sub)}
+  #pick select:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+  /* 紅字提示放在下拉「外面」——iOS 把 select 交給系統滾輪畫，<option> 的顏色字級一律被忽略，
+     所以「已報到」的紅色小字塞進選項裡在工作人員的手機上是看不到的。 */
+  #pickHint{margin:8px 0 0;font-size:13px;font-weight:700;color:var(--er-fg)}
+
+  #foot{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);
+        font-size:12px;color:var(--faint);line-height:2}
+  #foot .n{font-weight:700;color:var(--mut);font-variant-numeric:tabular-nums}
+  #foot .warn{color:var(--wa-fg)}
+  #foot a{color:var(--mut)}
+  #foot a#wipe{color:#b08080}
+  #pastebox summary{cursor:pointer;color:var(--mut)}
+  #manual{width:100%;font-size:14px;padding:8px 10px;margin-top:6px;border-radius:6px;
+          border:1px solid var(--line2);background:var(--card);color:var(--txt);font-family:inherit}
 </style></head><body>
-<video id="cam" playsinline muted></video>
+<div id="bar">
+  <img src="assets/logo-mark.svg" alt="">
+  <span id="tbAct">—</span>
+  <span id="tbStation">—</span>
+  <button id="theme" type="button" aria-label="切換深色模式" title="切換深色模式">☾</button>
+</div>
+<div id="view">
+  <video id="cam" playsinline muted></video>
+  <div id="frame"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+</div>
 <div id="panel">
   <div id="result" class="card bad" style="display:none"></div>
-  <input id="manual" placeholder="相機不可用時：手動貼碼或姓名，貼碼後按 Enter">
-  <div id="hits"></div>
-  <div id="stat"></div>
-  <div id="qbadge" style="font-size:14px;margin-top:6px">待送 0 筆</div>
-  <div id="diag" class="meta" style="margin-top:4px">
-    <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
-    ｜<a href="#" id="reload" style="color:#93b3a1">重新載入名單</a>
+  <div id="pick" class="card">
+    <div class="eyebrow">掃不到？手動報到</div>
+    <label for="selUnit">單位</label>
+    <select id="selUnit"><option value="">── 請選擇 ──</option></select>
+    <label for="selName">姓名</label>
+    <select id="selName" disabled><option value="">── 請先選單位 ──</option></select>
+    <p id="pickHint" hidden></p>
   </div>
-  <button id="wipe" style="margin-top:10px;font-size:14px">清除本機報到資料</button>
+  <div id="foot">
+    <span id="stat"></span>
+    <div id="qbadge">待送 0 筆</div>
+    <div id="diag">
+      <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
+      ｜<a href="#" id="reload">重新載入名單</a>
+      ｜<a href="#" id="wipe">清除本機資料</a>
+    </div>
+    <details id="pastebox">
+      <summary>貼上報到碼（測試用）</summary>
+      <input id="manual" placeholder="CHK|活動ID|員編|簽章　貼上後按 Enter">
+    </details>
+  </div>
 </div>
 <canvas id="cv" style="display:none"></canvas>
 <script src="assets/jsQR.min.js"></script>
+<script src="assets/groups.js"></script>
 <script src="assets/staff-scan.js"></script>
 <script>
 /** 同 assets/checkin-board.js 寫法：塞進 innerHTML 前先中和 & < >。 */
@@ -37,6 +154,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{
 var qs = new URLSearchParams(location.search);
 var DEMO = qs.get('demo') === '1';
 var ACT = qs.get('act') || 'zzdemo2026';
+// 站別備援：後端未部署（或舊部署）時，直接從連結帶（六個連結本來就是逐站產的）。
+// 出問題回報時，工作人員照著頁面唸得出「我是第 3 站」，才有辦法定位是哪一台。
+var STATION_FROM_URL = qs.get('s') || '';
 var state = { seen: {}, queue: [] };
 var snapshot = {};   // {hash: person}
 var lastText = '', lastAt = 0;
@@ -71,8 +191,9 @@ function loadQueue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]
 function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQueueBadge(); }
 function updateQueueBadge() {   // D4：佇列筆數長駐畫面
   var n = loadQueue().length;
-  document.getElementById('qbadge').textContent = '待送 ' + n + ' 筆';
-  document.getElementById('qbadge').style.color = n > 0 ? '#e8b339' : '#8a8';
+  var el = document.getElementById('qbadge');
+  el.innerHTML = '待送 <span class="n">' + n + '</span> 筆';
+  el.className = n > 0 ? 'warn' : '';
 }
 function enqueue(empNo, method) {
   if (DEMO) return;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
@@ -85,6 +206,116 @@ var empToHash = {};
 function rebuildEmpIndex() {
   empToHash = {};
   for (var h in snapshot) empToHash[snapshot[h].empNo] = h;
+}
+
+/**
+ * 桌次一律回查快照（唯一有桌次的來源）——搜名用的 nameTable 只有 {empNo,name,unit}，
+ * 所以走手動報到的人若本來就在參加者名單裡（沒綁定／相機掛掉），照樣講得出桌次；
+ * 真正查不到的才是臨時出席。
+ */
+function tableOf(empNo) {
+  var h = empToHash[empNo];
+  return h && snapshot[h] ? (snapshot[h].table || '') : '';
+}
+function seatHtml(t) {
+  if (!t) return '<div class="seat none">臨時出席・請洽主辦安排</div>';
+  // 純數字才拆成「大數字＋小字桌」；「主桌」這類字面桌名整串顯示
+  if (/^\d+$/.test(t)) return '<div class="seat">' + esc(t) + '<span class="u">桌</span></div>';
+  return '<div class="seat word">' + esc(t) + '</div>';
+}
+/** 三層：判定（小）→ 姓名（中）→ 第幾桌（大）→ 單位（註腳）。ok/dup/手動共用同一張臉。 */
+function personCard(cls, label, p) {
+  show(cls, '<div class="eyebrow">' + esc(label) + '</div>'
+    + '<div class="who">' + esc(p.name) + '</div>'
+    + seatHtml(tableOf(p.empNo))
+    + '<div class="unit">' + esc(p.unit || '') + '</div>');
+}
+
+/** 純文字訊息（載入中／錯誤／清除完成）用同一張卡，但走 .msg 版式。 */
+function note(cls, text, sub) {
+  show(cls, '<div class="msg">' + esc(text)
+    + (sub ? '<span class="sub">' + esc(sub) + '</span>' : '') + '</div>');
+}
+
+/** 對焦框閃一下判定色：不必讀字就知道成不成，噪音大的現場特別有用。 */
+function flashFrame(kind) {
+  var f = document.getElementById('frame');
+  if (!f) return;
+  f.className = 'hit-' + kind;
+  setTimeout(function () { f.className = ''; }, 700);
+}
+
+// ─── 手動報到：單位 → 姓名 兩層下拉 ─────────────────────────────────────────
+// 名單＝快照參加者 ∪ 在職名冊（聯集）。只取在職名冊會漏掉「不在職但受邀」的人；
+// 只取參加者會漏掉臨時出席。以 empNo 為鍵去重，參加者的資料優先（它才有桌次）。
+function allPeople() {
+  var byEmp = {};
+  for (var h in snapshot) {
+    var s = snapshot[h];
+    byEmp[s.empNo] = { empNo: s.empNo, name: s.name, unit: s.unit };
+  }
+  for (var k in nameTable) {
+    var n = nameTable[k];
+    if (n && n.empNo && !byEmp[n.empNo]) byEmp[n.empNo] = { empNo: n.empNo, name: n.name, unit: n.unit };
+  }
+  return Object.keys(byEmp).map(function (e) { return byEmp[e]; });
+}
+
+var peopleByUnit = {};
+function buildPicker() {
+  peopleByUnit = {};
+  allPeople().forEach(function (p) {
+    var u = p.unit || '（未分單位）';
+    (peopleByUnit[u] = peopleByUnit[u] || []).push(p);
+  });
+  var units = Object.keys(peopleByUnit).sort(function (a, b) { return a.localeCompare(b, 'zh-Hant'); });
+  Object.keys(peopleByUnit).forEach(function (u) {
+    peopleByUnit[u].sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
+  });
+  // 單位分「總公司／工地」兩組 optgroup＝與報到頁共用 groups.js，分類來源不分歧
+  document.getElementById('selUnit').innerHTML =
+    '<option value="">── 請選擇 ──</option>' + jdcGroupedOptions(units, 'unit', '');
+}
+
+/** 這個人本機已知報到過？（後端冪等仍是最終權威，這裡只影響排序與提示） */
+function isCheckedIn(empNo) {
+  var h = empToHash[empNo];
+  return !!(h && state.seen[h]);
+}
+
+function setPickHint(text) {
+  var el = document.getElementById('pickHint');
+  el.textContent = text || '';
+  el.hidden = !text;
+}
+
+function fillNameSelect(unit) {
+  var sel = document.getElementById('selName');
+  setPickHint('');
+  if (!unit) {
+    sel.innerHTML = '<option value="">── 請先選單位 ──</option>';
+    sel.disabled = true;
+    return;
+  }
+  var list = peopleByUnit[unit] || [];
+  // 已報到的沉到最下面，收進 optgroup——現場找的幾乎都是「還沒報到」的人，
+  // 讓他們佔住上方；optgroup 的標題 iOS 會畫，<option> 的樣式不會。
+  var pending = [], done = [];
+  list.forEach(function (p) { (isCheckedIn(p.empNo) ? done : pending).push(p); });
+  function opt(p) {
+    var t = tableOf(p.empNo);
+    return '<option value="' + esc(p.empNo) + '">' + esc(p.name)
+      + (t ? '・' + esc(t) + (/^\d+$/.test(t) ? ' 桌' : '') : '') + '</option>';
+  }
+  sel.innerHTML = '<option value="">── 請選擇（未報到 ' + pending.length + ' 人）──</option>'
+    + pending.map(opt).join('')
+    + (done.length ? '<optgroup label="已報到（' + done.length + '）">' + done.map(opt).join('') + '</optgroup>' : '');
+  sel.disabled = false;
+}
+
+function resetPicker() {
+  document.getElementById('selUnit').value = '';
+  fillNameSelect('');   // 內含 setPickHint('')
 }
 
 // D 全套：in-flight guard＋不遞迴重試＋任何非 ok＝失敗保留佇列＋逐包成功逐包清
@@ -102,7 +333,7 @@ async function flush() {
           n: Date.now() + '' + Math.floor(Math.random() * 1e6)   // cache-bust nonce
         }, 45000);
         if (!res || !res.ok) {            // D3：任何非 ok（lock timeout/400/逾時）＝失敗
-          show('dup', '⚠ 回寫未完成，' + loadQueue().length + ' 筆待送，稍後自動重試');
+          note('dup', '回寫未完成，' + loadQueue().length + ' 筆待送', '稍後自動重試，不必重掃');
           return;                          // 保留剩餘佇列、等下一輪；不遞迴重試
         }
         // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
@@ -114,8 +345,8 @@ async function flush() {
         (res.allChecked || []).forEach(function (emp) {
           var h = empToHash[emp]; if (h) state.seen[h] = true;
         });
-      } catch (err) {   // 網路中斷／AbortController 逾時／JSON 解析失敗＝同一種失敗
-        show('dup', '⚠ 回寫未完成，' + loadQueue().length + ' 筆待送，稍後自動重試');
+      } catch (err) {   // 網路中斷／逾時／JSON 解析失敗＝同一種失敗
+        note('dup', '回寫未完成，' + loadQueue().length + ' 筆待送', '稍後自動重試，不必重掃');
         return;         // 佇列語意不變：只有成功那支才會被移除，這裡沒動過佇列
       }
     }
@@ -135,30 +366,14 @@ function manualCheckin(p) {
   var h = empToHash[p.empNo];
   var alreadySeen = h && state.seen[h];   // 本機已知報到過，但後端冪等仍允許再送出
   var msg = alreadySeen
-    ? '此人已報到過，仍要再送出？'
-    : ('手動報到：' + p.name + '（' + p.unit + '）？');
-  if (!confirm(msg)) return;
+    ? p.name + ' 已報到過，仍要再送出？'
+    : ('手動報到：' + p.name + '（' + (p.unit || '') + '）？');
+  if (!confirm(msg)) { resetPicker(); return; }
   enqueue(p.empNo, 'manual');
   if (h) state.seen[h] = true;
-  show('ok', '✓ 已受理（手動）｜' + esc(p.name) + '<div class="meta">' + esc(p.unit || '') + '</div>');
-  document.getElementById('hits').innerHTML = '';
-  document.getElementById('manual').value = '';
-}
-
-function renderHits(hits) {
-  var el = document.getElementById('hits');
-  el.innerHTML = '';
-  if (!hits.length) {
-    el.innerHTML = '<div style="opacity:.7">查無此人，請洽主辦人工處理</div>';
-    return;
-  }
-  hits.forEach(function (p) {
-    var row = document.createElement('div');
-    var tail = String(p.empNo || '').slice(-3);
-    row.textContent = p.name + '｜' + (p.unit || '') + '｜末3碼 ' + tail;
-    row.addEventListener('click', function () { manualCheckin(p); });
-    el.appendChild(row);
-  });
+  personCard('ok', '已受理・手動', p);
+  flashFrame('ok');
+  resetPicker();
 }
 
 function jget(action, params, timeoutMs) {
@@ -198,22 +413,38 @@ function computeCheckinExpiry_(eventDateStr) {
   return isNaN(dt.getTime()) ? null : dt.getTime();
 }
 
+/**
+ * 頂列＝這台手機的身分證。後端沒給（舊部署）就退回顯示活動 ID／「站別未設定」，
+ * 絕不顯示 undefined——現場看到 undefined 只會讓人以為系統壞了。
+ */
+function setTopbar(actName, station) {
+  document.getElementById('tbAct').textContent = actName || ACT;
+  // 優先序：後端（與 token 綁定，最可靠）→ 網址 ?s= → 都沒有就紅字示警，
+  // 讓「沒設站別」在佈署當下就被看見，而不是 8/28 出事時才發現不知道是哪台。
+  var s = station || STATION_FROM_URL;
+  var el = document.getElementById('tbStation');
+  el.textContent = s || '站別未設定';
+  el.className = s ? '' : 'unset';
+}
+
 function applySnapshotPayload(res) {
+  setTopbar(res.actName, res.station);
   // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
   snapshot = res.snapshot; nameTable = res.nameTable || {};
   snapMeta = { version: res.snapshotVersion, generatedAt: res.generatedAt };
   document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt;
   rebuildEmpIndex();
+  buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
 }
 
 async function loadSnapshot(force) {
   purgeIfExpired();
   var cached = force ? null : sessionStorage.getItem(SNAP_KEY);
   if (cached) { applySnapshotPayload(JSON.parse(cached)); ready = true; return; }
-  show('dup', '⏳ 名單載入中，請稍候…');   // 載入 gate：未完成禁掃
+  note('dup', '名單載入中，請稍候…');   // 載入 gate：未完成禁掃
   var res = await jget('getEventCheckinSnapshot', { t: TOKEN, act: ACT });
   if (!res.ok) {  // 失敗保留舊快照（若有），不清空
-    show('bad', '❌ ' + (res.msg || '名單載入失敗') + '<div class="meta">請確認網路後點「重新載入」</div>');
+    note('bad', res.msg || '名單載入失敗', '請確認網路後點「重新載入名單」');
     if (!ready) return;   // 完全沒快照＝維持禁掃
     return;
   }
@@ -223,7 +454,7 @@ async function loadSnapshot(force) {
   var expEpoch = computeCheckinExpiry_(res.eventDate);
   sessionStorage.setItem(EXPIRE_KEY, String(expEpoch || (Date.now() + 24 * 3600 * 1000)));
   ready = true;
-  show('ok', '✓ 名單就緒（' + Object.keys(snapshot).length + ' 位參加者）');
+  note('ok', '名單就緒', Object.keys(snapshot).length + ' 位參加者，可以開始掃描');
 }
 
 function show(cls, html) {
@@ -232,10 +463,11 @@ function show(cls, html) {
 }
 
 async function handle(text, t0) {
-  if (!ready) { show('dup', '⏳ 名單載入中，請稍候再掃'); return; }   // 載入 gate
+  if (!ready) { note('dup', '名單載入中，請稍候再掃'); return; }   // 載入 gate
   var p = parseChkCode(text, ACT);
   if (!p.ok) {
-    show('bad', p.reason === 'wrongAct' ? '❌ 這是別場活動的碼' : '❌ 無法辨識的碼');
+    note('bad', p.reason === 'wrongAct' ? '這是別場活動的碼' : '無法辨識的碼');
+    flashFrame('bad');
     return;
   }
   var h = await sha256Hex(text);
@@ -243,19 +475,22 @@ async function handle(text, t0) {
   state = r.state;
   var ms = Math.round(performance.now() - t0);
   if (r.verdict.type === 'ok') {
-    var pp = r.verdict.person;
-    var tbl = pp.table ? ('第 ' + esc(pp.table) + ' 桌') : '（未排桌）';
-    var main = pp.table === '主桌' ? '<span style="color:#ff6b6b">主桌</span>' : tbl;
     // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
-    show('ok', '✓ 已受理｜' + esc(pp.name) + '<div class="meta">' + esc(pp.unit) + '・' + main + '・' + ms + 'ms</div>');
+    personCard('ok', '已受理', r.verdict.person);
+    flashFrame('ok');
     if (navigator.vibrate) navigator.vibrate(80);
-    enqueue(pp.empNo, 'scan');
+    enqueue(r.verdict.person.empNo, 'scan');
   } else if (r.verdict.type === 'dup') {
-    show('dup', '⚠ ' + esc(r.verdict.person.name) + ' 已報到過');
+    // 重複掃的人多半是忘了自己第幾桌又回頭問，所以這張也要講得出桌次
+    personCard('dup', '已報到過', r.verdict.person);
+    flashFrame('dup');
   } else {
-    show('bad', '❌ 查無此碼（快照無資料）');
+    note('bad', '查無此碼', '快照裡沒有這個人，請洽主辦人工處理');
+    flashFrame('bad');
   }
-  document.getElementById('stat').textContent = '已掃 ' + Object.keys(state.seen).length + ' 人';
+  // 耗時是給我們看的診斷值，不佔現場卡片的版面
+  document.getElementById('stat').innerHTML =
+    '已掃 <span class="n">' + Object.keys(state.seen).length + '</span> 人・上次 ' + ms + 'ms';
 }
 
 function loop(video, ctx, cv) {
@@ -273,37 +508,70 @@ function loop(video, ctx, cv) {
   requestAnimationFrame(function () { loop(video, ctx, cv); });
 }
 
+// 主題：預設淺色，不跟隨系統（現場六台要長得一樣，才好互相對照）；選擇記在本機。
+function applyTheme(t) {
+  if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  var b = document.getElementById('theme');
+  b.textContent = t === 'dark' ? '☀' : '☾';
+  b.setAttribute('aria-label', t === 'dark' ? '切換淺色模式' : '切換深色模式');
+  b.setAttribute('title', b.getAttribute('aria-label'));
+}
+document.getElementById('theme').addEventListener('click', function () {
+  var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('evtchk_theme', next); } catch (e) {}
+  applyTheme(next);
+});
+try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'light'); } catch (e) { applyTheme('light'); }
+
 (async function init() {
   updateQueueBadge();   // 佇列筆數不依賴 empToHash：開頁立刻反映上次 session 遺留的真實筆數，不等第一輪排程
   if (DEMO) {
+    setTopbar('示範模式（不寫入）', '測試站');
     await buildDemoSnapshot();
+    buildPicker();
     updateQueueBadge();   // demo 快照建完後保險再確認一次（buildDemoSnapshot 不動佇列）
   } else {
     await loadSnapshot();
     flush();   // 此時 empToHash 已由 applySnapshotPayload→rebuildEmpIndex 建好，立即補打一次殘留佇列
   }
-  document.getElementById('manual').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      handle(this.value.trim(), performance.now());
-      this.value = '';
-      document.getElementById('hits').innerHTML = '';
+  document.getElementById('selUnit').addEventListener('change', function () {
+    fillNameSelect(this.value);
+  });
+  document.getElementById('selName').addEventListener('change', function () {
+    var emp = this.value;
+    if (!emp) { setPickHint(''); return; }
+    var list = peopleByUnit[document.getElementById('selUnit').value] || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].empNo === emp) {
+        // 順序要緊：manualCheckin 內部會 resetPicker()，而它會清掉提示行，
+        // 所以「先前是否已報到」要先記下來，等重設完再把紅字寫回去。
+        var was = isCheckedIn(emp), nm = list[i].name;
+        manualCheckin(list[i]);
+        setPickHint(was ? '⚠ ' + nm + ' 先前已報到過' : '');
+        return;
+      }
     }
   });
-  document.getElementById('manual').addEventListener('input', function () {
-    var q = this.value.trim();
-    if (!q || q.indexOf('CHK|') === 0) { document.getElementById('hits').innerHTML = ''; return; }   // 是碼，走 Enter 掃碼路徑
-    renderHits(searchNames(nameTable, q));   // B2：搜全體在職 154 人表（含臨時出席）
+  document.getElementById('manual').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { handle(this.value.trim(), performance.now()); this.value = ''; }
   });
   document.getElementById('reload').addEventListener('click', function (e) {
     e.preventDefault();
     if (!confirm('重新載入名單？（僅更新名單版本，不影響已掃紀錄與待送佇列）')) return;
     loadSnapshot(true);
   });
-  document.getElementById('wipe').addEventListener('click', function () {
-    if (!confirm('清除本機快照與待送佇列？')) return;
+  document.getElementById('wipe').addEventListener('click', function (e) {
+    e.preventDefault();
+    // 待送佇列只存在這台手機上，清掉就是報到紀錄真的不見——把筆數講出來，別讓人盲按
+    var n = loadQueue().length;
+    var msg = n > 0
+      ? '⚠️ 尚有 ' + n + ' 筆報到還沒回寫到伺服器。\n\n清除後這 ' + n + ' 筆會永久消失、無法復原。\n\n仍要清除？'
+      : '清除本機快照？（目前 0 筆待送，不會遺失任何報到紀錄）';
+    if (!confirm(msg)) return;
     sessionStorage.removeItem(SNAP_KEY); sessionStorage.removeItem(EXPIRE_KEY);
     localStorage.removeItem(QKEY);
-    show('bad', '已清除，請重新整理');
+    note('bad', '已清除', '請重新整理這一頁');
   });
   try {
     var stream = await navigator.mediaDevices.getUserMedia({
@@ -313,7 +581,7 @@ function loop(video, ctx, cv) {
     var cv = document.getElementById('cv');
     loop(video, cv.getContext('2d', { willReadFrequently: true }), cv);
   } catch (err) {
-    show('bad', '相機無法啟動：' + err.name + '<div class="meta">請確認瀏覽器相機權限，或用下方手動輸入</div>');
+    note('bad', '相機無法啟動（' + err.name + '）', '請確認瀏覽器相機權限，或用下方單位／姓名手動報到');
   }
 })();
 </script></body></html>
