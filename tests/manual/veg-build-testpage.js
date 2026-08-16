@@ -43,6 +43,14 @@ const RESPONSES = {
   listActivities: ACTS,
   getAnniversaries: { ok: true, rows: [] },
   previewPassBroadcast: BC_OK,
+  // 掃描站管理：一站已存在，用來驗列表／複製／換發／刪除的畫面
+  listStaffStations: { ok: true, actId: 'actTEST', rows: [
+    { token: 'tok1AAA', station: '第 1 站',
+      url: 'https://campaign.jdc-corpn.com.tw/staff.html?t=tok1AAA&act=actTEST' },
+    { token: 'tok2BBB', station: '第 2 站',
+      url: 'https://campaign.jdc-corpn.com.tw/staff.html?t=tok2BBB&act=actTEST' }] },
+  addStaffStation: { ok: true, token: 'tokNEW', station: '第 3 站' },
+  removeStaffStation: { ok: true },
   batch: {
     ok: true,
     results: {
