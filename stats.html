@@ -224,7 +224,6 @@
   <button id="tabbtn-staff" onclick="showTab('staff')">員工</button>
 </div>
 <div id="tab-stats">
-  <h1 id="title">活動紀錄看板</h1>
   <select id="act-picker" style="display:none" onchange="loadStats(this.value)"></select>
   <div class="actbar" id="act-actbar"></div>
   <div id="meta" class="meta">載入中…</div>
@@ -232,7 +231,6 @@
 </div>
 <!-- 員工（原「年資里程碑」，2026-08-16 改名並吸收員工名冊）：與單一活動無關的人事資料 -->
 <div id="tab-staff" style="display:none">
-  <h1>員工</h1>
   <div class="card">
     <h2>員工名冊</h2>
     <div class="btnrow"><button class="btn" onclick="downloadRoster()">單位總表</button>
@@ -319,7 +317,6 @@
   <div id="act-list"><div class="empty">載入中…</div></div>
 </div>
 <div id="tab-tables" style="display:none">
-  <h1>桌次管理</h1>
   <!-- 活動選擇：橫向滑動的純文字。原生 select 留著當值的載體（全頁 .value 讀它），
        但整個藏起來——所有互動都走 .actbar 的按鈕。 -->
   <select id="ti-act" style="display:none" onchange="loadSeating();stLoad()"></select>
@@ -359,7 +356,6 @@
      自己一個活動下拉（#ck-act），不共用桌次頁的——那頁沒打開時它是隱藏的，
      等於讓人在看不見的地方決定「137 則 LINE 要發給哪一場」。 -->
 <div id="tab-checkin" style="display:none">
-  <h1>報到</h1>
   <select id="ck-act" style="display:none" onchange="stLoad();bcPreview()"></select>
   <div class="actbar" id="ck-actbar"></div>
 
@@ -1831,7 +1827,8 @@ function loadStats(act){
 function renderStats(r){
   var out=renderStatsHtml(r,{fallbackTitle:'活動紀錄看板'});
   var meta=document.getElementById('meta'), box=document.getElementById('content');
-  if(out.titleText)document.getElementById('title').textContent=out.titleText;
+  // 標題列已移除（分頁列就是標題）；活動名由 .actbar 顯示，這裡改寫瀏覽器分頁標題
+  if(out.titleText)document.title=out.titleText;
   meta.textContent=out.metaText;
   box.innerHTML=out.bodyHtml;
   showAdminSwitch(r.admin);   // 導覽元件，不依賴「有沒有開放中的活動」→ 擺在 out.ok 早退之前
