@@ -400,8 +400,9 @@
          按鈕若在裡面就沒有任何重試入口，畫面只會停在錯誤訊息。 -->
     <div class="btnrow" style="margin-top:8px">
       <button class="btn" onclick="bcPreview()">套用並預覽</button>
-      <button class="btn" onclick="bcSaveTpl()">儲存</button>
-      <button class="btn" onclick="bcTplReset()">還原預設</button></div>
+      <button class="btn" id="bc-save" onclick="bcSaveTpl()">儲存</button>
+      <button class="btn" id="bc-reset" onclick="bcTplReset()">還原預設</button></div>
+    <p id="bc-lock" class="hint" style="color:var(--warn)"></p>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
     <!-- 預約發送（2026-08-16）：預設活動前一天。狀態畫在標題旁的小標籤上。
@@ -1234,22 +1235,42 @@ function bcRenderSched(r){
       dt=document.getElementById('bc-date'),bt=document.getElementById('bc-sched');
   cnt.innerHTML=r.willSend?'<span class="tag">'+r.willSend+' 則</span>':'';
   var sc=r.schedule;
+  // 狀態寫在按鈕上（2026-08-16 使用者：「預約狀態應該要顯示在按鈕上，改變按鈕文字」）。
+  // 標題旁不再重複掛一顆狀態標籤——那顆只留「N 則」。
+  tag.innerHTML='';
   if(sc&&sc.status==='sent'){
-    tag.innerHTML='<span class="tag g">已發送 '+esc(String(sc.sentAt||sc.date).slice(5))+'</span>';
-    dt.value=sc.date;dt.disabled=true;bt.textContent='已發送';bt.disabled=true;
+    dt.value=sc.date;dt.disabled=true;
+    bt.textContent='已於 '+String(sc.sentAt||sc.date).slice(5,10)+' 發送';bt.disabled=true;
+    bcLockTpl(true,'已發送，內容不再變動。');
   }else if(sc&&sc.status==='failed'){
-    tag.innerHTML='<span class="tag r">預約發送失敗</span>';
-    dt.value=sc.date;dt.disabled=false;bt.textContent='重新預約';bt.disabled=false;
+    dt.value=sc.date;dt.disabled=false;
+    bt.textContent='預約失敗，重新預約';bt.disabled=false;
+    bcLockTpl(false);
   }else if(sc){
-    tag.innerHTML='<span class="tag w">已預約 '+esc(String(sc.date).slice(5))+'</span>'
-      +(r.schedStale?'<span class="tag r">內容已改，未重新預約</span>':'');
-    dt.value=sc.date;dt.disabled=true;bt.textContent='取消預約';bt.disabled=false;
+    dt.value=sc.date;dt.disabled=true;
+    bt.textContent='已預約 '+String(sc.date).slice(5)+'，點此取消';bt.disabled=false;
+    // 有預約＝內容鎖定（使用者拍板的機制，取代原本的「已改但沒重新預約」警語）。
+    // 後端 savePassTemplate 也會擋，這裡鎖的是畫面，兩層都有。
+    bcLockTpl(true,'已預約，內容鎖定中。要修改請先取消預約。');
   }else{
-    tag.innerHTML='';
     if(!dt.value)dt.value=r.defaultDate||'';
     dt.disabled=false;bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl);
+    bcLockTpl(false);
   }
   BC_SCHED=sc||null;
+}
+/** 鎖住／解鎖訊息內容區。鎖住時連佔位符碼標都不能點——否則點了沒反應更難懂。 */
+function bcLockTpl(on,why){
+  var ta=document.getElementById('bc-tpl');
+  ta.readOnly=on;
+  ta.style.background=on?'#f7f7f6':'transparent';
+  document.getElementById('bc-mirror').style.background=on?'#f7f7f6':'#fff';
+  [].slice.call(document.querySelectorAll('#bc-phs .ph')).forEach(function(b){
+    b.disabled=on;b.style.opacity=on?'.45':'';});
+  ['bc-save','bc-reset'].forEach(function(id){
+    var b=document.getElementById(id);if(b)b.disabled=on;});
+  var n=document.getElementById('bc-lock');
+  if(n)n.textContent=on?(why||''):'';
 }
 var BC_SCHED=null;
 function bcSchedule(){
@@ -1298,17 +1319,11 @@ function bcPreview(){
     if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
     if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
       +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
-    // 預約拍的是快照：改了內容沒重新預約，到期送的還是舊那份。
-    // ⚠️ 這句放 warn 區、不放 setMsg——bcPreview 結尾會 setMsg('bc-msg','') 把訊息洗掉
-    //    （2026-08-16 實測到，第一版就是這樣靜靜消失的）。
-    if(r.schedStale)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ '
-      +esc(r.schedule.date)+' 要送的是<b>預約當下</b>那一份內容，不是你現在看到的。'
-      +'要用新的就先取消預約、再重新預約一次。</p>';
     document.getElementById('bc-preview').innerHTML=warn
       +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
       +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
       +esc(r.sample)+'</pre>';
-    document.getElementById('bc-preview').style.display=warn?'block':'none';
+    document.getElementById('bc-preview').style.display='block';
     bcRenderSched(r);
     // 少了 {連結} 不再鎖死按鈕（2026-08-16 使用者要求改成警示＋確認）：
     // 鎖住按鈕不講原因，只會讓人以為系統壞了。改成讓他看到警語、自己決定。
@@ -1862,6 +1877,8 @@ function toggleRep(btn,id){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     if(!r.rows.length){box.innerHTML='<div class="empty">無</div>';return;}
     // 依單位收納（同出席統計），單位旁顯示人數
+    // 每個單位標出不參加人數（2026-08-16 使用者要求）。0 人就不標——
+    // 「不參加 0」跟沒寫一樣，只是多一顆標籤。
     box.innerHTML=groupHtml(r.rows,function(items){
       return items.map(function(x){
         var att=x.attend==='參加'?'<span class="att att-y">參加</span>':'<span class="att att-n">'+esc(x.attend||'—')+'</span>';
@@ -1870,6 +1887,9 @@ function toggleRep(btn,id){
           +'<span style="font-size:12px;color:#bbb">　'+esc(x.time)+'</span>'
           +(x.opinion?'<span class="op">'+esc(x.opinion)+'</span>':'')+'</div>';
       }).join('');
+    },function(items){
+      var no=items.filter(function(x){return x.attend&&x.attend!=='參加';}).length;
+      return no?groupTag_('不參加 '+no,'r'):'';
     });
   });
 }

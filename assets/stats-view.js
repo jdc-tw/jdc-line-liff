@@ -7,13 +7,31 @@
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
 
 // 依單位收納（保留原順序）；bodyFn(items) 決定每組內容。單位旁顯示人數。
-function groupHtml(arr, bodyFn){
+/**
+ * 依單位分組收納。
+ * @param {Function} bodyFn 展開後的內容
+ * @param {Function} [sumFn] 選填：回一段接在人數後面的 HTML（本組的補充統計）。
+ *   2026-08-16 加，給「回覆明細」在每個單位標出不參加人數用。
+ *   刻意做成選填——不參加／未填／未綁定那幾張清單裡整組都是同一種人，
+ *   再標一次只是噪音。
+ * 樣式寫 inline：這支 board.html 也在用，那頁沒有 stats.html 的 .tag class。
+ */
+function groupHtml(arr, bodyFn, sumFn){
   if(!arr.length) return '<div class="empty">（無）</div>';
   var m={},order=[];
   arr.forEach(function(o){if(!m[o.unit]){m[o.unit]=[];order.push(o.unit);}m[o.unit].push(o);});
   return order.map(function(u){
-    return '<details class="grp"><summary>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span></summary><div class="body">'+bodyFn(m[u])+'</div></details>';
+    return '<details class="grp"><summary>'+esc(u)+'<span class="cnt">'+m[u].length+' 人</span>'
+      +(sumFn?sumFn(m[u]):'')
+      +'</summary><div class="body">'+bodyFn(m[u])+'</div></details>';
   }).join('');
+}
+/** 小標籤（給 sumFn 用）。tone: '' 中性／'r' 紅。 */
+function groupTag_(text, tone){
+  var bg = tone==='r' ? '#fbeef1' : '#f1f1ef', fg = tone==='r' ? '#8f3040' : '#6b6b68';
+  return '<span style="font-size:11px;line-height:1.75;padding:0 6px;border-radius:2px;'
+    + 'background:'+bg+';color:'+fg+';font-weight:400;margin-left:6px;white-space:nowrap">'
+    + esc(text) + '</span>';
 }
 // 純名字（橫排流式）
 function listHtml(arr){

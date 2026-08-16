@@ -74,6 +74,12 @@ const RESPONSES = {
     sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['林玉娟', '賴雅慧'] } } },
   saveSeniorTemplate: { ok: true },
   savePassTemplate: { ok: true },
+  // 回覆明細：同一單位要有參加也有不參加，才驗得到「不參加 N」那顆標籤
+  getActivityReplies: { ok: true, rows: [
+    { unit: '工務管理組', name: '洪炫佑', attend: '參加',   diet: '葷', time: '07/01 10:00', opinion: '' },
+    { unit: '工務管理組', name: '柯佳岑', attend: '不參加', diet: '',   time: '07/01 11:00', opinion: '當天出差' },
+    { unit: '工務管理組', name: '甲三',   attend: '不參加', diet: '',   time: '07/02 09:00', opinion: '' },
+    { unit: '支店主管',   name: '中西豊', attend: '參加',   diet: '素', time: '07/01 09:00', opinion: '' }] },
   schedulePassBroadcast: { ok: true },
   cancelPassSchedule: { ok: true },
   addSeniorTemplate: { ok: true, idx: 3 },
