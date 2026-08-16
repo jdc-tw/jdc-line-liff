@@ -31,7 +31,12 @@ const BC_OK = {
   ok: true, actName: '驗收用活動', eventDate: '2026/08/28', published: true,
   participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
   sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
-  template: BC_TPL, tplHasUrl: true };
+  template: BC_TPL, tplHasUrl: true,
+  // 補發下拉用的名單（依單位分組）
+  people: [
+    { userId: 'U_a', name: '洪炫佑', unit: '工務管理組' },
+    { userId: 'U_b', name: '柯佳岑', unit: '工務管理組' },
+    { userId: 'U_c', name: '中西豊', unit: '支店主管' }] };
 const BC_NOPUB = Object.assign({}, BC_OK, { published: false });
 // ?bc=nourl → 範本被刪掉 {連結}，驗「發送鈕不解鎖＋紅字提醒」
 const BC_NOURL = Object.assign({}, BC_OK, {
