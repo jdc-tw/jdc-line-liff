@@ -268,7 +268,7 @@
   <div class="card">
     <div style="font-weight:700;font-size:16px;margin-bottom:6px">🎯 對象活動</div>
     <select id="ck-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"
-      onchange="stLoad()"></select>
+      onchange="stLoad();bcPreview()"></select>
   </div>
 
   <!-- 掃描站管理（2026-08-16）：活動主辦自助開站，不必手改 Script Property。
@@ -292,8 +292,8 @@
     <p style="font-size:13px;color:#666;margin:0 0 8px">
       推一則 LINE 給所有「參加」且已綁定的同仁，內含<b>本人桌次</b>與報到碼連結。一人一則、桌次各自不同。</p>
     <div class="btnrow">
-      <button class="btn" onclick="bcPreview()">預覽收件對象</button>
-      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled>發送</button></div>
+      <button class="btn" onclick="bcPreview()">重新整理</button>
+      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled>發送給全部</button></div>
     <!-- 可編輯範本：改完要再按一次預覽（範例一律由伺服器套範本產生，前端不自己算，
          否則預覽看到的與真正送出的會是兩套規則）。改動後發送鈕重新鎖上。 -->
     <div id="bc-edit" style="display:none;margin-top:10px">
@@ -309,6 +309,16 @@
     </div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
+    <!-- 補發：137 人裡總有人沒收到、換手機、或自己刪掉了。
+         不用 137 個勾選框——手機上不好用；改成挑一個人補一則。 -->
+    <details id="bc-one" style="margin-top:10px;display:none">
+      <summary style="font-size:13px;color:#888;cursor:pointer">補發給特定人</summary>
+      <div class="scope" style="margin-top:8px">
+        <select id="bc-one-sel" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:13.5px"></select>
+        <button class="btn" onclick="bcSendOne()">補發一則</button></div>
+      <p style="font-size:12.5px;color:#888;margin:6px 0 0">
+        用的是上面同一份內容（改過內容要先按「重新整理」套用）。</p>
+    </details>
   </div>
 
   <div class="card">
@@ -548,7 +558,7 @@ function loadCheckinTab(){
     var sel=document.getElementById('ck-act');
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
       return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';}).join('');
-    stLoad();
+    stLoad(); bcPreview();   // 兩支並行；通知卡不再藏在「預覽」按鈕後面
   });
 }
 
@@ -912,12 +922,39 @@ function bcPreview(){
       +esc(r.sample)+'</pre>';
     document.getElementById('bc-preview').style.display='block';
     document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.tplHasUrl);
+    bcFillOne(r.people||[]);
     setMsg('bc-msg','','ok');
+  });
+}
+// 補發下拉：依單位分組，只列得到 userId 的人（拿不到的本來就發不出去）
+function bcFillOne(people){
+  var sel=document.getElementById('bc-one-sel');
+  if(!people||!people.length){document.getElementById('bc-one').style.display='none';return;}
+  var byUnit={};
+  people.forEach(function(p){(byUnit[p.unit||'（未分類）']=byUnit[p.unit||'（未分類）']||[]).push(p);});
+  sel.innerHTML=Object.keys(byUnit).sort().map(function(u){
+    return '<optgroup label="'+esc(u)+'">'+byUnit[u].map(function(p){
+      return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'</option>';}).join('')+'</optgroup>';
+  }).join('');
+  document.getElementById('bc-one').style.display='';
+}
+function bcSendOne(){
+  var sel=document.getElementById('bc-one-sel');
+  if(!sel.value){setMsg('bc-msg','請先選一位同仁','err');return;}
+  var who=sel.selectedOptions[0].textContent;
+  if(!confirm('補發一則給「'+who+'」？\n\nLINE 訊息送出後收不回來。'))return;
+  setMsg('bc-msg','補發中…','ok');
+  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),
+    tpl:document.getElementById('bc-tpl').value||'',
+    userIds:JSON.stringify([sel.value])},60000).then(function(r){
+    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'補發失敗','err');return;}
+    if(r.failed){setMsg('bc-msg','補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、'),'err');return;}
+    setMsg('bc-msg','已補發給 '+who,'ok');
   });
 }
 function bcSend(){
   if(!BC)return;
-  if(!confirm('發送 '+BC.willSend+' 則 LINE 給同仁？\n\nLINE 訊息送出後收不回來。'))return;
+  if(!confirm('發送給全部 '+BC.willSend+' 位同仁？\n\nLINE 訊息送出後收不回來。\n（只想補給某一個人，請用下面的「補發給特定人」。）'))return;
   document.getElementById('bc-send').disabled=true;
   setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
   jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),tpl:document.getElementById('bc-tpl').value||''},120000).then(function(r){
