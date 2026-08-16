@@ -89,6 +89,11 @@ const stub = `<script>
   var _bc = new URLSearchParams(location.search).get('bc');
   if (_bc === 'nopub') R.previewPassBroadcast = ${JSON.stringify(BC_NOPUB)};
   if (_bc === 'nourl') R.previewPassBroadcast = ${JSON.stringify(BC_NOURL)};
+  // ?sn=err → 伺服器丟例外的形狀 {ok:false,error}（沒有 msg）。
+  // 2026-08-16 senior.js 漏部署時就是這個回應，而畫面只寫「載入失敗」。
+  // 驗 surfaceErr() 有沒有把原因撈出來——這是唯一能證明它有效的情境。
+  if (new URLSearchParams(location.search).get('sn') === 'err')
+    R.getSeniorNotice = { ok: false, error: 'SENIOR_TITLES is not defined' };
   window.__vegCalls = [];
   var realFetch = window.fetch;
   window.fetch = function (url, opts) {
@@ -104,7 +109,9 @@ const stub = `<script>
 </script>
 `;
 
-const src = fs.readFileSync(path.join(__dirname, '..', '..', 'stats.html'), 'utf8');
+// VEG_SRC=<路徑> 可指向 curl 下來的線上檔——驗「部署出去的那份」而不是 repo 副本
+// （2026-08-16：repo 綠不代表線上綠，部署管線少一步就驗不出來）。
+const src = fs.readFileSync(process.env.VEG_SRC || path.join(__dirname, '..', '..', 'stats.html'), 'utf8');
 const i = src.indexOf('<head>');
 if (i < 0) { console.error('找不到 <head>，stats.html 結構變了'); process.exit(1); }
 const out = src.slice(0, i + 6) + '\n' + stub + src.slice(i + 6);
