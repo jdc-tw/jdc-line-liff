@@ -197,6 +197,29 @@
     <div class="btnrow"><button class="btn btn-pri2" onclick="dlFormal()">⬇ 正式座位表</button>
       <button class="btn" id="pub-btn" onclick="seatPublish()">發佈桌次</button></div>
     <div id="sm-msg" class="msg"></div>
+    <!-- 危險操作：刻意收進摺疊區、不與「重新發佈」並排。取消發布會讓現場六台掃描機的
+         桌號全部變空白而且不報錯（getEventCheckinSnapshot 的 published 閘同一個）。 -->
+    <details style="margin-top:10px">
+      <summary style="font-size:13px;color:#888;cursor:pointer">危險操作</summary>
+      <div style="margin-top:8px">
+        <button class="btn" id="unpub-btn" onclick="seatUnpublish()"
+                style="font-size:13.5px">取消發佈桌次</button>
+        <p style="font-size:12.5px;color:#888;margin:6px 0 0">
+          同仁會看不到自己的桌次，<b>活動當天各掃描站的桌號也會一併變空白</b>。要重新給就再按一次「發佈桌次」。</p>
+      </div>
+    </details>
+  </div>
+
+  <!-- 報到碼通知：活動前一天由使用者按鈕發送（2026-08-16 拍板不做自動排程） -->
+  <div class="card">
+    <h2>報到碼通知</h2>
+    <p style="font-size:13px;color:#666;margin:0 0 8px">
+      推一則 LINE 給所有「參加」且已綁定的同仁，內含<b>本人桌次</b>與報到碼連結。一人一則、桌次各自不同。</p>
+    <div class="btnrow">
+      <button class="btn" onclick="bcPreview()">預覽收件對象</button>
+      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled>發送</button></div>
+    <div id="bc-preview" style="display:none;margin-top:8px"></div>
+    <div id="bc-msg" class="msg"></div>
   </div>
 
   <div class="card">
@@ -567,6 +590,56 @@ function seatPublish(){
   jsonp('publishTables',{token:q('t'),actId:actId()}).then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'發佈失敗','err');return;}
     setMsg('sm-msg','已發佈 ✅','ok');loadSeating();
+  });
+}
+function seatUnpublish(){
+  if(!SB)return;
+  if(SB.pubState==='none'){setMsg('sm-msg','目前就是未發佈狀態，不用取消。','ok');return;}
+  // 二次確認要把後果寫出來——這顆的傷害在掃描站那端，不在眼前這個畫面
+  if(!confirm('取消發佈？\n\n同仁看不到自己的桌次，活動當天各掃描站掃出來的桌號也會變成空白（不會報錯）。\n\n要恢復就再按一次「發佈桌次」。'))return;
+  jsonp('unpublishTables',{token:q('t'),actId:actId()}).then(function(r){
+    if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'取消發佈失敗','err');return;}
+    setMsg('sm-msg','已取消發佈 ✅','ok');loadSeating();
+  });
+}
+
+// ── 報到碼通知：預覽 → 確認 → 發送 ───────────────────────────────────────
+// 「發送」鈕預設 disabled，必須先預覽過才會解鎖——對外送出 140 則 LINE 收不回來。
+var BC=null;
+function bcPreview(){
+  setMsg('bc-msg','查詢中…','ok');
+  jsonp('previewPassBroadcast',{token:q('t'),actId:actId()}).then(function(r){
+    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'查詢失敗','err');return;}
+    BC=r;
+    var warn=r.published?'':'<p style="color:#c33;margin:4px 0"><b>桌次尚未發布</b>——請先在座位總覽按「發佈桌次」，否則不給發送。</p>';
+    var un=r.unbound.length
+      ? '<p style="margin:4px 0;color:#a67">未綁定 LINE、收不到的 '+r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>'
+      : '<p style="margin:4px 0;color:#888">參加者全部已綁定，沒有人收不到。</p>';
+    document.getElementById('bc-preview').innerHTML=
+      '<p style="margin:4px 0"><b>'+esc(r.actName)+'</b>　'+esc(r.eventDate)+'</p>'
+      +'<p style="margin:4px 0">參加 '+r.participants+' 人，<b>將發送 '+r.willSend+' 則</b></p>'
+      +warn+un
+      +'<p style="margin:8px 0 4px;color:#666;font-size:12.5px">內文範例（第一位收件人）：</p>'
+      +'<pre style="white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:10px;font-size:12.5px;margin:0">'
+      +esc(r.sample)+'</pre>';
+    document.getElementById('bc-preview').style.display='block';
+    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0);
+    setMsg('bc-msg','','ok');
+  });
+}
+function bcSend(){
+  if(!BC)return;
+  if(!confirm('發送 '+BC.willSend+' 則 LINE 給同仁？\n\nLINE 訊息送出後收不回來。'))return;
+  document.getElementById('bc-send').disabled=true;
+  setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
+  jsonp('sendPassBroadcast',{token:q('t'),actId:actId()},120000).then(function(r){
+    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
+    // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
+    // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
+    var t='已送出 '+r.sent+' 則';
+    if(r.failed){t+='；失敗 '+r.failed+' 則：'
+      +r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');}
+    setMsg('bc-msg',t,r.failed?'err':'ok');
   });
 }
 
