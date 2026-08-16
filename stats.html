@@ -218,6 +218,19 @@
     <div class="btnrow">
       <button class="btn" onclick="bcPreview()">預覽收件對象</button>
       <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled>發送</button></div>
+    <!-- 可編輯範本：改完要再按一次預覽（範例一律由伺服器套範本產生，前端不自己算，
+         否則預覽看到的與真正送出的會是兩套規則）。改動後發送鈕重新鎖上。 -->
+    <div id="bc-edit" style="display:none;margin-top:10px">
+      <label style="font-size:13px;color:#666;display:block;margin-bottom:4px">訊息內容（可改）</label>
+      <textarea id="bc-tpl" rows="7" oninput="bcTplChanged()"
+        style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:13.5px;font-family:inherit;line-height:1.6"></textarea>
+      <p style="font-size:12.5px;color:#888;margin:6px 0 0">
+        可用佔位符：<code>{活動名}</code> <code>{日期}</code> <code>{桌次}</code> <code>{連結}</code>，發送時逐人替換。
+        <b>{連結} 不能刪</b>，沒有它同仁點不到報到碼。整行的佔位符都沒值時那一行會自動消失。</p>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn" onclick="bcPreview()">套用並重新預覽</button>
+        <button class="btn" onclick="bcTplReset()">還原預設</button></div>
+    </div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
   </div>
@@ -605,13 +618,27 @@ function seatUnpublish(){
 
 // ── 報到碼通知：預覽 → 確認 → 發送 ───────────────────────────────────────
 // 「發送」鈕預設 disabled，必須先預覽過才會解鎖——對外送出 140 則 LINE 收不回來。
-var BC=null;
+var BC=null,BC_DEFAULT_TPL='';
+function bcTplChanged(){   // 改了範本＝預覽已過期，鎖回發送鈕逼人重新預覽
+  document.getElementById('bc-send').disabled=true;
+  setMsg('bc-msg','內容已修改，請按「套用並重新預覽」確認後再發送。','ok');
+}
+function bcTplReset(){
+  if(!BC_DEFAULT_TPL)return;
+  document.getElementById('bc-tpl').value=BC_DEFAULT_TPL;
+  bcPreview();
+}
 function bcPreview(){
   setMsg('bc-msg','查詢中…','ok');
-  jsonp('previewPassBroadcast',{token:q('t'),actId:actId()}).then(function(r){
+  var tplEl=document.getElementById('bc-tpl');
+  jsonp('previewPassBroadcast',{token:q('t'),actId:actId(),tpl:tplEl.value||''}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'查詢失敗','err');return;}
     BC=r;
+    if(!BC_DEFAULT_TPL&&!tplEl.value)BC_DEFAULT_TPL=r.template;   // 第一次預覽時記下預設，供「還原預設」用
+    if(!tplEl.value)tplEl.value=r.template;
+    document.getElementById('bc-edit').style.display='block';
     var warn=r.published?'':'<p style="color:#c33;margin:4px 0"><b>桌次尚未發布</b>——請先在座位總覽按「發佈桌次」，否則不給發送。</p>';
+    if(!r.tplHasUrl)warn+='<p style="color:#c33;margin:4px 0"><b>訊息內容少了 {連結}</b>——同仁點不到報到碼，補回去才給發送。</p>';
     var un=r.unbound.length
       ? '<p style="margin:4px 0;color:#a67">未綁定 LINE、收不到的 '+r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>'
       : '<p style="margin:4px 0;color:#888">參加者全部已綁定，沒有人收不到。</p>';
@@ -623,7 +650,7 @@ function bcPreview(){
       +'<pre style="white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:10px;font-size:12.5px;margin:0">'
       +esc(r.sample)+'</pre>';
     document.getElementById('bc-preview').style.display='block';
-    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0);
+    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.tplHasUrl);
     setMsg('bc-msg','','ok');
   });
 }
@@ -632,7 +659,7 @@ function bcSend(){
   if(!confirm('發送 '+BC.willSend+' 則 LINE 給同仁？\n\nLINE 訊息送出後收不回來。'))return;
   document.getElementById('bc-send').disabled=true;
   setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
-  jsonp('sendPassBroadcast',{token:q('t'),actId:actId()},120000).then(function(r){
+  jsonp('sendPassBroadcast',{token:q('t'),actId:actId(),tpl:document.getElementById('bc-tpl').value||''},120000).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來

@@ -26,11 +26,17 @@ const ACTS = { ok: true, rows: [{ id: 'actTEST', name: '驗收用活動', status
 
 // 報到碼通知（2026-08-16）：預覽必須回真實形狀，否則驗不到「未發布時發送鈕不解鎖」。
 // 兩種情境由網址 ?bc=nopub 切換——published:false 是最該驗的那條（送出去收不回來）。
+const BC_TPL = '【{活動名}】　{日期}\n您的桌次：{桌次}\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\n{連結}';
 const BC_OK = {
   ok: true, actName: '驗收用活動', eventDate: '2026/08/28', published: true,
   participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
-  sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST' };
+  sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
+  template: BC_TPL, tplHasUrl: true };
 const BC_NOPUB = Object.assign({}, BC_OK, { published: false });
+// ?bc=nourl → 範本被刪掉 {連結}，驗「發送鈕不解鎖＋紅字提醒」
+const BC_NOURL = Object.assign({}, BC_OK, {
+  template: '【{活動名}】　{日期}\n您的桌次：{桌次}', tplHasUrl: false,
+  sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌' });
 
 const RESPONSES = {
   getSeatingBoard: FIXTURE,
@@ -50,10 +56,10 @@ const RESPONSES = {
 const stub = `<script>
 (function () {
   var R = ${JSON.stringify(RESPONSES)};
-  // ?bc=nopub → 預覽回「桌次未發布」，用來驗發送鈕仍然鎖著
-  if (new URLSearchParams(location.search).get('bc') === 'nopub') {
-    R.previewPassBroadcast = ${JSON.stringify(BC_NOPUB)};
-  }
+  // ?bc=nopub → 桌次未發布；?bc=nourl → 範本少了 {連結}。兩者都要讓發送鈕鎖著
+  var _bc = new URLSearchParams(location.search).get('bc');
+  if (_bc === 'nopub') R.previewPassBroadcast = ${JSON.stringify(BC_NOPUB)};
+  if (_bc === 'nourl') R.previewPassBroadcast = ${JSON.stringify(BC_NOURL)};
   window.__vegCalls = [];
   var realFetch = window.fetch;
   window.fetch = function (url, opts) {
