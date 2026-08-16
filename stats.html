@@ -187,7 +187,6 @@
   .phs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
   .ph { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     background: var(--g-bg); color: var(--g); border: none; border-radius: 2px; padding: 3px 8px; cursor: pointer; }
-  .ph.lock { background: #f4f4f2; color: var(--ink2); }
   /* 鏡像上色圖層：與 textarea 疊在同一格，字體行高必須逐項相同，否則底色會錯位 */
   .tpl-wrap { position: relative; }
   .tpl-wrap textarea, .tpl-mirror {
@@ -472,7 +471,7 @@ function renderActBar(selId,barId){
    使用者要求：「到底有多少佔位符，都請一次提供給需要佔位符的地方」。 */
 var PH_SETS={
   bc:[{k:'姓名'},{k:'單位'},{k:'活動名'},{k:'日期'},{k:'桌次'},
-      {k:'連結',lock:true,why:'沒有它同仁點不到報到碼'}],
+      {k:'連結',why:'不能刪，沒有它同仁點不到報到碼'}],
   sn:[{k:'姓名'},{k:'單位'},{k:'年資'},{k:'年度'},{k:'入社日'}]
 };
 function phList(set){return PH_SETS[set]||[];}
@@ -486,7 +485,7 @@ function renderPhs(set,boxId,taId){
   box.innerHTML='<span class="ph-lead">點一下插入，或直接打「{」</span>';
   phList(set).forEach(function(p){
     var b=document.createElement('button');
-    b.type='button';b.className=p.lock?'ph lock':'ph';
+    b.type='button';b.className='ph';
     b.textContent='{'+p.k+'}';
     if(p.why)b.title=p.why;
     var ins=function(e){e.preventDefault();insertAtCursor(taId,'{'+p.k+'}');};
@@ -635,7 +634,7 @@ function loadActs(){
   box.innerHTML='<div class="empty">載入中…</div>';
   jsonp('listActivities',{token:q('t')}).then(function(r){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有活動</div>';return;}
+    if(!r.rows.length){box.innerHTML='<div class="empty">無</div>';return;}
     box.innerHTML=r.rows.slice().reverse().map(actCard).join('');
   });
 }
@@ -851,12 +850,15 @@ function tableKeys_(seats){
 function renderBoard(){
   if(!SB)return;
   var box=document.getElementById('seat-board'),h='';
+  // ⚠️ 一定要放在所有 early return 之前：素食視圖與「尚未排桌」那兩條路都會提早 return，
+  //    漏了這行，未排桌人數就會停在上一次的數字（2026-08-16 實測：全部未排桌卻顯示「1 人」）。
+  renderUnseated();
   if(seatView==='veg'){
     box.innerHTML='';
-    if(!SB.vegReady){box.innerHTML='<div class="empty">素食資料尚未就緒（後端未更新）</div>';
+    if(!SB.vegReady){box.innerHTML='<div class="empty">素食資料尚未就緒</div>';
       document.getElementById('seat-detail').innerHTML='';return;}
     var vs=SB.seats.filter(function(s){return s.veg;});
-    if(!vs.length){box.innerHTML='<div class="empty">這場活動沒有人吃素</div>';
+    if(!vs.length){box.innerHTML='<div class="empty">無</div>';
       document.getElementById('seat-detail').innerHTML='';return;}
     // 同一家廠商的素食席位被拆到兩桌以上時，份數可能算錯桌——提示要跟著素食視圖走
     var sv=vegSummary(SB.seats).splitVendors;
@@ -868,7 +870,7 @@ function renderBoard(){
   }
   if(seatView==='table'){
     var keys=tableKeys_(SB.seats);
-    if(!keys.length){box.innerHTML='<div class="empty">尚未排桌——先下載排位用檔，排好後上傳</div>';
+    if(!keys.length){box.innerHTML='<div class="empty">尚未排桌</div>';
       document.getElementById('seat-detail').innerHTML='';return;}
     h='<div class="board">'+keys.map(function(t){
       var m=SB.seats.filter(function(s){return String(s.table||'')===t;});
@@ -892,7 +894,6 @@ function renderBoard(){
     }).join('')+'</div>';
   }
   box.innerHTML=h;
-  renderUnseated();
   if(seatSel)pickTile(seatSel,true);else document.getElementById('seat-detail').innerHTML='';
 }
 function pickTile(key,keep){
@@ -1001,7 +1002,7 @@ function snLoad(){
     var sum=document.getElementById('sn-sum');
     if(!r.audience.length){
       box.innerHTML='';
-      sum.textContent=r.year+' 年度沒有年資逢 5 週年的在職同仁';
+      sum.textContent='無';
       document.getElementById('sn-fold').open=false;
     }
     else{
@@ -1137,7 +1138,7 @@ function stLoad(){
 }
 function renderStations(rows){
     var box=document.getElementById('st-list');
-    if(!rows.length){box.innerHTML='<div class="empty">還沒有任何掃描站。活動當天有幾台手機就開幾站。</div>';return;}
+    if(!rows.length){box.innerHTML='<div class="empty">無</div>';return;}
     box.innerHTML=rows.map(function(s){
       // 網址只留一行、超出用省略號：它的用途是「按複製」，不是給人讀
       // （2026-08-16 使用者：整站文字說明要更簡短；三行 URL 在手機上佔掉整張卡）
@@ -1782,7 +1783,7 @@ function toggleRep(btn,id){
   box.style.display='';box.innerHTML='<div class="empty">載入中…</div>';
   jsonp('getActivityReplies',{token:q('t'),actId:id}).then(function(r){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有回覆</div>';return;}
+    if(!r.rows.length){box.innerHTML='<div class="empty">無</div>';return;}
     // 依單位收納（同出席統計），單位旁顯示人數
     box.innerHTML=groupHtml(r.rows,function(items){
       return items.map(function(x){
