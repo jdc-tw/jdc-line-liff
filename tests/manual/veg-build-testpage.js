@@ -38,17 +38,21 @@ const BC_NOURL = Object.assign({}, BC_OK, {
   template: '【{活動名}】　{日期}\n您的桌次：{桌次}', tplHasUrl: false,
   sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌' });
 
+// 2026-08-16：掃描站改由 getSeatingBoard 一併帶回（省一趟 /exec），
+// fixture 要跟著補 stations，否則驗不到併車那條路、只會驗到「站別是空的」。
+const STATIONS = [
+  { token: 'tok1AAA', station: '第 1 站',
+    url: 'https://campaign.jdc-corpn.com.tw/staff.html?t=tok1AAA&act=actTEST' },
+  { token: 'tok2BBB', station: '報到台（主桌區）',
+    url: 'https://campaign.jdc-corpn.com.tw/staff.html?t=tok2BBB&act=actTEST' }];
+
 const RESPONSES = {
-  getSeatingBoard: FIXTURE,
+  getSeatingBoard: Object.assign({}, FIXTURE, { stations: STATIONS }),
   listActivities: ACTS,
   getAnniversaries: { ok: true, rows: [] },
   previewPassBroadcast: BC_OK,
   // 掃描站管理：一站已存在，用來驗列表／複製／換發／刪除的畫面
-  listStaffStations: { ok: true, actId: 'actTEST', rows: [
-    { token: 'tok1AAA', station: '第 1 站',
-      url: 'https://campaign.jdc-corpn.com.tw/staff.html?t=tok1AAA&act=actTEST' },
-    { token: 'tok2BBB', station: '第 2 站',
-      url: 'https://campaign.jdc-corpn.com.tw/staff.html?t=tok2BBB&act=actTEST' }] },
+  listStaffStations: { ok: true, actId: 'actTEST', rows: STATIONS },
   addStaffStation: { ok: true, token: 'tokNEW', station: '第 3 站' },
   removeStaffStation: { ok: true },
   batch: {

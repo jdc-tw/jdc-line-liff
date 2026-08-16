@@ -457,35 +457,58 @@ var SB = null;          // getSeatingBoard 結果
 var seatView = 'table'; // table | unit
 var seatSel = null;     // 選中的桌/單位
 
+// 開這個分頁原本要打三趟 /exec（listActivities → getSeatingBoard → listStaffStations），
+// 而且是接力不是並行；每趟固定 2–4s，合計 6–12s。現在：
+//   ① 活動清單沿用首屏那支 batch 的結果，這一趟直接消失
+//   ② 掃描站由 getSeatingBoard 順便回傳，不再單獨打一趟
+// 剩一趟。首屏 batch 失敗時才退回自己打一次。
 function loadTablesTab(){
-  jsonp('listActivities',{token:q('t')}).then(function(r){
+  pick('listActivities').then(function(r){
+    if(!r||!r.ok) return jsonp('listActivities',{token:q('t')});   // 首屏沒拿到才補打
+    return r;
+  }).then(function(r){
     if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     var sel=document.getElementById('ti-act');
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
       return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';}).join('');
     loadSeating();
-    stLoad();   // 掃描站連結要帶當下選到的 actId，所以等下拉填好才載
   });
 }
 function actId(){return document.getElementById('ti-act').value;}
 
+// SWR：先把上次的結果畫出來（秒顯），再背景重抓校正。抓失敗不蓋掉舊資料——
+// 寧可看到稍舊的座位，也不要整片變「載入失敗」（同 board/stats/hr-stats 既有慣例）。
+function applySeating(r){
+  SB=r; seatSel=null;
+  document.getElementById('g-sum').textContent='共 '+r.guestVendors+' 家・'+r.guestSeats+' 人';
+  // 座位表小字：實際出席＝員工＋廠商（同一份 SB.seats，與排位用檔的預定人數同源）
+  var _emp=r.seats.filter(function(s){return s.kind==='emp';}).length;
+  document.getElementById('s-sum').textContent='員工 '+_emp+' ＋ 廠商 '+r.guestSeats+' ＝ '+(_emp+r.guestSeats)+' 人';
+  var b=document.getElementById('pub-btn');
+  if(r.pubState==='none'){b.className='btn btn-amber';b.textContent='發佈桌次';}
+  else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
+  else {b.className='btn btn-red';b.textContent='重新發佈';}
+  renderBoard();
+  renderStations(r.stations||[]);   // 掃描站跟著同一包回來，不另打一趟
+}
 function loadSeating(){
   var id=actId();
   if(!id)return;
-  document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
-  document.getElementById('seat-detail').innerHTML='';
+  var key='seat_'+id;
+  var cached=swrGet(key);
+  if(cached){applySeating(cached);}                 // 秒顯
+  else{
+    document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
+    document.getElementById('seat-detail').innerHTML='';
+  }
   jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r){
-    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    SB=r; seatSel=null;
-    document.getElementById('g-sum').textContent='共 '+r.guestVendors+' 家・'+r.guestSeats+' 人';
-    // 座位表小字：實際出席＝員工＋廠商（同一份 SB.seats，與排位用檔的預定人數同源）
-    var _emp=r.seats.filter(function(s){return s.kind==='emp';}).length;
-    document.getElementById('s-sum').textContent='員工 '+_emp+' ＋ 廠商 '+r.guestSeats+' ＝ '+(_emp+r.guestSeats)+' 人';
-    var b=document.getElementById('pub-btn');
-    if(r.pubState==='none'){b.className='btn btn-amber';b.textContent='發佈桌次';}
-    else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
-    else {b.className='btn btn-red';b.textContent='重新發佈';}
-    renderBoard();
+    if(!r||!r.ok){
+      // 有舊資料就留著（畫面上已經是它），只有完全沒有時才顯示錯誤
+      if(!cached)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      return;
+    }
+    swrSet(key,r);
+    applySeating(r);
   });
 }
 function setSeatView(v){
@@ -633,12 +656,20 @@ function seatUnpublish(){
 }
 
 // ── 掃描站管理：列出／新增／換 token／刪除 ────────────────────────────────
+// 開頁時站別由 getSeatingBoard 一併帶回（renderStations）；只有增刪站別後才單獨重抓。
 function stLoad(){
   jsonp('listStaffStations',{token:q('t'),actId:actId()}).then(function(r){
     var box=document.getElementById('st-list');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有任何掃描站。活動當天有幾台手機就開幾站。</div>';return;}
-    box.innerHTML=r.rows.map(function(s){
+    renderStations(r.rows);
+    // 站別變動了，座位表那包裡的 stations 也過期——清掉快取免得下次進來看到舊的
+    try{sessionStorage.removeItem('seat_'+actId());}catch(e){}
+  });
+}
+function renderStations(rows){
+    var box=document.getElementById('st-list');
+    if(!rows.length){box.innerHTML='<div class="empty">還沒有任何掃描站。活動當天有幾台手機就開幾站。</div>';return;}
+    box.innerHTML=rows.map(function(s){
       return '<div style="border:1px solid #eee;border-radius:10px;padding:10px;margin-bottom:8px">'
         +'<div style="font-weight:600;margin-bottom:4px">'+esc(s.station)+'</div>'
         +'<div style="font-size:12px;color:#888;word-break:break-all;line-height:1.5">'+esc(s.url)+'</div>'
@@ -648,8 +679,7 @@ function stLoad(){
         +'<button class="btn" style="font-size:13px" onclick="stDel(\''+esc(s.token)+'\',\''+esc(s.station)+'\')">刪除</button>'
         +'</div></div>';
     }).join('');
-    window.__stRows=r.rows;
-  });
+    window.__stRows=rows;
 }
 function stCopy(tok){
   var row=(window.__stRows||[]).filter(function(s){return s.token===tok;})[0];
