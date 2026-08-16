@@ -1241,7 +1241,8 @@ function bcRenderSched(r){
     tag.innerHTML='<span class="tag r">預約發送失敗</span>';
     dt.value=sc.date;dt.disabled=false;bt.textContent='重新預約';bt.disabled=false;
   }else if(sc){
-    tag.innerHTML='<span class="tag w">已預約 '+esc(String(sc.date).slice(5))+'</span>';
+    tag.innerHTML='<span class="tag w">已預約 '+esc(String(sc.date).slice(5))+'</span>'
+      +(r.schedStale?'<span class="tag r">內容已改，未重新預約</span>':'');
     dt.value=sc.date;dt.disabled=true;bt.textContent='取消預約';bt.disabled=false;
   }else{
     tag.innerHTML='';
@@ -1297,6 +1298,12 @@ function bcPreview(){
     if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
     if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
       +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
+    // 預約拍的是快照：改了內容沒重新預約，到期送的還是舊那份。
+    // ⚠️ 這句放 warn 區、不放 setMsg——bcPreview 結尾會 setMsg('bc-msg','') 把訊息洗掉
+    //    （2026-08-16 實測到，第一版就是這樣靜靜消失的）。
+    if(r.schedStale)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ '
+      +esc(r.schedule.date)+' 要送的是<b>預約當下</b>那一份內容，不是你現在看到的。'
+      +'要用新的就先取消預約、再重新預約一次。</p>';
     document.getElementById('bc-preview').innerHTML=warn
       +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
       +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
