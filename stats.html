@@ -257,13 +257,11 @@
        ⚠️ 年度是「名單身分」不是「發送時間」——忘年會表揚與社內報問卷都落在隔年，
        所以 2027 年打開這張卡，年度下拉仍然要選得到 2026。 -->
   <div class="card">
-    <h2>年資里程碑</h2>
-    <p class="hint">年度＝名單身分，與發送日期無關（表揚與問卷都在隔年）。</p>
+    <h2>年資里程碑<span id="sn-cnt"></span></h2>
     <div class="scope" style="margin-top:10px">
       <span style="font-size:12.5px;color:var(--ink2)">年度</span>
       <select id="sn-year" onchange="snLoad()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
     </div>
-    <div id="sn-sum" class="hint" style="margin-top:10px">載入中…</div>
     <div class="scope" style="margin:6px 0 0">
       <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(true)">全選</button>
       <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(false)">全不選</button>
@@ -332,7 +330,7 @@
   <div class="actbar" id="ti-actbar"></div>
 
   <div class="card">
-    <h2>來賓名單 <span id="g-sum" style="color:var(--ink3);font-weight:400;font-size:13px"></span></h2>
+    <h2>來賓名單<span id="g-sum"></span></h2>
     <div class="btnrow"><button class="btn" onclick="document.getElementById('g-file').click()">上傳</button>
       <button class="btn" onclick="dlGuestFile()">下載</button></div>
     <input type="file" id="g-file" accept=".xlsx,.xls" style="display:none" onchange="upGuests(this)">
@@ -340,7 +338,7 @@
   </div>
 
   <div class="card">
-    <h2>座位表 <span id="s-sum" style="color:var(--ink3);font-weight:400;font-size:13px"></span></h2>
+    <h2>座位表<span id="s-sum"></span></h2>
     <div class="btnrow"><button class="btn" onclick="dlSeatingFile()">排位用檔</button>
       <button class="btn" onclick="document.getElementById('s-file').click()">上傳排位結果</button></div>
     <input type="file" id="s-file" accept=".xlsx,.xls" style="display:none" onchange="upSeating(this)">
@@ -372,7 +370,7 @@
        刻意不放 EVENT_CHECKIN_SECRET 的輪替——那顆一按，所有已印紙卡與已發 QR 全部失效，
        跟撤一個站別不是同一個量級，不該擺在同一張卡上讓人順手按到。 -->
   <div class="card">
-    <h2>掃描站管理</h2>
+    <h2>掃描站管理<span id="st-cnt"></span></h2>
     <p class="hint" style="margin:0 0 10px">每台工作人員手機各一條連結，站名顯示在掃描頁頂列。</p>
     <div id="st-list"><div class="empty">載入中…</div></div>
     <div class="scope" style="margin-top:10px">
@@ -802,10 +800,14 @@ function loadCheckinTab(){
 // 寧可看到稍舊的座位，也不要整片變「載入失敗」（同 board/stats/hr-stats 既有慣例）。
 function applySeating(r){
   SB=r; seatSel=null;
-  document.getElementById('g-sum').textContent='共 '+r.guestVendors+' 家・'+r.guestSeats+' 人';
+  // 數字一律走「標題旁小標籤」這個形狀（2026-08-16 使用者：報到碼通知那顆的設計原則全站套用）
+  document.getElementById('g-sum').innerHTML=
+    '<span class="tag">'+r.guestVendors+' 家</span><span class="tag">'+r.guestSeats+' 人</span>';
   // 座位表小字：實際出席＝員工＋廠商（同一份 SB.seats，與排位用檔的預定人數同源）
   var _emp=r.seats.filter(function(s){return s.kind==='emp';}).length;
-  document.getElementById('s-sum').textContent='員工 '+_emp+' ＋ 廠商 '+r.guestSeats+' ＝ '+(_emp+r.guestSeats)+' 人';
+  document.getElementById('s-sum').innerHTML=
+    '<span class="tag">共 '+(_emp+r.guestSeats)+' 人</span>'
+    +'<span class="tag">員工 '+_emp+'</span><span class="tag">廠商 '+r.guestSeats+'</span>';
   // 發佈狀態＝一顆按鈕（2026-08-16 使用者要求：不要另外一個叫「危險操作」的摺疊區）。
   // 三種狀態各自對應一個動作，按鈕文字就是接下來會發生的事：
   //   none  → 還沒發 → 「發佈桌次」（主色）
@@ -1017,16 +1019,16 @@ function snLoad(){
     var isel=document.getElementById('sn-idx'),keep=isel.value;
     isel.innerHTML=r.titles.map(function(t,i){return '<option value="'+i+'">'+esc(t)+'</option>';}).join('');
     if(keep&&Number(keep)<r.titles.length)isel.value=keep;
-    var sum=document.getElementById('sn-sum');
+    var sum=document.getElementById('sn-cnt');
     if(!r.audience.length){
       box.innerHTML='';
-      sum.textContent='無';
+      sum.innerHTML='<span class="tag">無</span>';
     }
     else{
       // 摘要一行講完：幾人、各年資幾人、幾個發不出去。收起來時這一行就是全部資訊。
       // 只留總人數（2026-08-16 使用者：各年資人數下面每組都寫了，發不出去的每列也標了紅字，
       // 摘要再講一次全是重複）。
-      sum.textContent=r.audience.length+' 人';
+      sum.innerHTML='<span class="tag">'+r.audience.length+' 人</span>';
       // 與年資里程碑同一套語彙：以年資分組、名字大、附屬資訊縮成小標籤。
       // 兩張卡看的是同一批人，長得不一樣只會讓人以為是兩份名單。
       var g={},ord=[];
@@ -1149,6 +1151,8 @@ function stLoad(){
 }
 function renderStations(rows){
     var box=document.getElementById('st-list');
+    var cnt=document.getElementById('st-cnt');
+    if(cnt)cnt.innerHTML=rows.length?'<span class="tag">'+rows.length+' 站</span>':'';
     if(!rows.length){box.innerHTML='<div class="empty">無</div>';return;}
     box.innerHTML=rows.map(function(s){
       // 網址只留一行、超出用省略號：它的用途是「按複製」，不是給人讀
