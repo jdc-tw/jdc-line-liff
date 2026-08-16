@@ -24,10 +24,19 @@ const FIXTURE = require('./veg-fixture.js');
 
 const ACTS = { ok: true, rows: [{ id: 'actTEST', name: '驗收用活動', status: '開放', open: true, replies: 5 }] };
 
+// 報到碼通知（2026-08-16）：預覽必須回真實形狀，否則驗不到「未發布時發送鈕不解鎖」。
+// 兩種情境由網址 ?bc=nopub 切換——published:false 是最該驗的那條（送出去收不回來）。
+const BC_OK = {
+  ok: true, actName: '驗收用活動', eventDate: '2026/08/28', published: true,
+  participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
+  sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST' };
+const BC_NOPUB = Object.assign({}, BC_OK, { published: false });
+
 const RESPONSES = {
   getSeatingBoard: FIXTURE,
   listActivities: ACTS,
   getAnniversaries: { ok: true, rows: [] },
+  previewPassBroadcast: BC_OK,
   batch: {
     ok: true,
     results: {
@@ -41,6 +50,10 @@ const RESPONSES = {
 const stub = `<script>
 (function () {
   var R = ${JSON.stringify(RESPONSES)};
+  // ?bc=nopub → 預覽回「桌次未發布」，用來驗發送鈕仍然鎖著
+  if (new URLSearchParams(location.search).get('bc') === 'nopub') {
+    R.previewPassBroadcast = ${JSON.stringify(BC_NOPUB)};
+  }
   window.__vegCalls = [];
   var realFetch = window.fetch;
   window.fetch = function (url, opts) {
