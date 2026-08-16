@@ -104,6 +104,8 @@ const stub = `<script>
   var _sc = new URLSearchParams(location.search).get('sched');
   if (_sc === 'on') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' } });
+  if (_sc === 'stale') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
+    { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' }, schedStale: true });
   if (_sc === 'sent') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { schedule: { date: '2026-08-27', status: 'sent', sentAt: '2026-08-27 09:00', sent: 135, failed: 0 } });
   if (_sc === 'failed') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
