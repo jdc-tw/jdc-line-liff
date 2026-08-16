@@ -11,16 +11,35 @@ function annivInit(jsonpFn, token, opts) {
       if (emptyText) { box.innerHTML = '<div class="empty">' + annivEsc_((r && !r.ok && r.msg) || emptyText) + '</div>'; box.style.display = ''; }
       return;
     }
-    // 2026-08-16 改版：拿掉 🎖 與 border-left:4px solid #b8860b（使用者看到的那條「奇怪的黃色直線」），
-    // 也不再自己包一層 .card ——呼叫端（stats/board）已經把它放在卡片裡，內層再包一張就是卡中卡。
-    // 年度改成標題旁的小字，不另起一行搶版面。
-    box.innerHTML = '<div style="font-size:12px;color:#9a9a96;margin-bottom:6px">'
+    // 2026-08-16 改版（使用者逐項指定）：
+    // ① 拿掉 🎖 與 border-left:4px solid #b8860b（他說的那條「奇怪的黃色直線」）
+    // ② 不再自己包一層 .card——呼叫端（stats/board）已經放在卡片裡，內層再包就是卡中卡
+    // ③ 改標籤語彙：名字大、單位與入社日縮成小標籤（淺底淡字）
+    // ④ 以年資分組，由高到低——這份名單的用途就是「今年誰滿幾年」，年資才是主鍵，不是姓名
+    // 樣式寫成 inline：這支 board.html 也在用，那頁沒有 stats.html 的 class，
+    // 靠 class 會在其中一頁變成裸文字（而且不會報錯）。
+    var TAG = 'display:inline-block;font-size:11px;line-height:1.75;padding:0 6px;'
+      + 'border-radius:2px;background:#f1f1ef;color:#6b6b68;vertical-align:2px;white-space:nowrap';
+    var groups = {}, order = [];
+    rows.forEach(function (o) {
+      var y = Number(o.years) || 0;
+      if (!groups[y]) { groups[y] = []; order.push(y); }
+      groups[y].push(o);
+    });
+    order.sort(function (a, b) { return b - a; });          // 年資高的在前
+    box.innerHTML = '<div style="font-size:12px;color:#9a9a96;margin-bottom:2px">'
       + annivEsc_(r.year) + ' 年度期滿</div>'
-      + rows.map(function (o) {
-          return '<div style="font-size:14.5px;margin:3px 0">' + annivEsc_(o.name)
-            + '<span style="color:#9a9a96;font-size:12.5px">（' + annivEsc_(o.unit) + '）</span>滿 '
-            + o.years + ' 年<span style="color:#9a9a96;font-size:12.5px">・'
-            + annivEsc_(o.date) + '</span></div>';
+      + order.map(function (y) {
+          return '<div style="font-size:12px;color:#9a9a96;font-weight:600;letter-spacing:.05em;'
+            + 'margin:12px 0 2px">滿 ' + y + ' 年　' + groups[y].length + ' 人</div>'
+            + groups[y].map(function (o) {
+                return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;'
+                  + 'padding:5px 0;border-bottom:1px solid #f4f4f2">'
+                  + '<span style="font-size:15.5px;font-weight:600;color:#2c2c2b">'
+                  + annivEsc_(o.name) + '</span>'
+                  + '<span style="' + TAG + '">' + annivEsc_(o.unit) + '</span>'
+                  + '<span style="' + TAG + '">' + annivEsc_(o.date) + '</span></div>';
+              }).join('');
         }).join('');
     box.style.display = '';
   });
