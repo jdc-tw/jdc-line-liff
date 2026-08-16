@@ -240,10 +240,18 @@
       </div>
     </div>
 
-    <!-- 通行證：個人報到 QR（?mode=pass） -->
+    <!-- 通行證：一頁三區＝姓名與桌次／報到 QR／獎金卡（?mode=pass） -->
     <div id="section-pass" class="card" style="display:none">
       <h2>我的報到碼</h2>
+      <!-- 活動名一定要顯示：連結可省略 ?act 交由伺服器挑場次，萬一挑錯場，
+           同仁在這裡就看得出來，不必等到現場掃描才發現（2026-08-16 拍板的補償措施）。 -->
+      <p id="pass-act" class="hint" style="text-align:center;margin:0 0 4px"></p>
       <div id="pass-msg"></div>
+      <div id="pass-seat" style="display:none;text-align:center;margin:8px 0 12px">
+        <div id="pass-name" style="font-size:17px;color:#555"></div>
+        <div><span id="pass-table" style="font-size:64px;font-weight:700;line-height:1.05;color:#06c755"></span><span
+              id="pass-table-unit" style="font-size:17px;color:#555;margin-left:4px">桌</span></div>
+      </div>
       <div id="pass-qr" style="text-align:center"></div>
       <p class="hint" style="text-align:center">出示給工作人員掃描</p>
       <p style="text-align:center"><a href="#" id="pass-retry" style="font-size:14px;color:#1a56c4">重新整理</a></p>
@@ -440,22 +448,39 @@
       document.getElementById('loading').style.display = 'none';
       document.getElementById('main').style.display = 'block';
       show('section-pass');
+      // act 可省略：圖文選單那顆是常駐按鈕、活動 ID 每場不同，故不帶 act 時由伺服器
+      // 挑「今天(含)之後最早的一場」（pickDefaultAct）。挑到哪一場一律顯示在 #pass-act。
       var act = getAct();
       var msgEl = document.getElementById('pass-msg');
-      if (!act) { showMsg(msgEl, escHtml('連結缺少活動參數'), 'err'); return; }
       jsonp('getEventCheckinPass', { userId: userId, act: act }).then(function (res) {
         if (!res || !res.ok) {
           showMsg(msgEl, escHtml((res && res.msg) || '取得報到碼失敗，請稍後再試。'), 'err');
           return;
         }
+        renderPassHeader(res);
         var qr = qrcode(0, 'H');
         qr.addData(res.code);
         qr.make();
         document.getElementById('pass-qr').innerHTML = qr.createImgTag(6, 8);
+        loadLottery(userId, res.actId || act);   // 伺服器挑的場次為準，否則獎金卡會查錯場
       }).catch(function (err) {
         showMsg(msgEl, escHtml('網路錯誤：' + (err && err.message ? err.message : err)), 'err');
       });
-      loadLottery(userId, act); // 我的獎金卡：另外打、不阻塞上面的 QR 顯示
+    }
+
+    // 通行證上半部：活動名／姓名／大字桌號。桌次未發布或查無回覆時整區不出現，
+    // 不留「未定」佔位——佔位只會讓人來問，等於製造工作。
+    function renderPassHeader(res) {
+      var a = res.activity || {};
+      document.getElementById('pass-act').textContent =
+        [a.name || '', a.eventDate || ''].filter(Boolean).join('　');
+      var table = String(res.table == null ? '' : res.table).trim();
+      if (!table) return;
+      document.getElementById('pass-name').textContent = res.name || '';
+      document.getElementById('pass-table').textContent = table;
+      // 「主桌」這種非數字桌號本身已含「桌」意，再接一個「桌」字會變「主桌桌」
+      document.getElementById('pass-table-unit').style.display = /^\d+$/.test(table) ? '' : 'none';
+      document.getElementById('pass-seat').style.display = 'block';
     }
 
     // ─── 我的獎金卡（pass 頁·報到後顯示·尾牙專用）───────────────────────────────
