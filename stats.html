@@ -36,6 +36,12 @@
     --r: #ac1335;
     --r-dim: #8f3040;      /* 大面積文字用，純 logo 紅在小字上太跳 */
     --r-bg: #fbeef1;
+    /* 主要動作色＝墨藍（2026-08-16 使用者從四個選項挑的）。三色各有職責：
+       藍＝可以按的動作、綠＝正常與已完成、紅＝例外與注意。
+       藍不在 logo 裡，是刻意引進的第三色——logo 只有紅與深綠，
+       兩者都已經有語意，再拿其中一個當按鈕就會跟語意打架。 */
+    --b: #2f4858;
+    --b-dk: #24363f;
     --bad: var(--r-dim);   /* 錯誤沿用同一族紅，不再另開一個磚紅 */
     --bad-bg: var(--r-bg);
   }
@@ -105,8 +111,8 @@
     border-radius: 3px; cursor: pointer; font-family: inherit; background: #f0f0ee; color: var(--ink);
     transition: background .15s; }
   .btn:active { background: #e4e4e1; }
-  .btn-pri, .btn-pri2 { background: var(--g); color: #fff; }
-  .btn-pri:active, .btn-pri2:active { background: var(--g-dk); }
+  .btn-pri, .btn-pri2 { background: var(--b); color: #fff; }
+  .btn-pri:active, .btn-pri2:active { background: var(--b-dk); }
   .btn-pri { width: 100%; }
   .btn-sm { padding: 4px 11px; font-size: 12.5px; background: #f0f0ee; color: var(--ink); margin: 4px 6px 0 0; }
   .btn-sm.warn { background: var(--bad-bg); color: var(--bad); }
@@ -180,6 +186,8 @@
   .grp-h { font-size: 12px; color: var(--ink3); font-weight: 600; letter-spacing: .05em;
     margin: 14px 0 2px; }
   .grp-h:first-child { margin-top: 4px; }
+  /* 標題旁的狀態標籤：把「幾則／已預約／已發送」收成一顆，不另起一行重複講 */
+  h2 .tag { margin-left: 6px; font-weight: 400; vertical-align: 3px; }
   /* 可拉開的名單標頭：預設收起來只給一行摘要，要挑人才拉開 */
   .fold-sum { list-style: none; cursor: pointer; font-size: 13.5px; color: var(--ink2);
     padding: 7px 0; display: flex; align-items: center; gap: 6px; }
@@ -376,7 +384,7 @@
 
   <!-- 報到碼通知：活動前一天由使用者按鈕發送（2026-08-16 拍板不做自動排程） -->
   <div class="card">
-    <h2>報到碼通知</h2>
+    <h2>報到碼通知<span id="bc-tag"></span><span id="bc-cnt"></span></h2>
     <p class="hint" style="margin:0 0 8px">一人一則，各自帶本人桌次與報到碼連結。</p>
     <!-- 可編輯範本：改完要再按一次預覽（範例一律由伺服器套範本產生，前端不自己算，
          否則預覽看到的與真正送出的會是兩套規則）。改動後發送鈕重新鎖上。
@@ -398,11 +406,18 @@
       <button class="btn" onclick="bcTplReset()">還原預設</button></div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
+    <!-- 預約發送（2026-08-16）：預設活動前一天。狀態畫在標題旁的小標籤上。
+         ⚠️ 這是全站唯一「沒有人按按鈕也會送出 137 則」的路徑，
+         後端另有四道閘（見 Code.js 的預約區塊）。 -->
+    <div class="scope" style="margin-top:14px">
+      <span style="font-size:12.5px;color:var(--ink2)">發送日</span>
+      <input type="date" id="bc-date" style="flex:1;font-size:13.5px;padding:7px 10px">
+      <button class="btn" id="bc-sched" onclick="bcSchedule()">預約</button></div>
     <!-- 發送給全部在補發之上（2026-08-16 使用者要求）：它是這張卡的主要動作，
          補發是事後補救。順序照「先做的在上面」。 -->
-    <div class="btnrow" style="margin-top:14px">
+    <div class="btnrow" style="margin-top:10px">
       <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled
-        style="flex:1">發送給全部</button></div>
+        style="flex:1">立即發送給全部</button></div>
     <!-- 補發：137 人裡總有人沒收到、換手機、或自己刪掉了。
          不收摺疊；先選單位再選人的兩段式，137 個名字擠一個下拉在手機上挑不動。 -->
     <div id="bc-one" style="margin-top:14px;display:none">
@@ -1009,15 +1024,9 @@ function snLoad(){
     }
     else{
       // 摘要一行講完：幾人、各年資幾人、幾個發不出去。收起來時這一行就是全部資訊。
-      var cnt={},nBad=0;
-      r.audience.forEach(function(p){
-        var y=Number(p.years)||0; cnt[y]=(cnt[y]||0)+1;
-        if(p.status!=='ok')nBad++;
-      });
-      var parts=Object.keys(cnt).map(Number).sort(function(a,b){return b-a;})
-        .map(function(y){return '滿 '+y+' 年 '+cnt[y]+' 人';});
-      sum.textContent=r.audience.length+' 人（'+parts.join('・')+'）'
-        +(nBad?'　'+nBad+' 人發不出去':'');
+      // 只留總人數（2026-08-16 使用者：各年資人數下面每組都寫了，發不出去的每列也標了紅字，
+      // 摘要再講一次全是重複）。
+      sum.textContent=r.audience.length+' 人';
       // 與年資里程碑同一套語彙：以年資分組、名字大、附屬資訊縮成小標籤。
       // 兩張卡看的是同一批人，長得不一樣只會讓人以為是兩份名單。
       var g={},ord=[];
@@ -1212,6 +1221,52 @@ function bcTplReset(){
   document.getElementById('bc-tpl').value=BC_DEFAULT_TPL;
   bcPreview();
 }
+/**
+ * 標題旁的兩顆小標籤＋預約列。
+ * 「幾則」與「已預約／已發送」都收在標題旁，不在內文重複講一次（2026-08-16 使用者要求）。
+ */
+function bcRenderSched(r){
+  var tag=document.getElementById('bc-tag'),cnt=document.getElementById('bc-cnt'),
+      dt=document.getElementById('bc-date'),bt=document.getElementById('bc-sched');
+  cnt.innerHTML=r.willSend?'<span class="tag">'+r.willSend+' 則</span>':'';
+  var sc=r.schedule;
+  if(sc&&sc.status==='sent'){
+    tag.innerHTML='<span class="tag g">已發送 '+esc(String(sc.sentAt||sc.date).slice(5))+'</span>';
+    dt.value=sc.date;dt.disabled=true;bt.textContent='已發送';bt.disabled=true;
+  }else if(sc&&sc.status==='failed'){
+    tag.innerHTML='<span class="tag r">預約發送失敗</span>';
+    dt.value=sc.date;dt.disabled=false;bt.textContent='重新預約';bt.disabled=false;
+  }else if(sc){
+    tag.innerHTML='<span class="tag w">已預約 '+esc(String(sc.date).slice(5))+'</span>';
+    dt.value=sc.date;dt.disabled=true;bt.textContent='取消預約';bt.disabled=false;
+  }else{
+    tag.innerHTML='';
+    if(!dt.value)dt.value=r.defaultDate||'';
+    dt.disabled=false;bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl);
+  }
+  BC_SCHED=sc||null;
+}
+var BC_SCHED=null;
+function bcSchedule(){
+  if(BC_SCHED&&BC_SCHED.status==='scheduled'){
+    if(!confirm('取消 '+BC_SCHED.date+' 的預約發送？'))return;
+    jsonp('cancelPassSchedule',{token:q('t'),actId:ckActId()}).then(function(r){
+      if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'取消失敗','err');return;}
+      setMsg('bc-msg','已取消預約。','ok');bcPreview();
+    });
+    return;
+  }
+  var d=document.getElementById('bc-date').value;
+  if(!d){setMsg('bc-msg','請先選發送日','err');return;}
+  // 預約＝把「要不要送」交給時間。確認框要把這件事講明白
+  if(!confirm('預約在 '+d+' 自動發送給 '+(BC?BC.willSend:'?')+' 位同仁？\n\n'
+      +'到了那天系統會自己送出，不需要有人按按鈕。\n送出後收不回來。'))return;
+  jsonp('schedulePassBroadcast',{token:q('t'),actId:ckActId(),date:d,
+    tpl:document.getElementById('bc-tpl').value||''}).then(function(r){
+    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'預約失敗','err');return;}
+    setMsg('bc-msg','已預約 '+d+' 自動發送。','ok');bcPreview();
+  });
+}
 /** 存範本（2026-08-16 補：原本改了根本沒存，重新整理就變回預設，而畫面沒講）。 */
 function bcSaveTpl(){
   jsonp('savePassTemplate',{token:q('t'),tpl:document.getElementById('bc-tpl').value}).then(function(r){
@@ -1238,13 +1293,12 @@ function bcPreview(){
     if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
     if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
       +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
-    document.getElementById('bc-preview').innerHTML=
-      '<p class="hint" style="margin:0 0 4px">'+esc(r.actName)+'　'+esc(r.eventDate)
-      +'　將發送 '+r.willSend+' 則</p>'+warn
+    document.getElementById('bc-preview').innerHTML=warn
       +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
       +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
       +esc(r.sample)+'</pre>';
-    document.getElementById('bc-preview').style.display='block';
+    document.getElementById('bc-preview').style.display=warn?'block':'none';
+    bcRenderSched(r);
     // 少了 {連結} 不再鎖死按鈕（2026-08-16 使用者要求改成警示＋確認）：
     // 鎖住按鈕不講原因，只會讓人以為系統壞了。改成讓他看到警語、自己決定。
     document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0);
@@ -1848,6 +1902,8 @@ function renderStats(r){
   meta.textContent=out.metaText;
   box.innerHTML=out.bodyHtml;
   showAdminSwitch(r.admin);   // 導覽元件，不依賴「有沒有開放中的活動」→ 擺在 out.ok 早退之前
+  // 沒有活動就連選擇器都不要出現（2026-08-16 使用者：只剩一個標題然後寫沒有開放，很奇怪）
+  document.getElementById('act-actbar').style.display=out.ok?'':'none';
   if(!out.ok)return;
   window._curAct=out.actId;
   var sel=document.getElementById('act-picker');
