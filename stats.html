@@ -75,7 +75,10 @@
   .p .op { font-size: 13.5px; color: var(--ink2); display: block; margin-top: 2px; }
   .empty { text-align: center; color: var(--ink3); padding: 26px 0; font-size: 14px; }
   /* tabs：扁平、無框，靠底線指示目前分頁 */
-  .tabs { display: flex; gap: 2px; margin: 0 0 18px; border-bottom: 1px solid var(--ln); }
+  /* 固定在頂端：捲到最下面仍然跳得了頁（2026-08-16 使用者要求）。
+     背景要不透明，否則捲動時下方內容會透上來。 */
+  .tabs { display: flex; gap: 2px; margin: 0 0 18px; border-bottom: 1px solid var(--ln);
+    position: sticky; top: 0; z-index: 30; background: var(--bg); }
   .tabs button { flex: 1; padding: 9px 0 10px; font-size: 14.5px; font-weight: 500; color: var(--ink3);
     background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
     font-family: inherit; transition: color .15s, border-color .15s; }
@@ -99,15 +102,15 @@
   .fld textarea { min-height: 56px; resize: vertical; }
   /* 每一顆按鈕都明寫 color：不寫＝iOS 給系統藍 */
   .btn { display: inline-block; padding: 9px 16px; font-size: 14.5px; font-weight: 600; border: none;
-    border-radius: 3px; cursor: pointer; font-family: inherit; background: var(--g-bg); color: var(--g);
+    border-radius: 3px; cursor: pointer; font-family: inherit; background: #f0f0ee; color: var(--ink);
     transition: background .15s; }
-  .btn:active { background: var(--g-ln); }
+  .btn:active { background: #e4e4e1; }
   .btn-pri, .btn-pri2 { background: var(--g); color: #fff; }
   .btn-pri:active, .btn-pri2:active { background: var(--g-dk); }
   .btn-pri { width: 100%; }
-  .btn-sm { padding: 4px 11px; font-size: 12.5px; background: #f4f4f2; color: var(--ink2); margin: 4px 6px 0 0; }
+  .btn-sm { padding: 4px 11px; font-size: 12.5px; background: #f0f0ee; color: var(--ink); margin: 4px 6px 0 0; }
   .btn-sm.warn { background: var(--bad-bg); color: var(--bad); }
-  .btn-up { background: #fff; color: var(--g); border: 1px solid var(--g-ln); }
+  .btn-up { background: #fff; color: var(--ink); border: 1px solid var(--ln); }
   .btn-amber { background: var(--warn-bg); color: var(--warn); }
   .btn-red { background: var(--bad-bg); color: var(--bad); }
   .btn-grey { background: #f4f4f2; color: var(--ink2); }
@@ -252,14 +255,12 @@
       <span style="font-size:12.5px;color:var(--ink2)">年度</span>
       <select id="sn-year" onchange="snLoad()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
     </div>
-    <details id="sn-fold" style="margin-top:4px">
-      <summary id="sn-sum" class="fold-sum">載入中…</summary>
-      <div class="scope" style="margin:8px 0 0">
-        <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(true)">全選</button>
-        <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(false)">全不選</button>
-      </div>
-      <div id="sn-people"></div>
-    </details>
+    <div id="sn-sum" class="hint" style="margin-top:10px">載入中…</div>
+    <div class="scope" style="margin:6px 0 0">
+      <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(true)">全選</button>
+      <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(false)">全不選</button>
+    </div>
+    <div id="sn-people"></div>
     <div class="scope" style="margin-top:12px">
       <span style="font-size:12.5px;color:var(--ink2)">訊息</span>
       <select id="sn-idx" onchange="snPickMsg()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
@@ -397,9 +398,13 @@
       <button class="btn" onclick="bcTplReset()">還原預設</button></div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
+    <!-- 發送給全部在補發之上（2026-08-16 使用者要求）：它是這張卡的主要動作，
+         補發是事後補救。順序照「先做的在上面」。 -->
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled
+        style="flex:1">發送給全部</button></div>
     <!-- 補發：137 人裡總有人沒收到、換手機、或自己刪掉了。
-         不收摺疊（2026-08-16 使用者要求）；改成先選單位再選人的兩段式，
-         137 個名字擠一個下拉在手機上挑不動。 -->
+         不收摺疊；先選單位再選人的兩段式，137 個名字擠一個下拉在手機上挑不動。 -->
     <div id="bc-one" style="margin-top:14px;display:none">
       <div class="sec" style="margin:0 0 6px">補發給特定人</div>
       <div class="scope">
@@ -407,10 +412,6 @@
         <select id="bc-one-sel" style="flex:1;font-size:13.5px;padding:8px 10px"></select>
         <button class="btn" onclick="bcSendOne()">補發</button></div>
     </div>
-    <!-- 發送鈕放最後：讀完內容與預覽才會看到它。收不回來的動作擺在閱讀順序的終點。 -->
-    <div class="btnrow" style="margin-top:14px">
-      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled
-        style="flex:1">發送給全部</button></div>
   </div>
 
   <div class="card">
@@ -631,7 +632,13 @@ function loadActs(){
   jsonp('listActivities',{token:q('t')}).then(function(r){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     if(!r.rows.length){box.innerHTML='<div class="empty">無</div>';return;}
-    box.innerHTML=r.rows.slice().reverse().map(actCard).join('');
+    // 「最新的活動排最上面」＝以活動日期為主鍵（沒填就退回截止日），同日才看建立順序。
+    // 原本只是 reverse()＝建立順序，晚建立的舊活動會壓在新活動上面。
+    box.innerHTML=r.rows.map(function(a,i){return {a:a,i:i};}).sort(function(x,y){
+      var kx=String(x.a.eventDate||x.a.deadline||''),ky=String(y.a.eventDate||y.a.deadline||'');
+      if(kx!==ky)return kx<ky?1:-1;
+      return y.i-x.i;
+    }).map(function(o){return actCard(o.a);}).join('');
   });
 }
 
@@ -931,7 +938,7 @@ function renderDetail(title,list,showTableTag){
     }else{
       // 姓名本身就是入口：點下去開個人頁（QR＋下載都在那裡）。
       // 2026-08-16 使用者：原本每一列右邊掛「🔳」與「⬇QR」兩顆，重複且擠。
-      h+='<span class="nm" style="color:var(--g);cursor:pointer" '
+      h+='<span class="nm" style="cursor:pointer" '
         +'onclick="showPerson(\''+esc(s.name)+'\')">'+esc(s.name)+'</span>'
         +(s.title?'<span class="ti">'+esc(s.title)+'</span>':'')+'<span class="sp"></span>';
       if(s.veg)h+='<span class="veg">素</span>';
@@ -999,7 +1006,6 @@ function snLoad(){
     if(!r.audience.length){
       box.innerHTML='';
       sum.textContent='無';
-      document.getElementById('sn-fold').open=false;
     }
     else{
       // 摘要一行講完：幾人、各年資幾人、幾個發不出去。收起來時這一行就是全部資訊。
@@ -1229,7 +1235,7 @@ function bcPreview(){
     var W='margin:4px 0;font-size:13px;line-height:1.6;color:';
     var warn='';
     if(!r.published)warn+='<p style="'+W+'var(--bad)">桌次尚未發布，先在座位表按「發佈桌次」。</p>';
-    if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad)">內容少了 {連結}，同仁點不到報到碼。</p>';
+    if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
     if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
       +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
     document.getElementById('bc-preview').innerHTML=
@@ -1239,7 +1245,9 @@ function bcPreview(){
       +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
       +esc(r.sample)+'</pre>';
     document.getElementById('bc-preview').style.display='block';
-    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.tplHasUrl);
+    // 少了 {連結} 不再鎖死按鈕（2026-08-16 使用者要求改成警示＋確認）：
+    // 鎖住按鈕不講原因，只會讓人以為系統壞了。改成讓他看到警語、自己決定。
+    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0);
     bcFillOne(r.people||[]);
     setMsg('bc-msg','','ok');
   });
@@ -1282,10 +1290,17 @@ function bcSendOne(){
 }
 function bcSend(){
   if(!BC)return;
+  var noUrl=!BC.tplHasUrl;
+  // 兩段確認：第一段講「少了連結會怎樣」，第二段才是一般的送出確認。
+  // 分開問是刻意的——把後果跟數量混在同一句，人只會看到數量。
+  if(noUrl&&!confirm('訊息內容裡沒有 {連結}。\n\n'
+      +'同仁收到的會是一則點不進報到碼的通知，當天他們拿不出 QR，'
+      +'而 LINE 訊息送出後收不回來。\n\n仍要這樣送嗎？'))return;
   if(!confirm('發送給全部 '+BC.willSend+' 位同仁？\n\nLINE 訊息送出後收不回來。\n（只想補給某一個人，請用下面的「補發給特定人」。）'))return;
   document.getElementById('bc-send').disabled=true;
   setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
-  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),tpl:document.getElementById('bc-tpl').value||''},120000).then(function(r){
+  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),tpl:document.getElementById('bc-tpl').value||'',
+    force:noUrl?'1':''},120000).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
@@ -1711,9 +1726,10 @@ function actCard(a){
     +(a.replies===0?'<button class="btn btn-sm warn" onclick="delAct(\''+esc(a.id)+'\',\''+esc(a.name)+'\')">刪除</button>':'');
   return '<div class="card" id="act-'+esc(a.id)+'">'
     +'<div class="act-h"><span class="nm">'+esc(a.name)+'</span>'+st+'</div>'
-    +'<div class="act-meta">截止 '+esc(a.deadline)+(a.eventDate?'　活動日 '+esc(a.eventDate):'')+'　回覆 '+a.replies+' 筆　<span style="color:#bbb">'+esc(a.id)+'</span></div>'
+    // 回覆筆數只講一次（在「回覆明細（N）」那顆鈕上）；
+    // 「不可刪除」那句也拿掉——有回覆時刪除鈕本來就不會出現，功能已經擋住了，寫出來是多餘的
+    +'<div class="act-meta">截止 '+esc(a.deadline)+(a.eventDate?'　活動日 '+esc(a.eventDate):'')+'　<span style="color:var(--ink3)">'+esc(a.id)+'</span></div>'
     +(a.question?'<div class="act-meta">說明：'+esc(a.question)+'</div>':'')
-    +(a.replies>0?'<div class="act-meta" style="color:#b26a00">※ 已有 '+a.replies+' 筆回覆，不可刪除（避免回覆資料遺失）；不再使用請按「關閉填寫」</div>':'')
     +((a.refills&&a.refills.length)
       ? '<div class="act-meta" style="color:#7a5320;background:#fff8e8;border-radius:2px;padding:6px 9px">⏳ 待補填：'
         +a.refills.map(function(g){
@@ -1825,7 +1841,7 @@ function loadStats(act){
   });
 }
 function renderStats(r){
-  var out=renderStatsHtml(r,{fallbackTitle:'活動紀錄看板'});
+  var out=renderStatsHtml(r,{fallbackTitle:'活動紀錄看板',fallbackMsg:'無'});
   var meta=document.getElementById('meta'), box=document.getElementById('content');
   // 標題列已移除（分頁列就是標題）；活動名由 .actbar 顯示，這裡改寫瀏覽器分頁標題
   if(out.titleText)document.title=out.titleText;
