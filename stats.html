@@ -171,7 +171,7 @@
 <div id="tab-tables" style="display:none">
   <h1>桌次管理</h1>
   <div class="fld"><label>活動（切歷史場次可參考前次資料）</label>
-    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadSeating()"></select></div>
+    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadSeating();stLoad()"></select></div>
 
   <div class="card">
     <div style="font-weight:700;font-size:16px;margin-bottom:4px">🎩 來賓名單 <span id="g-sum" style="color:#888;font-weight:400;font-size:14px"></span></div>
@@ -208,6 +208,21 @@
           同仁會看不到自己的桌次，<b>活動當天各掃描站的桌號也會一併變空白</b>。要重新給就再按一次「發佈桌次」。</p>
       </div>
     </details>
+  </div>
+
+  <!-- 掃描站管理（2026-08-16）：活動主辦自助開站，不必手改 Script Property。
+       刻意不放 EVENT_CHECKIN_SECRET 的輪替——那顆一按，所有已印紙卡與已發 QR 全部失效，
+       跟撤一個站別不是同一個量級，不該擺在同一張卡上讓人順手按到。 -->
+  <div class="card">
+    <h2>掃描站管理</h2>
+    <p style="font-size:13px;color:#666;margin:0 0 8px">
+      活動當天每台工作人員手機各開一條連結。站名會顯示在掃描頁頂列，六台靠它互相分辨。</p>
+    <div id="st-list"><div class="empty">載入中…</div></div>
+    <div class="scope" style="margin-top:8px">
+      <input id="st-name" placeholder="站名（例：第 1 站）" maxlength="20"
+        style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:13.5px">
+      <button class="btn btn-pri2" onclick="stAdd()">＋ 新增一站</button></div>
+    <div id="st-msg" class="msg"></div>
   </div>
 
   <!-- 報到碼通知：活動前一天由使用者按鈕發送（2026-08-16 拍板不做自動排程） -->
@@ -449,6 +464,7 @@ function loadTablesTab(){
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
       return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';}).join('');
     loadSeating();
+    stLoad();   // 掃描站連結要帶當下選到的 actId，所以等下拉填好才載
   });
 }
 function actId(){return document.getElementById('ti-act').value;}
@@ -613,6 +629,67 @@ function seatUnpublish(){
   jsonp('unpublishTables',{token:q('t'),actId:actId()}).then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'取消發佈失敗','err');return;}
     setMsg('sm-msg','已取消發佈 ✅','ok');loadSeating();
+  });
+}
+
+// ── 掃描站管理：列出／新增／換 token／刪除 ────────────────────────────────
+function stLoad(){
+  jsonp('listStaffStations',{token:q('t'),actId:actId()}).then(function(r){
+    var box=document.getElementById('st-list');
+    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有任何掃描站。活動當天有幾台手機就開幾站。</div>';return;}
+    box.innerHTML=r.rows.map(function(s){
+      return '<div style="border:1px solid #eee;border-radius:10px;padding:10px;margin-bottom:8px">'
+        +'<div style="font-weight:600;margin-bottom:4px">'+esc(s.station)+'</div>'
+        +'<div style="font-size:12px;color:#888;word-break:break-all;line-height:1.5">'+esc(s.url)+'</div>'
+        +'<div class="btnrow" style="margin-top:8px">'
+        +'<button class="btn" style="font-size:13px" onclick="stCopy(\''+esc(s.token)+'\')">複製連結</button>'
+        +'<button class="btn" style="font-size:13px" onclick="stRegen(\''+esc(s.token)+'\',\''+esc(s.station)+'\')">換 token</button>'
+        +'<button class="btn" style="font-size:13px" onclick="stDel(\''+esc(s.token)+'\',\''+esc(s.station)+'\')">刪除</button>'
+        +'</div></div>';
+    }).join('');
+    window.__stRows=r.rows;
+  });
+}
+function stCopy(tok){
+  var row=(window.__stRows||[]).filter(function(s){return s.token===tok;})[0];
+  if(!row)return;
+  // iOS Safari 的 navigator.clipboard 在非使用者手勢或舊版會失敗，備援用 textarea+execCommand
+  function done(){setMsg('st-msg','已複製 '+row.station+' 的連結','ok');}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(row.url).then(done,fallback);
+  }else fallback();
+  function fallback(){
+    var ta=document.createElement('textarea');ta.value=row.url;
+    ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);
+    ta.select();try{document.execCommand('copy');done();}
+    catch(e){setMsg('st-msg','複製失敗，請長按上面的網址自行複製','err');}
+    document.body.removeChild(ta);
+  }
+}
+function stAdd(){
+  var el=document.getElementById('st-name'),name=el.value.trim();
+  if(!name){setMsg('st-msg','請先填站名','err');el.focus();return;}
+  setMsg('st-msg','建立中…','ok');
+  jsonp('addStaffStation',{token:q('t'),station:name}).then(function(r){
+    if(!r||!r.ok){setMsg('st-msg',(r&&r.msg)||'建立失敗','err');return;}
+    el.value='';setMsg('st-msg','已新增「'+r.station+'」','ok');stLoad();
+  });
+}
+function stRegen(tok,name){
+  // 換發＝舊連結當場失效。當天正在用的那台會直接掉線，所以把後果寫在確認框裡。
+  if(!confirm('替「'+name+'」換一顆新 token？\n\n舊連結會立刻失效——如果那台手機正在用，它會馬上變成「無權限」，要重新把新連結傳給它。'))return;
+  setMsg('st-msg','換發中…','ok');
+  jsonp('addStaffStation',{token:q('t'),station:name,replaceToken:tok}).then(function(r){
+    if(!r||!r.ok){setMsg('st-msg',(r&&r.msg)||'換發失敗','err');return;}
+    setMsg('st-msg','已換發「'+r.station+'」，請把新連結重新傳給那一台','ok');stLoad();
+  });
+}
+function stDel(tok,name){
+  if(!confirm('刪除「'+name+'」？\n\n那條連結會立刻失效。'))return;
+  jsonp('removeStaffStation',{token:q('t'),staffToken:tok}).then(function(r){
+    if(!r||!r.ok){setMsg('st-msg',(r&&r.msg)||'刪除失敗','err');return;}
+    setMsg('st-msg','已刪除「'+name+'」','ok');stLoad();
   });
 }
 
