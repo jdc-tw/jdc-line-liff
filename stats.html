@@ -113,10 +113,12 @@
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <div class="tabs">
-  <button id="tabbtn-stats" class="on" onclick="showTab('stats')">出席統計</button>
-  <button id="tabbtn-manage" onclick="showTab('manage')">活動管理</button>
-  <button id="tabbtn-tables" onclick="showTab('tables')">桌次管理</button>
-  <button id="tabbtn-anniv" onclick="showTab('anniv')">年資里程碑</button>
+  <!-- 標籤一律兩字：分頁列可用寬 358px，五個鈕才塞得下一列（四字×5 會換行成兩列） -->
+  <button id="tabbtn-stats" class="on" onclick="showTab('stats')">統計</button>
+  <button id="tabbtn-manage" onclick="showTab('manage')">活動</button>
+  <button id="tabbtn-tables" onclick="showTab('tables')">桌次</button>
+  <button id="tabbtn-checkin" onclick="showTab('checkin')">報到</button>
+  <button id="tabbtn-staff" onclick="showTab('staff')">員工</button>
 </div>
 <div id="tab-stats">
   <h1 id="title">活動紀錄看板</h1>
@@ -124,9 +126,22 @@
   <div id="meta" class="meta">載入中…</div>
   <div id="content"><div class="empty">載入中…</div></div>
 </div>
-<div id="tab-anniv" style="display:none">
-  <h1>年資里程碑</h1>
-  <div id="anniv-box"><div class="empty">載入中…</div></div>
+<!-- 員工（原「年資里程碑」，2026-08-16 改名並吸收員工名冊）：與單一活動無關的人事資料 -->
+<div id="tab-staff" style="display:none">
+  <h1>員工</h1>
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:4px">📥 員工名冊</div>
+    <div class="btnrow"><button class="btn btn-pri2" onclick="downloadRoster()">⬇ 單位總表</button>
+      <button class="btn btn-pri2" onclick="downloadRosterFlat()">⬇ 逐人明細</button></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;color:#555;font-size:14px">
+      <input type="checkbox" id="s-dl-leavers" style="width:auto;margin:0">列出離職同仁（僅逐人明細適用）
+    </label>
+    <div id="s-dl-msg" class="msg"></div>
+  </div>
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:6px">🎂 年資里程碑</div>
+    <div id="anniv-box"><div class="empty">載入中…</div></div>
+  </div>
 </div>
 <div id="tab-manage" style="display:none">
   <div class="card">
@@ -210,6 +225,21 @@
     </details>
   </div>
 
+  <!-- ⇩ 以下四張卡已於 2026-08-16 搬走：掃描站管理／報到碼通知／員工 QR → 「報到」分頁，
+       員工名冊 → 「員工」分頁。桌次分頁只留排位期會用到的東西。 ⇩ -->
+</div>
+
+<!-- ═══ 報到（2026-08-16 新增）：活動當天要用的東西集中在這 ═══
+     自己一個活動下拉（#ck-act），不共用桌次頁的——那頁沒打開時它是隱藏的，
+     等於讓人在看不見的地方決定「137 則 LINE 要發給哪一場」。 -->
+<div id="tab-checkin" style="display:none">
+  <h1>報到</h1>
+  <div class="card">
+    <div style="font-weight:700;font-size:16px;margin-bottom:6px">🎯 對象活動</div>
+    <select id="ck-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"
+      onchange="stLoad()"></select>
+  </div>
+
   <!-- 掃描站管理（2026-08-16）：活動主辦自助開站，不必手改 Script Property。
        刻意不放 EVENT_CHECKIN_SECRET 的輪替——那顆一按，所有已印紙卡與已發 QR 全部失效，
        跟撤一個站別不是同一個量級，不該擺在同一張卡上讓人順手按到。 -->
@@ -255,16 +285,6 @@
     <div class="btnrow"><button class="btn btn-pri2" onclick="dlAllQr()">⬇ 批次下載（確認參加者）</button></div>
     <div style="font-size:12px;color:#888;margin-top:6px">ZIP・檔名 單位_姓名.png；單獨一張＝座位表各列的「⬇QR」。</div>
     <div id="qr-msg" class="msg"></div>
-  </div>
-
-  <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">📥 員工名冊</div>
-    <div class="btnrow"><button class="btn btn-pri2" onclick="downloadRoster()">⬇ 單位總表</button>
-      <button class="btn btn-pri2" onclick="downloadRosterFlat()">⬇ 逐人明細</button></div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;color:#555;font-size:14px">
-      <input type="checkbox" id="s-dl-leavers" style="width:auto;margin:0">列出離職同仁（僅逐人明細適用）
-    </label>
-    <div id="s-dl-msg" class="msg"></div>
   </div>
 </div>
 <script src="assets/deny-no-role.js"></script>
@@ -338,13 +358,15 @@ function jsonpW(action,params,tries){
 // ── 分頁切換（活動管理 lazy load）──────────────────────────────────────────
 var manageLoaded=false;
 function showTab(t){
-  ['stats','manage','tables','anniv'].forEach(function(k){
+  ['stats','manage','tables','checkin','staff'].forEach(function(k){
     document.getElementById('tab-'+k).style.display = t===k?'':'none';
     document.getElementById('tabbtn-'+k).className = t===k?'on':'';
   });
   if(t==='manage'&&!manageLoaded){manageLoaded=true;loadActs();}
   if(t==='tables'&&!tablesLoaded){tablesLoaded=true;loadTablesTab();}
+  if(t==='checkin'&&!checkinLoaded){checkinLoaded=true;loadCheckinTab();}
 }
+var checkinLoaded=false;
 var tablesLoaded=false;
 function setMsg(id,text,cls){var el=document.getElementById(id);el.textContent=text;el.className='msg '+(cls||'');}
 
@@ -474,7 +496,29 @@ function loadTablesTab(){
     loadSeating();
   });
 }
-function actId(){return document.getElementById('ti-act').value;}
+// 兩個分頁各有自己的活動下拉，故兩個取值函式。
+// 為何不共用：隱藏分頁裡的 <select> 仍然有值——共用等於讓人在一個沒打開過的分頁上
+// 決定「137 則 LINE 要發給哪一場」。各自選、各自看得見。
+function actId(){return document.getElementById('ti-act').value;}          // 桌次分頁
+function ckActId(){return document.getElementById('ck-act').value;}        // 報到分頁
+/** 報到分頁選到的活動名稱（產 QR 圖要印在上面；不可依賴桌次頁才會設定的 SB）。 */
+function ckActName(){
+  var s=document.getElementById('ck-act');
+  return s.selectedIndex>=0?(s.options[s.selectedIndex].dataset.name||''):'';
+}
+// 報到分頁：活動清單沿用首屏那支 batch 的結果，首屏失敗才補打。
+function loadCheckinTab(){
+  pick('listActivities').then(function(r){
+    if(!r||!r.ok) return jsonp('listActivities',{token:q('t')});
+    return r;
+  }).then(function(r){
+    if(!r||!r.ok){document.getElementById('st-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    var sel=document.getElementById('ck-act');
+    sel.innerHTML=r.rows.slice().reverse().map(function(a){
+      return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';}).join('');
+    stLoad();
+  });
+}
 
 // SWR：先把上次的結果畫出來（秒顯），再背景重抓校正。抓失敗不蓋掉舊資料——
 // 寧可看到稍舊的座位，也不要整片變「載入失敗」（同 board/stats/hr-stats 既有慣例）。
@@ -489,7 +533,6 @@ function applySeating(r){
   else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
   else {b.className='btn btn-red';b.textContent='重新發佈';}
   renderBoard();
-  renderStations(r.stations||[]);   // 掃描站跟著同一包回來，不另打一趟
 }
 function loadSeating(){
   var id=actId();
@@ -656,14 +699,14 @@ function seatUnpublish(){
 }
 
 // ── 掃描站管理：列出／新增／換 token／刪除 ────────────────────────────────
-// 開頁時站別由 getSeatingBoard 一併帶回（renderStations）；只有增刪站別後才單獨重抓。
+// 報到分頁開啟時與增刪站別後都走這支（站別已不隨 getSeatingBoard 回傳——分頁拆開後那條併車失效）。
 function stLoad(){
-  jsonp('listStaffStations',{token:q('t'),actId:actId()}).then(function(r){
+  jsonp('listStaffStations',{token:q('t'),actId:ckActId()}).then(function(r){
     var box=document.getElementById('st-list');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     renderStations(r.rows);
     // 站別變動了，座位表那包裡的 stations 也過期——清掉快取免得下次進來看到舊的
-    try{sessionStorage.removeItem('seat_'+actId());}catch(e){}
+    // 站別變了不影響座位表快取（stations 已不隨 getSeatingBoard 回傳）
   });
 }
 function renderStations(rows){
@@ -738,7 +781,7 @@ function bcTplReset(){
 function bcPreview(){
   setMsg('bc-msg','查詢中…','ok');
   var tplEl=document.getElementById('bc-tpl');
-  jsonp('previewPassBroadcast',{token:q('t'),actId:actId(),tpl:tplEl.value||''}).then(function(r){
+  jsonp('previewPassBroadcast',{token:q('t'),actId:ckActId(),tpl:tplEl.value||''}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'查詢失敗','err');return;}
     BC=r;
     if(!BC_DEFAULT_TPL&&!tplEl.value)BC_DEFAULT_TPL=r.template;   // 第一次預覽時記下預設，供「還原預設」用
@@ -766,7 +809,7 @@ function bcSend(){
   if(!confirm('發送 '+BC.willSend+' 則 LINE 給同仁？\n\nLINE 訊息送出後收不回來。'))return;
   document.getElementById('bc-send').disabled=true;
   setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
-  jsonp('sendPassBroadcast',{token:q('t'),actId:actId(),tpl:document.getElementById('bc-tpl').value||''},120000).then(function(r){
+  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),tpl:document.getElementById('bc-tpl').value||''},120000).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
@@ -1081,8 +1124,9 @@ function __qrCanvas(code,name,actName,logo){
   return cv;
 }
 var qrCache={};
-function qrRows(){
-  var id=actId();
+// ⚠️ 三個呼叫端分屬兩個分頁（showQr／dlOneQr 在桌次、dlAllQr 在報到），
+// 所以活動 id 一律由呼叫端傳入，這支不自己決定。
+function qrRows(id){
   if(qrCache[id])return Promise.resolve(qrCache[id]);
   return Promise.all([__tmLib('assets/qrcode-gen.js','qrcode'),__logo(),
     jsonp('getCheckinCodes',{token:q('t'),actId:id})]).then(function(rs){
@@ -1096,7 +1140,7 @@ function findQr(rows,name){
   return null;
 }
 function showQr(name){
-  qrRows().then(function(rows){
+  qrRows(actId()).then(function(rows){
     var p=findQr(rows,name);
     if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
     var ov=document.createElement('div');
@@ -1108,7 +1152,7 @@ function showQr(name){
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
 function dlOneQr(name){
-  qrRows().then(function(rows){
+  qrRows(actId()).then(function(rows){
     var p=findQr(rows,name);
     if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
     __qrCanvas(p.code,p.name,SB.actName,LOGO_DATA).toBlob(function(b){
@@ -1120,16 +1164,16 @@ function dlOneQr(name){
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
 function dlAllQr(){
-  if(!actId()){setMsg('qr-msg','請先選活動','err');return;}
+  if(!ckActId()){setMsg('qr-msg','請先選活動','err');return;}
   setMsg('qr-msg','產生中…','');
-  Promise.all([__tmLib('assets/jszip.min.js','JSZip'),qrRows()]).then(function(rs){
+  Promise.all([__tmLib('assets/jszip.min.js','JSZip'),qrRows(ckActId())]).then(function(rs){
     var rows=rs[1];
     if(!rows.length){setMsg('qr-msg','此活動還沒有「參加」的回覆，無 QR 可產。','err');return;}
     var zip=new JSZip(),chain=Promise.resolve();
     rows.forEach(function(p){
       chain=chain.then(function(){
         return new Promise(function(res){
-          __qrCanvas(p.code,p.name,SB.actName,LOGO_DATA).toBlob(function(b){
+          __qrCanvas(p.code,p.name,ckActName(),LOGO_DATA).toBlob(function(b){
             zip.file((p.unit||'未分類')+'_'+p.name+'.png',b);res();});
         });
       });
@@ -1137,7 +1181,7 @@ function dlAllQr(){
     chain.then(function(){return zip.generateAsync({type:'blob'});}).then(function(blob){
       var a=document.createElement('a');
       a.href=URL.createObjectURL(blob);
-      a.download='員工QR_'+SB.actName+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
+      a.download='員工QR_'+ckActName()+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
       a.click();URL.revokeObjectURL(a.href);
       setMsg('qr-msg','已下載 ✅（'+rows.length+' 張）','ok');
     });
