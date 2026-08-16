@@ -51,14 +51,14 @@
   h1 { font-size: 19px; font-weight: 600; margin: 0 0 10px; color: var(--ink); letter-spacing: .01em; }
   h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ink); letter-spacing: .01em; }
   .meta { font-size: 13px; color: var(--ink3); margin-bottom: 18px; }
-  .card { background: #fff; border: 1px solid var(--ln); border-radius: 10px; padding: 18px; margin-bottom: 14px; }
+  .card { background: #fff; border: 1px solid var(--ln); border-radius: 3px; padding: 18px; margin-bottom: 14px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; }
   .num { font-size: 26px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
   .num.green { color: var(--g); } .num.red { color: var(--r); } .num.grey { color: var(--ink3); }
   .cap { font-size: 12.5px; color: var(--ink3); }
   .sub { font-size: 13.5px; color: var(--ink2); margin-top: 12px; text-align: center; }
   .sec { font-size: 13px; color: var(--ink3); margin: 22px 0 8px; font-weight: 600; letter-spacing: .06em; }
-  .grp { background: #fff; border: 1px solid var(--ln); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .grp { background: #fff; border: 1px solid var(--ln); border-radius: 3px; margin-bottom: 8px; overflow: hidden; }
   .grp summary { padding: 12px 14px; cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: baseline; gap: 8px; }
   .grp summary::-webkit-details-marker { display: none; }
   .grp summary::before { content: '›'; color: var(--ink3); font-size: 15px; transition: transform .18s; }
@@ -69,7 +69,7 @@
   .p { padding: 4px 0; border-bottom: 1px solid #f4f4f2; }
   .p:last-child { border-bottom: none; }
   .p .n { font-weight: 600; }
-  .p .att { font-size: 11.5px; padding: 1px 7px; border-radius: 4px; margin-left: 8px; }
+  .p .att { font-size: 11.5px; padding: 1px 7px; border-radius: 2px; margin-left: 8px; }
   .att-y { background: var(--g-bg); color: var(--g); }
   .att-n { background: var(--bad-bg); color: var(--bad); }
   .p .op { font-size: 13.5px; color: var(--ink2); display: block; margin-top: 2px; }
@@ -95,11 +95,11 @@
   .fld { margin-bottom: 12px; }
   .fld label { display: block; font-size: 12.5px; color: var(--ink2); margin-bottom: 4px; }
   .fld input, .fld textarea, select { width: 100%; font-size: 16px; padding: 9px 10px; border: 1px solid var(--ln);
-    border-radius: 8px; font-family: inherit; color: var(--ink); background: #fff; }
+    border-radius: 3px; font-family: inherit; color: var(--ink); background: #fff; }
   .fld textarea { min-height: 56px; resize: vertical; }
   /* 每一顆按鈕都明寫 color：不寫＝iOS 給系統藍 */
   .btn { display: inline-block; padding: 9px 16px; font-size: 14.5px; font-weight: 600; border: none;
-    border-radius: 8px; cursor: pointer; font-family: inherit; background: var(--g-bg); color: var(--g);
+    border-radius: 3px; cursor: pointer; font-family: inherit; background: var(--g-bg); color: var(--g);
     transition: background .15s; }
   .btn:active { background: var(--g-ln); }
   .btn-pri, .btn-pri2 { background: var(--g); color: #fff; }
@@ -113,7 +113,7 @@
   .btn-grey { background: #f4f4f2; color: var(--ink2); }
   .act-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .act-h .nm { font-weight: 600; font-size: 15.5px; }
-  .st { font-size: 11.5px; padding: 1px 8px; border-radius: 4px; }
+  .st { font-size: 11.5px; padding: 1px 8px; border-radius: 2px; }
   .st-open { background: var(--g-bg); color: var(--g); } .st-closed { background: #f2f2f0; color: var(--ink3); }
   .st-due { background: var(--warn-bg); color: var(--warn); }
   .act-meta { font-size: 12.5px; color: var(--ink3); margin-top: 2px; }
@@ -124,12 +124,12 @@
   .btnrow { display: flex; gap: 8px; margin-top: 10px; }
   .btnrow .btn { flex: 1; padding: 10px 4px; font-size: 14px; }
   .pills { display: flex; gap: 4px; margin: 14px 0 10px; }
-  .pill { flex: 1; text-align: center; font-size: 13px; font-weight: 500; padding: 7px 0; border-radius: 7px;
+  .pill { flex: 1; text-align: center; font-size: 13px; font-weight: 500; padding: 7px 0; border-radius: 2px;
     background: none; color: var(--ink3); border: none; cursor: pointer; font-family: inherit; }
   .pill.on { background: var(--g-bg); color: var(--g); font-weight: 600; }
   .scope { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
-  .tile { border: 1px solid var(--ln); border-radius: 8px; padding: 8px 4px; text-align: center;
+  .tile { border: 1px solid var(--ln); border-radius: 3px; padding: 8px 4px; text-align: center;
     background: #fff; cursor: pointer; }
   .tile b { display: block; font-size: 14px; line-height: 1.3; font-weight: 600; }
   .tile .c { font-size: 11px; color: var(--ink3); }
@@ -137,51 +137,76 @@
   .tile.dirty { background: var(--warn-bg); border-color: #e0d2ae; }
   .tile.empty0 { color: #c9c9c5; }
   .tile.unit b { font-size: 12.5px; }
-  .detail { border: 1px solid var(--g-ln); border-radius: 10px; margin-top: 10px; padding: 12px 14px; background: #fff; }
+  .detail { border: 1px solid var(--g-ln); border-radius: 3px; margin-top: 10px; padding: 12px 14px; background: #fff; }
   .dhead { font-weight: 600; font-size: 14.5px; margin-bottom: 6px; }
   /* flex-wrap＋nowrap：窄螢幕塞不下時整顆標籤換到下一行，而不是把「已變更」壓成直排三個字
      （2026-08-10 素食視圖多了桌號膠囊後在 390px 實測到，功能對但整列爆高） */
   .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 7px 2px; border-bottom: 1px solid #f4f4f2; font-size: 14px; }
   .prow > span { white-space: nowrap; }
   .prow:last-child { border-bottom: none; }
-  .prow .nm { font-weight: 600; min-width: 58px; }
-  .prow .ti { font-size: 11px; color: var(--ink3); flex: 1; }
-  .prow .gname { color: var(--r-dim); font-weight: 600; min-width: 58px; }
-  .prow .gtag { font-size: 10.5px; background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 0 6px; }
-  .prow .chg { font-size: 10.5px; background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 0 6px; }
-  .prow.chgrow { background: var(--warn-bg); border-radius: 6px; }
-  .prow .tno { font-size: 11px; background: var(--g-bg); color: var(--g); border-radius: 4px; padding: 0 7px; font-weight: 600; }
-  .prow .veg { font-size: 10.5px; background: var(--g-bg); color: var(--g); border-radius: 4px; padding: 0 6px; font-weight: 600; }
-  .mini { font-size: 11px; color: var(--g); border: none; border-radius: 5px; padding: 2px 8px;
+  .prow .nm { font-size: 15.5px; font-weight: 600; min-width: 58px; }
+  .prow .ti { font-size: 11px; line-height: 1.75; padding: 0 6px; border-radius: 2px;
+    background: #f1f1ef; color: var(--ink2); vertical-align: 2px; white-space: nowrap; }
+  .prow .sp { flex: 1; }
+  .prow .gname { font-size: 15.5px; color: var(--r-dim); font-weight: 600; min-width: 58px; }
+  .prow .gtag { font-size: 10.5px; background: var(--bad-bg); color: var(--bad); border-radius: 2px; padding: 0 6px; }
+  .prow .chg { font-size: 10.5px; background: var(--warn-bg); color: var(--warn); border-radius: 2px; padding: 0 6px; }
+  .prow.chgrow { background: var(--warn-bg); border-radius: 2px; }
+  .prow .tno { font-size: 11px; background: var(--g-bg); color: var(--g); border-radius: 2px; padding: 0 7px; font-weight: 600; }
+  .prow .veg { font-size: 10.5px; background: var(--g-bg); color: var(--g); border-radius: 2px; padding: 0 6px; font-weight: 600; }
+  .mini { font-size: 11px; color: var(--g); border: none; border-radius: 2px; padding: 2px 8px;
     background: var(--g-bg); cursor: pointer; font-family: inherit; }
   .divider { font-size: 11px; color: var(--ink3); padding: 4px 2px 2px; letter-spacing: .1em; }
   /* 素食視圖的跨桌廠商提示（份數可能算錯桌，要讓使用者看得到） */
-  .vwarn { font-size: 12.5px; color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 7px 10px; margin-bottom: 8px; line-height: 1.55; }
+  .vwarn { font-size: 12.5px; color: var(--warn); background: var(--warn-bg); border-radius: 2px; padding: 7px 10px; margin-bottom: 8px; line-height: 1.55; }
   .hint { font-size: 12px; color: var(--ink3); margin: 6px 0 0; line-height: 1.6; }
+  /* ── 標籤語彙（2026-08-16 使用者指定）──────────────────────────────────
+     資訊很多的清單一律走這一套：名字大、附屬資訊縮成小標籤、淺底淡字。
+     這樣一列裡「哪個是主詞」一眼就分得出來，不必靠讀完整句。
+     .tag 預設中性灰；g/r/w 三個變體對應綠（正常）／紅（外部・例外）／琥珀（待處理）。 */
+  .nm-lg { font-size: 15.5px; font-weight: 600; color: var(--ink); }
+  .tag { display: inline-block; font-size: 11px; line-height: 1.75; padding: 0 6px;
+    border-radius: 2px; background: #f1f1ef; color: var(--ink2); font-weight: 400;
+    vertical-align: 2px; white-space: nowrap; }
+  .tag.g { background: var(--g-bg); color: var(--g); }
+  .tag.r { background: var(--r-bg); color: var(--r-dim); }
+  .tag.w { background: var(--warn-bg); color: var(--warn); }
+  .tag-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 6px 0;
+    border-bottom: 1px solid #f4f4f2; }
+  .tag-row:last-child { border-bottom: none; }
+  .grp-h { font-size: 12px; color: var(--ink3); font-weight: 600; letter-spacing: .05em;
+    margin: 14px 0 2px; }
+  .grp-h:first-child { margin-top: 4px; }
+  /* 可拉開的名單標頭：預設收起來只給一行摘要，要挑人才拉開 */
+  .fold-sum { list-style: none; cursor: pointer; font-size: 13.5px; color: var(--ink2);
+    padding: 7px 0; display: flex; align-items: center; gap: 6px; }
+  .fold-sum::-webkit-details-marker { display: none; }
+  .fold-sum::before { content: '›'; color: var(--ink3); font-size: 15px; transition: transform .18s; }
+  details[open] > .fold-sum::before { transform: rotate(90deg); }
   /* 佔位符：可點的碼標，點一下插進游標處 */
   .phs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
   .ph { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: var(--g-bg); color: var(--g); border: none; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+    background: var(--g-bg); color: var(--g); border: none; border-radius: 2px; padding: 3px 8px; cursor: pointer; }
   .ph.lock { background: #f4f4f2; color: var(--ink2); }
   /* 鏡像上色圖層：與 textarea 疊在同一格，字體行高必須逐項相同，否則底色會錯位 */
   .tpl-wrap { position: relative; }
   .tpl-wrap textarea, .tpl-mirror {
     font-family: inherit; font-size: 13.5px; line-height: 1.7; padding: 10px;
-    border: 1px solid var(--ln); border-radius: 8px; width: 100%;
+    border: 1px solid var(--ln); border-radius: 3px; width: 100%;
     white-space: pre-wrap; overflow-wrap: break-word; letter-spacing: 0;
   }
   .tpl-mirror { position: absolute; inset: 0; overflow: hidden; color: transparent;
     background: #fff; pointer-events: none; border-color: transparent; }
   /* 底色要看得出來才有意義：--g-bg(#eff4f1) 疊在白底上實測幾乎看不見（2026-08-16 量過），
      改用深一階的 --g-ln。仍然是同一族的綠，不破壞低調。 */
-  .tpl-mirror mark { background: var(--g-ln); color: transparent; border-radius: 3px; }
+  .tpl-mirror mark { background: var(--g-ln); color: transparent; border-radius: 1px; }
   .tpl-wrap textarea { position: relative; background: transparent; resize: vertical; display: block; }
   /* 打「{」時跳出的佔位符選單：貼在欄位正下方、橫向一排，位置可預期又不蓋住剛打的字 */
   .ph-pop { position: absolute; z-index: 40; left: 0; right: 0; top: 100%; margin-top: 4px;
-    background: #fff; border: 1px solid var(--ln); border-radius: 8px; padding: 6px;
+    background: #fff; border: 1px solid var(--ln); border-radius: 3px; padding: 6px;
     box-shadow: 0 4px 14px rgba(0,0,0,.08); display: flex; flex-wrap: wrap; gap: 4px; }
   .ph-pop button { background: var(--g-bg); border: none; padding: 5px 10px; font-size: 12.5px;
-    font-family: inherit; color: var(--g); cursor: pointer; border-radius: 5px; }
+    font-family: inherit; color: var(--g); cursor: pointer; border-radius: 2px; }
   .ph-pop button:active { background: var(--g-ln); }
   .ph-lead { font-size: 11.5px; color: var(--ink3); align-self: center; margin-right: 2px; }
   @media (min-width: 768px) {
@@ -218,22 +243,26 @@
     </label>
     <div id="s-dl-msg" class="msg"></div>
   </div>
-  <div class="card">
-    <h2>年資里程碑</h2>
-    <div id="anniv-box"><div class="empty">載入中…</div></div>
-  </div>
-
-  <!-- 資深夥伴通知（2026-08-16）：三則固定形式的訊息推給該年度的里程碑同仁。
+  <!-- 年資里程碑（2026-08-16 合併）：原本「年資里程碑」與「資深夥伴通知」是兩張卡，
+       但它們列的是**同一批人**——上面唯讀看一遍、下面再帶勾選框看一遍，19 個人就滾兩屏。
+       合成一張：名單預設收起來只顯示人數，要挑人再拉開。
        ⚠️ 年度是「名單身分」不是「發送時間」——忘年會表揚與社內報問卷都落在隔年，
        所以 2027 年打開這張卡，年度下拉仍然要選得到 2026。 -->
   <div class="card">
-    <h2>資深夥伴通知</h2>
+    <h2>年資里程碑</h2>
     <p class="hint">年度＝名單身分，與發送日期無關（表揚與問卷都在隔年）。</p>
     <div class="scope" style="margin-top:10px">
       <span style="font-size:12.5px;color:var(--ink2)">年度</span>
       <select id="sn-year" onchange="snLoad()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
     </div>
-    <div id="sn-people" style="margin-top:6px"><div class="empty">載入中…</div></div>
+    <details id="sn-fold" style="margin-top:4px">
+      <summary id="sn-sum" class="fold-sum">載入中…</summary>
+      <div class="scope" style="margin:8px 0 0">
+        <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(true)">全選</button>
+        <button class="btn btn-sm" style="margin:0" onclick="snCheckAll(false)">全不選</button>
+      </div>
+      <div id="sn-people"></div>
+    </details>
     <div class="scope" style="margin-top:12px">
       <span style="font-size:12.5px;color:var(--ink2)">訊息</span>
       <select id="sn-idx" onchange="snPickMsg()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
@@ -399,7 +428,6 @@
 <script src="assets/deny-no-role.js"></script>
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
-<script src="assets/anniv.js"></script>
 <script src="assets/seating.js"></script>
 <script src="assets/xlsx-post.js"></script>
 <script src="assets/stats-view.js"></script>
@@ -527,7 +555,7 @@ function showAdminSwitch(isAdmin){
   var a=document.createElement('a');
   a.id='adm-switch';a.textContent='人事異動看板';
   a.href='board.html?t='+encodeURIComponent(q('t'));
-  a.style.cssText='position:fixed;top:10px;right:10px;z-index:99;background:#fff;border:1px solid #ddd;border-radius:20px;padding:6px 14px;font-size:13px;font-weight:700;color:#333;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.12)';
+  a.style.cssText='position:fixed;top:10px;right:10px;z-index:99;background:#fff;border:1px solid var(--ln);border-radius:3px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--ink2);text-decoration:none';
   a.addEventListener('click',function(e){e.preventDefault();location.href=a.href;}); // iOS standalone：<a> 會彈內嵌 Safari，JS 導頁留在 App 內
   document.body.appendChild(a);
 }
@@ -896,7 +924,8 @@ function renderDetail(title,list,showTableTag){
     lastKind=s.kind;
     h+='<div class="prow'+(s.changed?' chgrow':'')+'">';
     if(s.kind==='guest'){
-      h+='<span class="gname">'+esc(s.name)+'</span><span class="ti">'+esc(s.note||'')+'</span>';
+      h+='<span class="gname">'+esc(s.name)+'</span>'
+        +(s.note?'<span class="ti">'+esc(s.note)+'</span>':'')+'<span class="sp"></span>';
       if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
       if(showTableTag)h+=s.table?('<span class="tno">'+esc(s.table)+' 桌</span>')
@@ -907,7 +936,7 @@ function renderDetail(title,list,showTableTag){
       // 2026-08-16 使用者：原本每一列右邊掛「🔳」與「⬇QR」兩顆，重複且擠。
       h+='<span class="nm" style="color:var(--g);cursor:pointer" '
         +'onclick="showPerson(\''+esc(s.name)+'\')">'+esc(s.name)+'</span>'
-        +'<span class="ti">'+esc(s.title||'')+'</span>';
+        +(s.title?'<span class="ti">'+esc(s.title)+'</span>':'')+'<span class="sp"></span>';
       if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
       if(showTableTag)h+=s.table?('<span class="tno">'+esc(s.table)+' 桌</span>')
@@ -969,23 +998,57 @@ function snLoad(){
     var isel=document.getElementById('sn-idx'),keep=isel.value;
     isel.innerHTML=r.titles.map(function(t,i){return '<option value="'+i+'">'+esc(t)+'</option>';}).join('');
     if(keep&&Number(keep)<r.titles.length)isel.value=keep;
-    if(!r.audience.length){box.innerHTML='<div class="empty">'+r.year+' 年度沒有年資逢 5 週年的在職同仁。</div>';}
+    var sum=document.getElementById('sn-sum');
+    if(!r.audience.length){
+      box.innerHTML='';
+      sum.textContent=r.year+' 年度沒有年資逢 5 週年的在職同仁';
+      document.getElementById('sn-fold').open=false;
+    }
     else{
-      box.innerHTML=r.audience.map(function(p,i){
-        var bad=p.status!=='ok';
-        var note=p.status==='unbound'?'未綁定 LINE，發不出去'
-                :p.status==='ambiguous'?'名冊有同名同仁，請人工確認是哪一位':'';
-        return '<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;'
-          +(bad?'opacity:.55;':'')+'font-weight:400;font-size:14px">'
-          +'<input type="checkbox" class="sn-ck" data-uid="'+esc(p.userId)+'" '
-          +(bad?'disabled':'checked')+' style="width:auto;margin:3px 0 0">'
-          +'<span>'+esc(p.name)+'（'+esc(p.unit)+'）滿 '+p.years+' 年'
-          +(note?'<br><span style="color:#c33;font-size:12.5px">'+esc(note)+'</span>':'')
-          +'</span></label>';
+      // 摘要一行講完：幾人、各年資幾人、幾個發不出去。收起來時這一行就是全部資訊。
+      var cnt={},nBad=0;
+      r.audience.forEach(function(p){
+        var y=Number(p.years)||0; cnt[y]=(cnt[y]||0)+1;
+        if(p.status!=='ok')nBad++;
+      });
+      var parts=Object.keys(cnt).map(Number).sort(function(a,b){return b-a;})
+        .map(function(y){return '滿 '+y+' 年 '+cnt[y]+' 人';});
+      sum.textContent=r.audience.length+' 人（'+parts.join('・')+'）'
+        +(nBad?'　'+nBad+' 人發不出去':'');
+      // 與年資里程碑同一套語彙：以年資分組、名字大、附屬資訊縮成小標籤。
+      // 兩張卡看的是同一批人，長得不一樣只會讓人以為是兩份名單。
+      var g={},ord=[];
+      r.audience.forEach(function(p){
+        var y=Number(p.years)||0;
+        if(!g[y]){g[y]=[];ord.push(y);}g[y].push(p);
+      });
+      ord.sort(function(a,b){return b-a;});
+      box.innerHTML=ord.map(function(y){
+        return '<div class="grp-h">滿 '+y+' 年　'+g[y].length+' 人</div>'
+          +g[y].map(function(p){
+            var bad=p.status!=='ok';
+            var note=p.status==='unbound'?'未綁定 LINE'
+                    :p.status==='ambiguous'?'名冊有同名，請人工確認':'';
+            return '<label class="tag-row" style="'+(bad?'opacity:.5;':'')+'font-weight:400">'
+              +'<input type="checkbox" class="sn-ck" data-uid="'+esc(p.userId)+'" '
+              +(bad?'disabled':'checked')+' style="width:auto;margin:0">'
+              +'<span class="nm-lg">'+esc(p.name)+'</span>'
+              +'<span class="tag">'+esc(p.unit)+'</span>'
+              +(note?'<span class="tag r">'+esc(note)+'</span>':'')
+              +'</label>';
+          }).join('');
       }).join('');
     }
     snPickMsg();
   });
+}
+/** 全選／全不選。發不出去的（未綁定、同名）是 disabled，本來就不該被拉進來。 */
+function snCheckAll(on){
+  var n=0;
+  [].slice.call(document.querySelectorAll('.sn-ck')).forEach(function(c){
+    if(c.disabled)return; c.checked=on; n++;
+  });
+  setMsg('sn-msg',on?('已全選 '+n+' 人'):'已全部取消','ok');
 }
 function snPickMsg(){
   if(!SN)return;
@@ -1078,7 +1141,7 @@ function renderStations(rows){
     box.innerHTML=rows.map(function(s){
       // 網址只留一行、超出用省略號：它的用途是「按複製」，不是給人讀
       // （2026-08-16 使用者：整站文字說明要更簡短；三行 URL 在手機上佔掉整張卡）
-      return '<div style="border:1px solid var(--ln);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+      return '<div style="border:1px solid var(--ln);border-radius:3px;padding:10px 12px;margin-bottom:8px">'
         +'<div style="font-weight:600;margin-bottom:2px;font-size:14.5px">'+esc(s.station)+'</div>'
         +'<div style="font-size:11.5px;color:var(--ink3);white-space:nowrap;overflow:hidden;'
         +'text-overflow:ellipsis">'+esc(s.url)+'</div>'
@@ -1175,7 +1238,7 @@ function bcPreview(){
     document.getElementById('bc-preview').innerHTML=
       '<p class="hint" style="margin:0 0 4px">'+esc(r.actName)+'　'+esc(r.eventDate)
       +'　將發送 '+r.willSend+' 則</p>'+warn
-      +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:8px;padding:10px;'
+      +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
       +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
       +esc(r.sample)+'</pre>';
     document.getElementById('bc-preview').style.display='block';
@@ -1566,7 +1629,7 @@ function showPerson(name){
     var seat=(SB&&SB.seats||[]).filter(function(s){
       return String(s.name||'').replace(/[\s　]+/g,'')===String(name).replace(/[\s　]+/g,'');})[0]||{};
     var cv=__qrCanvas(p.code,p.name,SB.actName,LOGO_DATA);
-    cv.style.cssText='width:100%;max-width:300px;border-radius:8px;background:#fff;display:block;margin:0 auto';
+    cv.style.cssText='width:100%;max-width:300px;border-radius:3px;background:#fff;display:block;margin:0 auto';
 
     var ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;'
@@ -1574,7 +1637,7 @@ function showPerson(name){
     ov.onclick=function(e){if(e.target===ov)ov.remove();};
 
     var card=document.createElement('div');
-    card.style.cssText='background:#fff;border-radius:12px;padding:20px;max-width:340px;width:100%;'
+    card.style.cssText='background:#fff;border-radius:4px;padding:20px;max-width:340px;width:100%;'
       +'max-height:88vh;overflow:auto';
     var head=document.createElement('div');
     head.innerHTML='<div style="font-size:17px;font-weight:600;color:var(--ink)">'+esc(p.name)+'</div>'
@@ -1655,7 +1718,7 @@ function actCard(a){
     +(a.question?'<div class="act-meta">說明：'+esc(a.question)+'</div>':'')
     +(a.replies>0?'<div class="act-meta" style="color:#b26a00">※ 已有 '+a.replies+' 筆回覆，不可刪除（避免回覆資料遺失）；不再使用請按「關閉填寫」</div>':'')
     +((a.refills&&a.refills.length)
-      ? '<div class="act-meta" style="color:#7a5320;background:#fff8e8;border-radius:6px;padding:6px 9px">⏳ 待補填：'
+      ? '<div class="act-meta" style="color:#7a5320;background:#fff8e8;border-radius:2px;padding:6px 9px">⏳ 待補填：'
         +a.refills.map(function(g){
           return (g.pending?'⌛ ':'')+esc(g.name||g.userId)
             +'（'+(g.pending?'等待完成 LINE 驗證，邀請有效至 ':'')+esc(g.deadlineText)
@@ -1736,7 +1799,7 @@ function toggleRep(btn,id){
 // 首載合併（2026-08-06）：3 支 /exec → 1 支 batch（成因與手法見 board.html 同段註解）。
 // getActivityStats 空 act＝後端自選開放中活動，與原本 loadStats(q('act')) 語意等價。
 var FIRST=jsonp('batch',{token:q('t'),list:JSON.stringify([
-  {a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}},{a:'getAnniversaries'}])});
+  {a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}}])});   // getAnniversaries 已移除：名單改由 getSeniorNotice 一併帶回，不必再抓一次
 function pick(a){return FIRST.then(function(r){
   return (r&&r.ok&&r.results&&r.results[a])||{ok:false,msg:(r&&r.msg)||'連線失敗'};});}
 
@@ -1777,7 +1840,6 @@ function renderStats(r){
   if(sel.options.length&&out.actId){sel.value=out.actId;renderActBar('act-picker','act-actbar');}
 }
 loadStats(q('act'));
-annivInit(function(){return pick('getAnniversaries');}, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁（吃首載 batch 切片）
 // 鏡像圖層要跟著 textarea 捲動，否則長內容一捲，底色就對不到字了
 [['bc-tpl','bc-mirror'],['sn-tpl','sn-mirror']].forEach(function(p){
   var ta=document.getElementById(p[0]),mi=document.getElementById(p[1]);
