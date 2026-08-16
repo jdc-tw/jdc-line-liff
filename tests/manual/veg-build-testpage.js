@@ -32,7 +32,7 @@ const BC_OK = {
   participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
   sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
   template: BC_TPL, defaultTemplate: BC_TPL, tplHasUrl: true,
-  schedule: null, defaultDate: '2026-08-27',
+  schedule: null, defaultDate: '2026-08-27', hasDate: true,
   // 補發下拉用的名單（依單位分組）
   people: [
     { userId: 'U_a', name: '洪炫佑', unit: '工務管理組' },
@@ -110,8 +110,8 @@ const stub = `<script>
   var _sc = new URLSearchParams(location.search).get('sched');
   if (_sc === 'on') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' } });
-  if (_sc === 'stale') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
-    { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' }, schedStale: true });
+  if (_sc === 'nodate') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
+    { hasDate: false, eventDate: '' });
   if (_sc === 'sent') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { schedule: { date: '2026-08-27', status: 'sent', sentAt: '2026-08-27 09:00', sent: 135, failed: 0 } });
   if (_sc === 'failed') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
