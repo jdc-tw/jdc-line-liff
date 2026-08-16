@@ -1254,7 +1254,7 @@ function bcRenderSched(r){
     bcLockTpl(true,'已預約，內容鎖定中。要修改請先取消預約。');
   }else{
     if(!dt.value)dt.value=r.defaultDate||'';
-    dt.disabled=false;bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl);
+    dt.disabled=false;bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl&&r.hasDate!==false);
     bcLockTpl(false);
   }
   BC_SCHED=sc||null;
@@ -1316,6 +1316,8 @@ function bcPreview(){
     var W='margin:4px 0;font-size:13px;line-height:1.6;color:';
     var warn='';
     if(!r.published)warn+='<p style="'+W+'var(--bad)">桌次尚未發布，先在座位表按「發佈桌次」。</p>';
+    if(r.hasDate===false)warn+='<p style="'+W+'var(--bad);font-weight:600">這場活動沒有填活動日期，'
+      +'同仁當天無法報到——請先到「活動」分頁補上。</p>';
     if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
     if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
       +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
@@ -1327,7 +1329,7 @@ function bcPreview(){
     bcRenderSched(r);
     // 少了 {連結} 不再鎖死按鈕（2026-08-16 使用者要求改成警示＋確認）：
     // 鎖住按鈕不講原因，只會讓人以為系統壞了。改成讓他看到警語、自己決定。
-    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0);
+    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.hasDate!==false);
     bcFillOne(r.people||[]);
     setMsg('bc-msg','','ok');
   });
