@@ -291,11 +291,11 @@
     <h2>報到碼通知</h2>
     <p style="font-size:13px;color:#666;margin:0 0 8px">
       推一則 LINE 給所有「參加」且已綁定的同仁，內含<b>本人桌次</b>與報到碼連結。一人一則、桌次各自不同。</p>
-    <div class="btnrow">
-      <button class="btn" onclick="bcPreview()">重新整理</button>
-      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled>發送給全部</button></div>
     <!-- 可編輯範本：改完要再按一次預覽（範例一律由伺服器套範本產生，前端不自己算，
-         否則預覽看到的與真正送出的會是兩套規則）。改動後發送鈕重新鎖上。 -->
+         否則預覽看到的與真正送出的會是兩套規則）。改動後發送鈕重新鎖上。
+         ⚠️ 版面順序＝內容→預覽→發送（2026-08-16 使用者指正）。原本「發送給全部」放在最上面，
+         等於在還沒看到預覽之前就先看到那顆鈕，而它是 137 則 LINE、送出去收不回來。
+         同時原本有兩顆都呼叫 bcPreview() 的鈕（「重新整理」與「套用並重新預覽」），已併成一顆。 -->
     <div id="bc-edit" style="display:none;margin-top:10px">
       <label style="font-size:13px;color:#666;display:block;margin-bottom:4px">訊息內容（可改）</label>
       <textarea id="bc-tpl" rows="7" oninput="bcTplChanged()"
@@ -303,10 +303,12 @@
       <p style="font-size:12.5px;color:#888;margin:6px 0 0">
         可用佔位符：<code>{活動名}</code> <code>{日期}</code> <code>{桌次}</code> <code>{連結}</code>，發送時逐人替換。
         <b>{連結} 不能刪</b>，沒有它同仁點不到報到碼。整行的佔位符都沒值時那一行會自動消失。</p>
-      <div class="btnrow" style="margin-top:8px">
-        <button class="btn" onclick="bcPreview()">套用並重新預覽</button>
-        <button class="btn" onclick="bcTplReset()">還原預設</button></div>
     </div>
+    <!-- 這一列放在 #bc-edit 外面：首載失敗時 #bc-edit 還是隱藏的，
+         按鈕若在裡面就沒有任何重試入口，畫面只會停在錯誤訊息。 -->
+    <div class="btnrow" style="margin-top:8px">
+      <button class="btn" onclick="bcPreview()">套用並重新預覽</button>
+      <button class="btn" onclick="bcTplReset()">還原預設</button></div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
     <!-- 補發：137 人裡總有人沒收到、換手機、或自己刪掉了。
@@ -317,8 +319,12 @@
         <select id="bc-one-sel" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:13.5px"></select>
         <button class="btn" onclick="bcSendOne()">補發一則</button></div>
       <p style="font-size:12.5px;color:#888;margin:6px 0 0">
-        用的是上面同一份內容（改過內容要先按「重新整理」套用）。</p>
+        用的是上面同一份內容（改過內容要先按「套用並重新預覽」）。</p>
     </details>
+    <!-- 發送鈕放最後：讀完內容與預覽才會看到它。收不回來的動作擺在閱讀順序的終點。 -->
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled
+        style="flex:1">發送給全部</button></div>
   </div>
 
   <div class="card">
@@ -354,6 +360,17 @@ function showAdminSwitch(isAdmin){
   document.body.appendChild(a);
 }
 // fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕（2026-07-24 verify 實證後全站換）
+/**
+ * 後端的兩種錯誤形狀：權限閘回 {ok:false,msg}，例外與未知 action 回 {ok:false,error}。
+ * 畫面上所有失敗分支都只讀 msg ⇒ 例外一律顯示成沒有原因的「載入失敗」。
+ * 2026-08-16 實例：senior.js 沒被 .claspignore 放行、沒推上 GAS，
+ * 伺服器丟 ReferenceError，畫面卻只寫「載入失敗」，查了半天才知道是漏部署。
+ * 把 error 補進 msg ⇒ 一處修好、所有 action 的錯誤都說得出原因。
+ */
+function surfaceErr(r){
+  if(r&&!r.ok&&!r.msg&&r.error)r.msg='系統錯誤：'+r.error;
+  return r;
+}
 function jsonp(action,params,timeoutMs){
   var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
   // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
@@ -363,7 +380,7 @@ function jsonp(action,params,timeoutMs){
     var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||30000);});
     return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
       .then(function(r){return r.text();})
-      .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})])
+      .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(surfaceErr(JSON.parse(t.slice(a+1,b))));})])
       .then(function(v){clearTimeout(timer);return v;},function(e){clearTimeout(timer);throw e;});
   }
   // 30s＋逾時/斷線自動重試一次（隔 2s，8/6 對策 1）——僅限「讀取」（未帶 timeoutMs 的呼叫）：
@@ -927,6 +944,8 @@ function bcPreview(){
   });
 }
 // 補發下拉：依單位分組，只列得到 userId 的人（拿不到的本來就發不出去）
+// ⚠️ 單位要寫進 option 文字，不能只靠 <optgroup>（2026-08-16 使用者指正「很難選」）：
+//    iOS 的原生 select 收合時只顯示 option 文字，看不到分組標籤，137 個名字裡挑人等於在猜。
 function bcFillOne(people){
   var sel=document.getElementById('bc-one-sel');
   if(!people||!people.length){document.getElementById('bc-one').style.display='none';return;}
@@ -934,7 +953,8 @@ function bcFillOne(people){
   people.forEach(function(p){(byUnit[p.unit||'（未分類）']=byUnit[p.unit||'（未分類）']||[]).push(p);});
   sel.innerHTML=Object.keys(byUnit).sort().map(function(u){
     return '<optgroup label="'+esc(u)+'">'+byUnit[u].map(function(p){
-      return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'</option>';}).join('')+'</optgroup>';
+      return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'（'+esc(p.unit||'未分類')+'）</option>';
+    }).join('')+'</optgroup>';
   }).join('');
   document.getElementById('bc-one').style.display='';
 }
