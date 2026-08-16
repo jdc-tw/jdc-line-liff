@@ -142,6 +142,37 @@
     <div style="font-weight:700;font-size:16px;margin-bottom:6px">🎂 年資里程碑</div>
     <div id="anniv-box"><div class="empty">載入中…</div></div>
   </div>
+
+  <!-- 資深夥伴通知（2026-08-16）：三則固定形式的訊息推給該年度的里程碑同仁。
+       ⚠️ 年度是「名單身分」不是「發送時間」——忘年會表揚與社內報問卷都落在隔年，
+       所以 2027 年打開這張卡，年度下拉仍然要選得到 2026。 -->
+  <div class="card">
+    <h2>資深夥伴通知</h2>
+    <p style="font-size:13px;color:#666;margin:0 0 8px">
+      推 LINE 給該<b>里程碑年度</b>的資深同仁。年度是名單身分，跟哪一天發沒有關係——
+      忘年會表揚、社內報問卷都在隔年，所以隔年仍然選同一個年度。</p>
+    <div class="scope">
+      <span style="font-size:13px;color:#666">年度</span>
+      <select id="sn-year" onchange="snLoad()"
+        style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px"></select>
+    </div>
+    <div id="sn-people" style="margin-top:10px"><div class="empty">載入中…</div></div>
+    <div class="scope" style="margin-top:10px">
+      <span style="font-size:13px;color:#666">訊息</span>
+      <select id="sn-idx" onchange="snPickMsg()"
+        style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px"></select>
+    </div>
+    <div id="sn-sent" style="font-size:12.5px;color:#888;margin:6px 0 0"></div>
+    <textarea id="sn-tpl" rows="8" oninput="snTplChanged()"
+      style="width:100%;margin-top:8px;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:13.5px;font-family:inherit;line-height:1.6"></textarea>
+    <p style="font-size:12.5px;color:#888;margin:6px 0 0">
+      可用佔位符：<code>{姓名}</code> <code>{年資}</code> <code>{年度}</code>（三則預設都沒用到，需要時再加）。
+      內容會<b>存起來</b>，明年打開就是這一份，改日期即可。</p>
+    <div class="btnrow" style="margin-top:8px">
+      <button class="btn" onclick="snSaveTpl()">儲存內容</button>
+      <button class="btn btn-pri2" id="sn-send" onclick="snSend()">發送給勾選的人</button></div>
+    <div id="sn-msg" class="msg"></div>
+  </div>
 </div>
 <div id="tab-manage" style="display:none">
   <div class="card">
@@ -365,8 +396,9 @@ function showTab(t){
   if(t==='manage'&&!manageLoaded){manageLoaded=true;loadActs();}
   if(t==='tables'&&!tablesLoaded){tablesLoaded=true;loadTablesTab();}
   if(t==='checkin'&&!checkinLoaded){checkinLoaded=true;loadCheckinTab();}
+  if(t==='staff'&&!staffLoaded){staffLoaded=true;snLoad();}
 }
-var checkinLoaded=false;
+var checkinLoaded=false,staffLoaded=false;
 var tablesLoaded=false;
 function setMsg(id,text,cls){var el=document.getElementById(id);el.textContent=text;el.className='msg '+(cls||'');}
 
@@ -695,6 +727,85 @@ function seatUnpublish(){
   jsonp('unpublishTables',{token:q('t'),actId:actId()}).then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'取消發佈失敗','err');return;}
     setMsg('sm-msg','已取消發佈 ✅','ok');loadSeating();
+  });
+}
+
+// ── 資深夥伴通知：年度名單 → 勾選 → 三則範本擇一 → 發送 ─────────────────
+// 年度＝名單身分（哪一批人），與發送日期無關。範本存在後端，明年打開預帶同一份。
+var SN=null;
+function snLoad(){
+  var y=document.getElementById('sn-year').value||'';
+  jsonp('getSeniorNotice',{token:q('t'),year:y}).then(function(r){
+    var box=document.getElementById('sn-people');
+    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+    SN=r;
+    var ysel=document.getElementById('sn-year');
+    if(!ysel.options.length){
+      ysel.innerHTML=r.years.map(function(y){
+        return '<option value="'+y+'"'+(y===r.year?' selected':'')+'>'+y+' 年度期滿</option>';}).join('');
+    }
+    var isel=document.getElementById('sn-idx');
+    if(!isel.options.length){
+      isel.innerHTML=r.titles.map(function(t,i){return '<option value="'+i+'">'+esc(t)+'</option>';}).join('');
+    }
+    if(!r.audience.length){box.innerHTML='<div class="empty">'+r.year+' 年度沒有年資逢 5 週年的在職同仁。</div>';}
+    else{
+      box.innerHTML=r.audience.map(function(p,i){
+        var bad=p.status!=='ok';
+        var note=p.status==='unbound'?'未綁定 LINE，發不出去'
+                :p.status==='ambiguous'?'名冊有同名同仁，請人工確認是哪一位':'';
+        return '<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;'
+          +(bad?'opacity:.55;':'')+'font-weight:400;font-size:14px">'
+          +'<input type="checkbox" class="sn-ck" data-uid="'+esc(p.userId)+'" '
+          +(bad?'disabled':'checked')+' style="width:auto;margin:3px 0 0">'
+          +'<span>'+esc(p.name)+'（'+esc(p.unit)+'）滿 '+p.years+' 年'
+          +(note?'<br><span style="color:#c33;font-size:12.5px">'+esc(note)+'</span>':'')
+          +'</span></label>';
+      }).join('');
+    }
+    snPickMsg();
+  });
+}
+function snPickMsg(){
+  if(!SN)return;
+  var i=Number(document.getElementById('sn-idx').value||0);
+  document.getElementById('sn-tpl').value=SN.templates[i]||'';
+  var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
+  document.getElementById('sn-sent').textContent=rec
+    ? '這則已於 '+rec.at+' 發送給 '+rec.count+' 人：'+(rec.names||[]).join('、')
+    : '這則尚未發送過。';
+  setMsg('sn-msg','','ok');
+}
+function snTplChanged(){setMsg('sn-msg','內容已修改，記得按「儲存內容」才會留到明年。','ok');}
+function snSaveTpl(){
+  var i=Number(document.getElementById('sn-idx').value||0);
+  jsonp('saveSeniorTemplate',{token:q('t'),idx:i,text:document.getElementById('sn-tpl').value}).then(function(r){
+    if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'儲存失敗','err');return;}
+    if(SN)SN.templates[i]=document.getElementById('sn-tpl').value;
+    setMsg('sn-msg','已儲存，明年打開就是這一份。','ok');
+  });
+}
+function snSend(){
+  if(!SN)return;
+  var i=Number(document.getElementById('sn-idx').value||0);
+  var uids=[].slice.call(document.querySelectorAll('.sn-ck:checked')).map(function(c){return c.dataset.uid;});
+  if(!uids.length){setMsg('sn-msg','沒有勾選任何收件人','err');return;}
+  var title=document.getElementById('sn-idx').selectedOptions[0].textContent;
+  var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
+  // 三則又跨兩個日曆年，重複發最容易發生；把「已經發過」寫進確認框而不是只放在小字
+  if(!confirm('把「'+title+'」發給 '+uids.length+' 位 '+SN.year+' 年度的資深同仁？\n\n'
+      +(rec?'⚠️ 這則已於 '+rec.at+' 發送過一次。\n\n':'')
+      +'LINE 訊息送出後收不回來。'))return;
+  document.getElementById('sn-send').disabled=true;
+  setMsg('sn-msg','發送中…','ok');
+  jsonp('sendSeniorNotice',{token:q('t'),year:SN.year,idx:i,
+    tpl:document.getElementById('sn-tpl').value,userIds:JSON.stringify(uids)},120000).then(function(r){
+    document.getElementById('sn-send').disabled=false;
+    if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'發送失敗','err');return;}
+    var t='已送出 '+r.sent+' 則';
+    if(r.failed)t+='；失敗 '+r.failed+' 則：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');
+    setMsg('sn-msg',t,r.failed?'err':'ok');
+    snLoad();   // 重載以更新發送紀錄
   });
 }
 
