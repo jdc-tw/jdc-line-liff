@@ -31,7 +31,7 @@ const BC_OK = {
   ok: true, actName: '驗收用活動', eventDate: '2026/08/28', published: true,
   participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
   sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
-  template: BC_TPL, tplHasUrl: true,
+  template: BC_TPL, defaultTemplate: BC_TPL, tplHasUrl: true,
   // 補發下拉用的名單（依單位分組）
   people: [
     { userId: 'U_a', name: '洪炫佑', unit: '工務管理組' },
@@ -54,14 +54,16 @@ const STATIONS = [
 const RESPONSES = {
   getSeatingBoard: Object.assign({}, FIXTURE, { stations: STATIONS }),
   listActivities: ACTS,
-  getAnniversaries: { ok: true, rows: [] },
+  getAnniversaries: { ok: true, year: 2026, rows: [
+    { name: '林玉娟', unit: '宸實永寧', years: 20, date: '2006-08-08' },
+    { name: '賴雅慧', unit: '管理部', years: 15, date: '2011-04-21' }] },
   previewPassBroadcast: BC_OK,
   // 掃描站管理：一站已存在，用來驗列表／複製／換發／刪除的畫面
   listStaffStations: { ok: true, actId: 'actTEST', rows: STATIONS },
   addStaffStation: { ok: true, token: 'tokNEW', station: '第 3 站' },
   // 資深夥伴通知（2026-08-16）：三種狀態都要有，否則驗不到「對不到的人被停用勾選」
   getSeniorNotice: { ok: true, year: 2026, years: [2027, 2026, 2025, 2024],
-    titles: ['① 忘年會表揚提醒', '② 社內報問卷邀請', '③ 問卷截止提醒'],
+    titles: ['忘年會表揚提醒', '社內報問卷邀請', '問卷截止提醒'],
     templates: ['第一則內容（忘年會）', '第二則內容（問卷邀請）', '第三則內容（截止提醒）'],
     audience: [
       { name: '林玉娟', unit: '宸實永寧', years: 20, date: '2006-08-08', userId: 'U_lin', status: 'ok' },
@@ -70,6 +72,9 @@ const RESPONSES = {
       { name: '同名者', unit: '施工圖組', years: 5, date: '2021-01-01', userId: '', status: 'ambiguous' }],
     sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['林玉娟', '賴雅慧'] } } },
   saveSeniorTemplate: { ok: true },
+  savePassTemplate: { ok: true },
+  addSeniorTemplate: { ok: true, idx: 3 },
+  removeSeniorTemplate: { ok: true },
   sendSeniorNotice: { ok: true, sent: 2, failed: 0, failures: [] },
   removeStaffStation: { ok: true },
   batch: {
@@ -77,7 +82,8 @@ const RESPONSES = {
     results: {
       listActivities: ACTS,
       getActivityStats: { ok: false, msg: '（驗收頁不驗統計分頁）' },
-      getAnniversaries: { ok: true, rows: [] },
+      getAnniversaries: { ok: true, year: 2026, rows: [
+        { name: '林玉娟', unit: '宸實永寧', years: 20, date: '2006-08-08' }] },
     },
   },
 };
@@ -114,7 +120,12 @@ const stub = `<script>
 const src = fs.readFileSync(process.env.VEG_SRC || path.join(__dirname, '..', '..', 'stats.html'), 'utf8');
 const i = src.indexOf('<head>');
 if (i < 0) { console.error('找不到 <head>，stats.html 結構變了'); process.exit(1); }
-const out = src.slice(0, i + 6) + '\n' + stub + src.slice(i + 6);
+// assets/*.js 加一個隨機查詢字串：瀏覽器會把同名檔留在記憶體快取裡，改了 asset 卻沿用舊版，
+// 於是「驗到的不是你剛改的那份」而且完全沒有徵兆（2026-08-16 就這樣誤判了一次 anniv.js）。
+const bust = process.env.VEG_BUST || String(Date.now());
+const withBust = (src.slice(0, i + 6) + '\n' + stub + src.slice(i + 6))
+  .replace(/(src=")(assets\/[^"]+\.js)(")/g, (m, a, f, z) => a + f + '?v=' + bust + z);
+const out = withBust;
 
 // 全部產在 /tmp/veg-ui：測試頁 ＋ 指回 repo assets/ 的 symlink（相對路徑照吃，repo 不多檔）
 const repo = path.join(__dirname, '..', '..');
