@@ -8,107 +8,177 @@
 <title>活動紀錄看板</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
+  /* ── 設計語彙（2026-08-16 改版）───────────────────────────────────────────
+     使用者要的四個字：低調、簡約、扁平、有設計感。四條做法：
+     ① 綠色降飽和 —— #1a5c3a 太濃，整頁一多就沉。改用 sage #4a7c62，
+        底色用它的極淡色階 #eff4f1，形成同一族的層次而不是兩種綠。
+     ② 按鈕全扁平 —— 無陰影、無漸層、圓角收到 8px；主要=實心、次要=淡底無框、
+        文字鈕=無底無框。**每一顆都明寫 color**：不寫的話 iOS 會給系統藍，
+        那正是使用者說「藍色很難看」的來源（button 預設色 ≠ 繼承）。
+     ③ 去除全部 emoji —— 標題與按鈕都不再用圖案代替字。
+     ④ 卡片去陰影改細線 —— 陰影是擬物殘留，1px #ececea 就夠分層。 */
+  :root {
+    --g: #4a7c62;          /* 主綠（比原 #1a5c3a 淡、降飽和） */
+    --g-dk: #3b6650;       /* 按下／強調 */
+    --g-bg: #eff4f1;       /* 極淡綠底 */
+    --g-ln: #d5e2da;       /* 綠色系細線 */
+    --ink: #2c2c2b;        /* 主文字 */
+    --ink2: #6b6b68;       /* 次文字 */
+    --ink3: #9a9a96;       /* 弱文字 */
+    --bg: #fbfbfa;         /* 頁面底（帶一點暖，不用純灰） */
+    --ln: #ececea;         /* 一般細線 */
+    --warn: #8a6a2f;       /* 提醒（降飽和的琥珀） */
+    --warn-bg: #f7f2e6;
+    --bad: #a3453d;        /* 錯誤（降飽和的磚紅） */
+    --bad-bg: #f7ecea;
+  }
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
-    padding: 20px 16px 40px; font-size: 17px; line-height: 1.6; color: #333;
-    background: #f7f7f7; max-width: 480px; margin: 0 auto;
+    padding: 20px 16px 40px; font-size: 16px; line-height: 1.65; color: var(--ink);
+    background: var(--bg); max-width: 480px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
   }
-  .brand { text-align: center; margin: 0 0 14px; }
-  .brand img { width: 100%; max-width: 240px; height: auto; }
-  h1 { font-size: 20px; margin: 0 0 4px; color: #1a1a1a; }
-  .meta { font-size: 14px; color: #888; margin-bottom: 18px; }
-  .card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .brand { text-align: center; margin: 0 0 16px; }
+  .brand img { width: 100%; max-width: 210px; height: auto; }
+  h1 { font-size: 19px; font-weight: 600; margin: 0 0 10px; color: var(--ink); letter-spacing: .01em; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ink); letter-spacing: .01em; }
+  .meta { font-size: 13px; color: var(--ink3); margin-bottom: 18px; }
+  .card { background: #fff; border: 1px solid var(--ln); border-radius: 10px; padding: 18px; margin-bottom: 14px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: center; }
-  .num { font-size: 26px; font-weight: 700; color: #1a1a1a; }
-  .num.green { color: #06a04a; } .num.red { color: #c62828; } .num.grey { color: #888; }
-  .cap { font-size: 13px; color: #888; }
-  .sub { font-size: 14px; color: #666; margin-top: 12px; text-align: center; }
-  .sec { font-size: 16px; color: #666; margin: 24px 0 10px; font-weight: 600; }
-  .grp { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 8px; overflow: hidden; }
+  .num { font-size: 26px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
+  .num.green { color: var(--g); } .num.red { color: var(--bad); } .num.grey { color: var(--ink3); }
+  .cap { font-size: 12.5px; color: var(--ink3); }
+  .sub { font-size: 13.5px; color: var(--ink2); margin-top: 12px; text-align: center; }
+  .sec { font-size: 13px; color: var(--ink3); margin: 22px 0 8px; font-weight: 600; letter-spacing: .06em; }
+  .grp { background: #fff; border: 1px solid var(--ln); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
   .grp summary { padding: 12px 14px; cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: baseline; gap: 8px; }
   .grp summary::-webkit-details-marker { display: none; }
-  .grp summary::before { content: '▸'; color: #bbb; font-size: 13px; transition: transform .15s; }
+  .grp summary::before { content: '›'; color: var(--ink3); font-size: 15px; transition: transform .18s; }
   .grp[open] summary::before { transform: rotate(90deg); }
-  .grp .cnt { color: #888; font-weight: 400; font-size: 14px; }
+  .grp .cnt { color: var(--ink3); font-weight: 400; font-size: 13.5px; }
   .grp .body { padding: 0 14px 12px 30px; }
-  .names { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 15px; color: #444; }
-  .p { padding: 4px 0; border-bottom: 1px solid #f2f2f2; }
+  .names { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14.5px; color: var(--ink2); }
+  .p { padding: 4px 0; border-bottom: 1px solid #f4f4f2; }
   .p:last-child { border-bottom: none; }
   .p .n { font-weight: 600; }
-  .p .att { font-size: 12px; padding: 1px 7px; border-radius: 10px; margin-left: 8px; }
-  .att-y { background: #e6f9ee; color: #1a7d44; }
-  .att-n { background: #fdecea; color: #b71c1c; }
-  .p .op { font-size: 14px; color: #444; display: block; margin-top: 2px; }
-  .empty { text-align: center; color: #888; padding: 30px 0; font-size: 15px; }
-  /* tabs */
-  .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
-  .tabs button { flex: 1; padding: 10px 0; font-size: 15px; font-weight: 600; color: #666;
-    background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; cursor: pointer; }
-  .tabs button.on { background: #1a5c3a; border-color: #1a5c3a; color: #fff; }
+  .p .att { font-size: 11.5px; padding: 1px 7px; border-radius: 4px; margin-left: 8px; }
+  .att-y { background: var(--g-bg); color: var(--g); }
+  .att-n { background: var(--bad-bg); color: var(--bad); }
+  .p .op { font-size: 13.5px; color: var(--ink2); display: block; margin-top: 2px; }
+  .empty { text-align: center; color: var(--ink3); padding: 26px 0; font-size: 14px; }
+  /* tabs：扁平、無框，靠底線指示目前分頁 */
+  .tabs { display: flex; gap: 2px; margin: 0 0 18px; border-bottom: 1px solid var(--ln); }
+  .tabs button { flex: 1; padding: 9px 0 10px; font-size: 14.5px; font-weight: 500; color: var(--ink3);
+    background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
+    font-family: inherit; transition: color .15s, border-color .15s; }
+  .tabs button.on { color: var(--g); border-bottom-color: var(--g); font-weight: 600; }
+  /* 活動選擇器：橫向滑動的純文字，無邊框、無捲軸 */
+  .actbar { display: flex; gap: 18px; overflow-x: auto; scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;
+    margin: 0 -16px 14px; padding: 2px 16px 10px; scrollbar-width: none; }
+  .actbar::-webkit-scrollbar { display: none; }
+  .actbar button { flex: 0 0 auto; scroll-snap-align: start; background: none; border: none; padding: 2px 0;
+    font-family: inherit; font-size: 15px; font-weight: 500; color: var(--ink3); cursor: pointer;
+    white-space: nowrap; transition: color .18s; }
+  .actbar button.on { color: var(--ink); font-weight: 600; }
+  .actbar button.on::after { content: ''; display: block; height: 2px; background: var(--g);
+    border-radius: 1px; margin-top: 4px; }
   /* 活動管理 */
   .fld { margin-bottom: 12px; }
-  .fld label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
-  .fld input, .fld textarea { width: 100%; font-size: 16px; padding: 9px 10px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
+  .fld label { display: block; font-size: 12.5px; color: var(--ink2); margin-bottom: 4px; }
+  .fld input, .fld textarea, select { width: 100%; font-size: 16px; padding: 9px 10px; border: 1px solid var(--ln);
+    border-radius: 8px; font-family: inherit; color: var(--ink); background: #fff; }
   .fld textarea { min-height: 56px; resize: vertical; }
-  .btn { display: inline-block; padding: 9px 18px; font-size: 15px; font-weight: 600; border: none; border-radius: 9px; cursor: pointer; }
-  .btn-pri { background: #1a5c3a; color: #fff; width: 100%; }
-  .btn-sm { padding: 5px 12px; font-size: 13px; background: #f1f1f1; color: #333; margin: 4px 6px 0 0; }
-  .btn-sm.warn { background: #fdecea; color: #b71c1c; }
+  /* 每一顆按鈕都明寫 color：不寫＝iOS 給系統藍 */
+  .btn { display: inline-block; padding: 9px 16px; font-size: 14.5px; font-weight: 600; border: none;
+    border-radius: 8px; cursor: pointer; font-family: inherit; background: var(--g-bg); color: var(--g);
+    transition: background .15s; }
+  .btn:active { background: var(--g-ln); }
+  .btn-pri, .btn-pri2 { background: var(--g); color: #fff; }
+  .btn-pri:active, .btn-pri2:active { background: var(--g-dk); }
+  .btn-pri { width: 100%; }
+  .btn-sm { padding: 4px 11px; font-size: 12.5px; background: #f4f4f2; color: var(--ink2); margin: 4px 6px 0 0; }
+  .btn-sm.warn { background: var(--bad-bg); color: var(--bad); }
+  .btn-up { background: #fff; color: var(--g); border: 1px solid var(--g-ln); }
+  .btn-amber { background: var(--warn-bg); color: var(--warn); }
+  .btn-red { background: var(--bad-bg); color: var(--bad); }
+  .btn-grey { background: #f4f4f2; color: var(--ink2); }
   .act-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  .act-h .nm { font-weight: 700; font-size: 16px; }
-  .st { font-size: 12px; padding: 1px 8px; border-radius: 10px; }
-  .st-open { background: #e6f9ee; color: #1a7d44; } .st-closed { background: #eee; color: #777; } .st-due { background: #fff3e0; color: #b26a00; }
-  .act-meta { font-size: 13px; color: #888; margin-top: 2px; }
-  .msg { font-size: 14px; margin-top: 8px; min-height: 1em; }
-  .msg.ok { color: #1a7d44; } .msg.err { color: #b71c1c; }
-  .rep { border-top: 1px solid #f0f0f0; margin-top: 10px; padding-top: 8px; }
+  .act-h .nm { font-weight: 600; font-size: 15.5px; }
+  .st { font-size: 11.5px; padding: 1px 8px; border-radius: 4px; }
+  .st-open { background: var(--g-bg); color: var(--g); } .st-closed { background: #f2f2f0; color: var(--ink3); }
+  .st-due { background: var(--warn-bg); color: var(--warn); }
+  .act-meta { font-size: 12.5px; color: var(--ink3); margin-top: 2px; }
+  .msg { font-size: 13.5px; margin-top: 8px; min-height: 1em; }
+  .msg.ok { color: var(--g); } .msg.err { color: var(--bad); }
+  .rep { border-top: 1px solid var(--ln); margin-top: 10px; padding-top: 8px; }
   /* 桌次管理 */
   .btnrow { display: flex; gap: 8px; margin-top: 10px; }
   .btnrow .btn { flex: 1; padding: 10px 4px; font-size: 14px; }
-  .btn-pri2 { background: #1a5c3a; color: #fff; }
-  .btn-up { background: #fff; color: #1a5c3a; border: 2px solid #1a5c3a; }
-  .btn-amber { background: #b26a00; color: #fff; }
-  .btn-red { background: #c62828; color: #fff; }
-  .btn-grey { background: #e8e8e8; color: #777; }
-  .pills { display: flex; gap: 6px; margin: 14px 0 10px; }
-  .pill { flex: 1; text-align: center; font-size: 13px; font-weight: 600; padding: 7px 0; border-radius: 8px;
-    background: #f1f1f1; color: #666; border: 1px solid transparent; cursor: pointer; }
-  .pill.on { background: #e6f0ea; color: #1a5c3a; border-color: #9dbfab; }
+  .pills { display: flex; gap: 4px; margin: 14px 0 10px; }
+  .pill { flex: 1; text-align: center; font-size: 13px; font-weight: 500; padding: 7px 0; border-radius: 7px;
+    background: none; color: var(--ink3); border: none; cursor: pointer; font-family: inherit; }
+  .pill.on { background: var(--g-bg); color: var(--g); font-weight: 600; }
   .scope { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .tile { border: 1px solid #e3e3e3; border-radius: 10px; padding: 8px 4px; text-align: center;
-    background: #fafafa; cursor: pointer; }
-  .tile b { display: block; font-size: 14px; line-height: 1.3; }
-  .tile .c { font-size: 11px; color: #888; }
-  .tile.sel { background: #e6f0ea; border: 2px solid #1a5c3a; }
-  .tile.dirty { background: #fff3c2; border-color: #e5c65a; }
-  .tile.empty0 { color: #bbb; background: #fff; }
+  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+  .tile { border: 1px solid var(--ln); border-radius: 8px; padding: 8px 4px; text-align: center;
+    background: #fff; cursor: pointer; }
+  .tile b { display: block; font-size: 14px; line-height: 1.3; font-weight: 600; }
+  .tile .c { font-size: 11px; color: var(--ink3); }
+  .tile.sel { background: var(--g-bg); border-color: var(--g); }
+  .tile.dirty { background: var(--warn-bg); border-color: #e0d2ae; }
+  .tile.empty0 { color: #c9c9c5; }
   .tile.unit b { font-size: 12.5px; }
-  .detail { border: 2px solid #1a5c3a; border-radius: 12px; margin-top: 10px; padding: 10px 14px; background: #fff; }
-  .dhead { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .detail { border: 1px solid var(--g-ln); border-radius: 10px; margin-top: 10px; padding: 12px 14px; background: #fff; }
+  .dhead { font-weight: 600; font-size: 14.5px; margin-bottom: 6px; }
   /* flex-wrap＋nowrap：窄螢幕塞不下時整顆標籤換到下一行，而不是把「已變更」壓成直排三個字
      （2026-08-10 素食視圖多了桌號膠囊後在 390px 實測到，功能對但整列爆高） */
-  .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 6px 2px; border-bottom: 1px solid #f2f2f2; font-size: 14px; }
+  .prow { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 7px 2px; border-bottom: 1px solid #f4f4f2; font-size: 14px; }
   .prow > span { white-space: nowrap; }
   .prow:last-child { border-bottom: none; }
   .prow .nm { font-weight: 600; min-width: 58px; }
-  .prow .ti { font-size: 11px; color: #888; flex: 1; }
-  .prow .gname { color: #c00000; font-weight: 600; min-width: 58px; }
-  .prow .gtag { font-size: 10.5px; background: #fdecea; color: #b71c1c; border-radius: 8px; padding: 0 6px; }
-  .prow .chg { font-size: 10.5px; background: #e5c65a; color: #5d4a00; border-radius: 8px; padding: 0 6px; }
-  .prow.chgrow { background: #fff3c2; border-radius: 8px; }
-  .prow .tno { font-size: 11px; background: #e6f0ea; color: #1a5c3a; border-radius: 8px; padding: 0 7px; font-weight: 700; }
-  .prow .veg { font-size: 10.5px; background: #e6f9ee; color: #1a7d44; border-radius: 8px; padding: 0 6px; font-weight: 700; }
-  .mini { font-size: 11px; color: #1a5c3a; border: 1px solid #cfe3d6; border-radius: 6px; padding: 1px 6px;
-    background: #fff; cursor: pointer; }
-  .divider { font-size: 11px; color: #bbb; padding: 4px 2px 2px; letter-spacing: .1em; }
+  .prow .ti { font-size: 11px; color: var(--ink3); flex: 1; }
+  .prow .gname { color: #8f5a52; font-weight: 600; min-width: 58px; }
+  .prow .gtag { font-size: 10.5px; background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 0 6px; }
+  .prow .chg { font-size: 10.5px; background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 0 6px; }
+  .prow.chgrow { background: var(--warn-bg); border-radius: 6px; }
+  .prow .tno { font-size: 11px; background: var(--g-bg); color: var(--g); border-radius: 4px; padding: 0 7px; font-weight: 600; }
+  .prow .veg { font-size: 10.5px; background: var(--g-bg); color: var(--g); border-radius: 4px; padding: 0 6px; font-weight: 600; }
+  .mini { font-size: 11px; color: var(--g); border: none; border-radius: 5px; padding: 2px 8px;
+    background: var(--g-bg); cursor: pointer; font-family: inherit; }
+  .divider { font-size: 11px; color: var(--ink3); padding: 4px 2px 2px; letter-spacing: .1em; }
   /* 素食視圖的跨桌廠商提示（份數可能算錯桌，要讓使用者看得到） */
-  .vwarn { font-size: 12.5px; color: #7a5320; background: #fff8e8; border-radius: 6px; padding: 6px 9px; margin-bottom: 8px; line-height: 1.5; }
+  .vwarn { font-size: 12.5px; color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 7px 10px; margin-bottom: 8px; line-height: 1.55; }
+  .hint { font-size: 12px; color: var(--ink3); margin: 6px 0 0; line-height: 1.6; }
+  /* 佔位符：可點的碼標，點一下插進游標處 */
+  .phs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .ph { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--g-bg); color: var(--g); border: none; border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+  .ph.lock { background: #f4f4f2; color: var(--ink2); }
+  /* 鏡像上色圖層：與 textarea 疊在同一格，字體行高必須逐項相同，否則底色會錯位 */
+  .tpl-wrap { position: relative; }
+  .tpl-wrap textarea, .tpl-mirror {
+    font-family: inherit; font-size: 13.5px; line-height: 1.7; padding: 10px;
+    border: 1px solid var(--ln); border-radius: 8px; width: 100%;
+    white-space: pre-wrap; overflow-wrap: break-word; letter-spacing: 0;
+  }
+  .tpl-mirror { position: absolute; inset: 0; overflow: hidden; color: transparent;
+    background: #fff; pointer-events: none; border-color: transparent; }
+  /* 底色要看得出來才有意義：--g-bg(#eff4f1) 疊在白底上實測幾乎看不見（2026-08-16 量過），
+     改用深一階的 --g-ln。仍然是同一族的綠，不破壞低調。 */
+  .tpl-mirror mark { background: var(--g-ln); color: transparent; border-radius: 3px; }
+  .tpl-wrap textarea { position: relative; background: transparent; resize: vertical; display: block; }
+  /* {　打字時跳出的佔位符選單 */
+  .ph-pop { position: absolute; z-index: 40; background: #fff; border: 1px solid var(--ln);
+    border-radius: 8px; padding: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.09); }
+  .ph-pop button { display: block; width: 100%; text-align: left; background: none; border: none;
+    padding: 6px 10px; font-size: 13px; font-family: inherit; color: var(--ink); cursor: pointer; border-radius: 5px; }
+  .ph-pop button:hover, .ph-pop button.on { background: var(--g-bg); color: var(--g); }
   @media (min-width: 768px) {
-    body { max-width: 720px; padding: 32px 24px 60px; font-size: 18px; }
-    h1 { font-size: 25px; } .num { font-size: 32px; } .cap { font-size: 14px; }
-    .card { padding: 26px 30px; } .sec { font-size: 18px; }
+    body { max-width: 720px; padding: 32px 24px 60px; font-size: 17px; }
+    h1 { font-size: 23px; } .num { font-size: 32px; } .cap { font-size: 13px; }
+    .card { padding: 24px 28px; }
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
@@ -122,7 +192,8 @@
 </div>
 <div id="tab-stats">
   <h1 id="title">活動紀錄看板</h1>
-  <select id="act-picker" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin-bottom:10px;display:none" onchange="loadStats(this.value)"></select>
+  <select id="act-picker" style="display:none" onchange="loadStats(this.value)"></select>
+  <div class="actbar" id="act-actbar"></div>
   <div id="meta" class="meta">載入中…</div>
   <div id="content"><div class="empty">載入中…</div></div>
 </div>
@@ -130,16 +201,16 @@
 <div id="tab-staff" style="display:none">
   <h1>員工</h1>
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">📥 員工名冊</div>
-    <div class="btnrow"><button class="btn btn-pri2" onclick="downloadRoster()">⬇ 單位總表</button>
-      <button class="btn btn-pri2" onclick="downloadRosterFlat()">⬇ 逐人明細</button></div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;color:#555;font-size:14px">
-      <input type="checkbox" id="s-dl-leavers" style="width:auto;margin:0">列出離職同仁（僅逐人明細適用）
+    <h2>員工名冊</h2>
+    <div class="btnrow"><button class="btn" onclick="downloadRoster()">單位總表</button>
+      <button class="btn" onclick="downloadRosterFlat()">逐人明細</button></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400;color:var(--ink2);font-size:13.5px">
+      <input type="checkbox" id="s-dl-leavers" style="width:auto;margin:0">含離職（限逐人明細）
     </label>
     <div id="s-dl-msg" class="msg"></div>
   </div>
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:6px">🎂 年資里程碑</div>
+    <h2>年資里程碑</h2>
     <div id="anniv-box"><div class="empty">載入中…</div></div>
   </div>
 
@@ -148,63 +219,59 @@
        所以 2027 年打開這張卡，年度下拉仍然要選得到 2026。 -->
   <div class="card">
     <h2>資深夥伴通知</h2>
-    <p style="font-size:13px;color:#666;margin:0 0 8px">
-      推 LINE 給該<b>里程碑年度</b>的資深同仁。年度是名單身分，跟哪一天發沒有關係——
-      忘年會表揚、社內報問卷都在隔年，所以隔年仍然選同一個年度。</p>
-    <div class="scope">
-      <span style="font-size:13px;color:#666">年度</span>
-      <select id="sn-year" onchange="snLoad()"
-        style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px"></select>
-    </div>
-    <div id="sn-people" style="margin-top:10px"><div class="empty">載入中…</div></div>
+    <p class="hint">年度＝名單身分，與發送日期無關（表揚與問卷都在隔年）。</p>
     <div class="scope" style="margin-top:10px">
-      <span style="font-size:13px;color:#666">訊息</span>
-      <select id="sn-idx" onchange="snPickMsg()"
-        style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px"></select>
+      <span style="font-size:12.5px;color:var(--ink2)">年度</span>
+      <select id="sn-year" onchange="snLoad()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
     </div>
-    <div id="sn-sent" style="font-size:12.5px;color:#888;margin:6px 0 0"></div>
-    <textarea id="sn-tpl" rows="8" oninput="snTplChanged()"
-      style="width:100%;margin-top:8px;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:13.5px;font-family:inherit;line-height:1.6"></textarea>
-    <p style="font-size:12.5px;color:#888;margin:6px 0 0">
-      可用佔位符：<code>{姓名}</code> <code>{年資}</code> <code>{年度}</code>（三則預設都沒用到，需要時再加）。
-      內容會<b>存起來</b>，明年打開就是這一份，改日期即可。</p>
-    <div class="btnrow" style="margin-top:8px">
-      <button class="btn" onclick="snSaveTpl()">儲存內容</button>
+    <div id="sn-people" style="margin-top:6px"><div class="empty">載入中…</div></div>
+    <div class="scope" style="margin-top:12px">
+      <span style="font-size:12.5px;color:var(--ink2)">訊息</span>
+      <select id="sn-idx" onchange="snPickMsg()" style="flex:1;font-size:13.5px;padding:7px 10px"></select>
+      <button class="btn btn-sm" onclick="snAddTpl()" style="margin:0">新增</button>
+      <button class="btn btn-sm" onclick="snDelTpl()" style="margin:0">刪除</button>
+    </div>
+    <input id="sn-title" placeholder="這則的名稱" maxlength="30" oninput="snTplChanged()"
+      style="margin-top:8px;font-size:13.5px;padding:7px 10px">
+    <div class="tpl-wrap" style="margin-top:8px">
+      <div class="tpl-mirror" id="sn-mirror" aria-hidden="true"></div>
+      <textarea id="sn-tpl" rows="8" oninput="snTplChanged()"></textarea>
+    </div>
+    <div class="phs" id="sn-phs"></div>
+    <div id="sn-sent" class="hint"></div>
+    <div class="btnrow">
+      <button class="btn" onclick="snSaveTpl()">儲存</button>
       <button class="btn btn-pri2" id="sn-send" onclick="snSend()">發送給勾選的人</button></div>
     <div id="sn-msg" class="msg"></div>
   </div>
 </div>
 <div id="tab-manage" style="display:none">
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:12px">➕ 新增活動</div>
-    <div class="fld"><label>活動名稱（必填）</label><input id="na-name" placeholder="例：2026 尾牙"></div>
-    <div class="fld"><label>調查截止日（必填，系統自動收到當天 23:59）</label><input id="na-deadline" type="date"></div>
-    <div class="fld"><label>活動日期（選填，顯示在問卷上）</label><input id="na-event" type="date"></div>
-    <div class="fld"><label>說明文字（選填，顯示在問卷卡片上）</label><textarea id="na-q" placeholder="例：請於截止日前回覆出席意願"></textarea></div>
+    <h2>新增活動</h2>
+    <div class="fld"><label>活動名稱</label><input id="na-name" placeholder="例：2026 尾牙"></div>
+    <div class="fld"><label>調查截止日（收到當天 23:59）</label><input id="na-deadline" type="date"></div>
+    <div class="fld"><label>活動日期（選填）</label><input id="na-event" type="date"></div>
+    <div class="fld"><label>問卷說明（選填）</label><textarea id="na-q" placeholder="例：請於截止日前回覆出席意願"></textarea></div>
     <div class="fld"><label style="display:flex;align-items:center;gap:8px;font-weight:400">
       <input type="checkbox" id="act-lottery-chk" style="width:auto;margin:0">連結獎金榜（尾牙用）</label>
       <input id="act-lottery-ssid" type="text" style="display:none;margin-top:6px"
              placeholder="獎金榜試算表 ID" value="1Hhd4egsR3lnaybO1zsCp-kVS2_K1KHmR"></div>
-    <button class="btn btn-pri" onclick="createAct()">建立活動（狀態自動＝開放）</button>
+    <button class="btn btn-pri" onclick="createAct()">建立活動</button>
     <div id="na-msg" class="msg"></div>
   </div>
   <div class="card" id="refill-panel" style="display:none">
-    <div style="font-weight:700;font-size:16px;margin-bottom:6px" id="refill-title">開放補填</div>
+    <h2 id="refill-title">開放補填</h2>
     <input type="hidden" id="refill-act">
-    <div style="font-size:13px;color:#666;line-height:1.7;margin-bottom:10px">
-      系統只負責開門，回覆一律由本人自己填——送出後系統會自動發 <b>LINE ＋ Email</b> 給他，您不必再另外通知。<br>
-      已完成驗證者：立即開放補填，期限到隔天 23:59、用一次即失效。<br>
-      尚未完成 LINE 驗證者：系統改寄「綁定邀請信」到他的公司信箱（7 天內有效），<b>他完成驗證後會自動開放補填並通知他</b>，您不需要再操作第二次。
-    </div>
+    <p class="hint" style="margin-bottom:10px">
+      本人自己填，系統會自動通知他，您不必再操作第二次。<br>
+      已驗證：立即開放，期限到隔天 23:59。未驗證：改寄綁定邀請信，完成後自動開放。</p>
     <div class="fld"><label>單位</label>
-      <select id="refill-unit" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="fillRefillPeople()"><option value="">載入中…</option></select></div>
+      <select id="refill-unit" style="font-size:15px" onchange="fillRefillPeople()"><option value="">載入中…</option></select></div>
     <div class="fld"><label>同仁</label>
-      <select id="refill-person" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"><option value="">請先選單位</option></select></div>
-    <div id="refill-hint" style="font-size:12.5px;color:#666;line-height:1.8;margin-bottom:10px"></div>
-    <div style="font-size:12.5px;color:#b26a00;line-height:1.8;margin-bottom:10px">
-      ※ 離職同仁不會出現在名單中。<br>
-      ※ 若桌次已發布才補進來：座位總覽會顯示「有調整」，需補排位並重新發佈；活動當天各掃描站要按一次「重新載入」才認得他的報到碼。
-    </div>
+      <select id="refill-person" style="font-size:15px"><option value="">請先選單位</option></select></div>
+    <div id="refill-hint" class="hint" style="margin-bottom:10px"></div>
+    <p class="hint" style="color:var(--warn);margin-bottom:10px">
+      桌次已發布後才補進來：要補排位並重新發佈，當天各掃描站也要按一次「重新載入」。</p>
     <div class="btnrow">
       <button class="btn btn-grey" onclick="closeRefill()">取消</button>
       <button class="btn btn-pri2" style="flex:2" onclick="doGrantRefill()">開放補填並通知</button>
@@ -216,44 +283,35 @@
 </div>
 <div id="tab-tables" style="display:none">
   <h1>桌次管理</h1>
-  <div class="fld"><label>活動（切歷史場次可參考前次資料）</label>
-    <select id="ti-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px" onchange="loadSeating();stLoad()"></select></div>
+  <!-- 活動選擇：橫向滑動的純文字。原生 select 留著當值的載體（全頁 .value 讀它），
+       但整個藏起來——所有互動都走 .actbar 的按鈕。 -->
+  <select id="ti-act" style="display:none" onchange="loadSeating();stLoad()"></select>
+  <div class="actbar" id="ti-actbar"></div>
 
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🎩 來賓名單 <span id="g-sum" style="color:#888;font-weight:400;font-size:14px"></span></div>
-    <div class="btnrow"><button class="btn btn-up" onclick="document.getElementById('g-file').click()">⬆ 上傳</button>
-      <button class="btn btn-pri2" onclick="dlGuestFile()">⬇ 下載</button></div>
+    <h2>來賓名單 <span id="g-sum" style="color:var(--ink3);font-weight:400;font-size:13px"></span></h2>
+    <div class="btnrow"><button class="btn" onclick="document.getElementById('g-file').click()">上傳</button>
+      <button class="btn" onclick="dlGuestFile()">下載</button></div>
     <input type="file" id="g-file" accept=".xlsx,.xls" style="display:none" onchange="upGuests(this)">
     <div id="gl-msg" class="msg"></div>
   </div>
 
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🪑 座位表 <span id="s-sum" style="color:#888;font-weight:400;font-size:14px"></span></div>
-    <div class="btnrow"><button class="btn btn-pri2" onclick="dlSeatingFile()">⬇ 排位用檔</button>
-      <button class="btn btn-up" onclick="document.getElementById('s-file').click()">⬆ 排位結果</button></div>
+    <h2>座位表 <span id="s-sum" style="color:var(--ink3);font-weight:400;font-size:13px"></span></h2>
+    <div class="btnrow"><button class="btn" onclick="dlSeatingFile()">排位用檔</button>
+      <button class="btn" onclick="document.getElementById('s-file').click()">上傳排位結果</button></div>
     <input type="file" id="s-file" accept=".xlsx,.xls" style="display:none" onchange="upSeating(this)">
     <div class="pills"><button class="pill on" id="pv-table" onclick="setSeatView('table')">依桌次</button>
       <button class="pill" id="pv-unit" onclick="setSeatView('unit')">依單位</button>
-      <button class="pill" id="pv-veg" onclick="setSeatView('veg')">🥬 素食</button></div>
-    <div id="scope-row" class="scope"><span style="font-size:13px;color:#666">顯示</span>
-      <select id="seat-scope" onchange="renderBoard()" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:6px 10px;font-size:13.5px">
-        <option value="seated">已排桌</option><option value="unseated">未排桌</option></select></div>
+      <button class="pill" id="pv-veg" onclick="setSeatView('veg')">素食</button></div>
+    <!-- 未排桌不再靠下拉切換：直接列在最上面一行。沒有人未排桌就寫「無」，
+         有人就點開看。少一個要先選才看得到東西的控制項。 -->
+    <div id="unseated-row"></div>
     <div id="seat-board"><div class="empty">載入中…</div></div>
     <div id="seat-detail"></div>
-    <div class="btnrow"><button class="btn btn-pri2" onclick="dlFormal()">⬇ 正式座位表</button>
-      <button class="btn" id="pub-btn" onclick="seatPublish()">發佈桌次</button></div>
+    <div class="btnrow"><button class="btn" onclick="dlFormal()">正式座位表</button>
+      <button class="btn" id="pub-btn" onclick="togglePublish()">發佈桌次</button></div>
     <div id="sm-msg" class="msg"></div>
-    <!-- 危險操作：刻意收進摺疊區、不與「重新發佈」並排。取消發布會讓現場六台掃描機的
-         桌號全部變空白而且不報錯（getEventCheckinSnapshot 的 published 閘同一個）。 -->
-    <details style="margin-top:10px">
-      <summary style="font-size:13px;color:#888;cursor:pointer">危險操作</summary>
-      <div style="margin-top:8px">
-        <button class="btn" id="unpub-btn" onclick="seatUnpublish()"
-                style="font-size:13.5px">取消發佈桌次</button>
-        <p style="font-size:12.5px;color:#888;margin:6px 0 0">
-          同仁會看不到自己的桌次，<b>活動當天各掃描站的桌號也會一併變空白</b>。要重新給就再按一次「發佈桌次」。</p>
-      </div>
-    </details>
   </div>
 
   <!-- ⇩ 以下四張卡已於 2026-08-16 搬走：掃描站管理／報到碼通知／員工 QR → 「報到」分頁，
@@ -265,62 +323,56 @@
      等於讓人在看不見的地方決定「137 則 LINE 要發給哪一場」。 -->
 <div id="tab-checkin" style="display:none">
   <h1>報到</h1>
-  <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:6px">🎯 對象活動</div>
-    <select id="ck-act" style="width:100%;font-size:15px;padding:8px 10px;border:1px solid #ddd;border-radius:8px"
-      onchange="stLoad();bcPreview()"></select>
-  </div>
+  <select id="ck-act" style="display:none" onchange="stLoad();bcPreview()"></select>
+  <div class="actbar" id="ck-actbar"></div>
 
   <!-- 掃描站管理（2026-08-16）：活動主辦自助開站，不必手改 Script Property。
        刻意不放 EVENT_CHECKIN_SECRET 的輪替——那顆一按，所有已印紙卡與已發 QR 全部失效，
        跟撤一個站別不是同一個量級，不該擺在同一張卡上讓人順手按到。 -->
   <div class="card">
     <h2>掃描站管理</h2>
-    <p style="font-size:13px;color:#666;margin:0 0 8px">
-      活動當天每台工作人員手機各開一條連結。站名會顯示在掃描頁頂列，六台靠它互相分辨。</p>
+    <p class="hint" style="margin:0 0 10px">每台工作人員手機各一條連結，站名顯示在掃描頁頂列。</p>
     <div id="st-list"><div class="empty">載入中…</div></div>
-    <div class="scope" style="margin-top:8px">
+    <div class="scope" style="margin-top:10px">
       <input id="st-name" placeholder="站名（例：第 1 站）" maxlength="20"
-        style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:13.5px">
-      <button class="btn btn-pri2" onclick="stAdd()">＋ 新增一站</button></div>
+        style="flex:1;font-size:13.5px;padding:8px 10px">
+      <button class="btn btn-pri2" onclick="stAdd()">新增一站</button></div>
     <div id="st-msg" class="msg"></div>
   </div>
 
   <!-- 報到碼通知：活動前一天由使用者按鈕發送（2026-08-16 拍板不做自動排程） -->
   <div class="card">
     <h2>報到碼通知</h2>
-    <p style="font-size:13px;color:#666;margin:0 0 8px">
-      推一則 LINE 給所有「參加」且已綁定的同仁，內含<b>本人桌次</b>與報到碼連結。一人一則、桌次各自不同。</p>
+    <p class="hint" style="margin:0 0 8px">一人一則，各自帶本人桌次與報到碼連結。</p>
     <!-- 可編輯範本：改完要再按一次預覽（範例一律由伺服器套範本產生，前端不自己算，
          否則預覽看到的與真正送出的會是兩套規則）。改動後發送鈕重新鎖上。
          ⚠️ 版面順序＝內容→預覽→發送（2026-08-16 使用者指正）。原本「發送給全部」放在最上面，
          等於在還沒看到預覽之前就先看到那顆鈕，而它是 137 則 LINE、送出去收不回來。
          同時原本有兩顆都呼叫 bcPreview() 的鈕（「重新整理」與「套用並重新預覽」），已併成一顆。 -->
     <div id="bc-edit" style="display:none;margin-top:10px">
-      <label style="font-size:13px;color:#666;display:block;margin-bottom:4px">訊息內容（可改）</label>
-      <textarea id="bc-tpl" rows="7" oninput="bcTplChanged()"
-        style="width:100%;border:1px solid #ddd;border-radius:8px;padding:10px;font-size:13.5px;font-family:inherit;line-height:1.6"></textarea>
-      <p style="font-size:12.5px;color:#888;margin:6px 0 0">
-        可用佔位符：<code>{活動名}</code> <code>{日期}</code> <code>{桌次}</code> <code>{連結}</code>，發送時逐人替換。
-        <b>{連結} 不能刪</b>，沒有它同仁點不到報到碼。整行的佔位符都沒值時那一行會自動消失。</p>
+      <div class="tpl-wrap">
+        <div class="tpl-mirror" id="bc-mirror" aria-hidden="true"></div>
+        <textarea id="bc-tpl" rows="7" oninput="bcTplChanged()"></textarea>
+      </div>
+      <div class="phs" id="bc-phs"></div>
     </div>
     <!-- 這一列放在 #bc-edit 外面：首載失敗時 #bc-edit 還是隱藏的，
          按鈕若在裡面就沒有任何重試入口，畫面只會停在錯誤訊息。 -->
     <div class="btnrow" style="margin-top:8px">
-      <button class="btn" onclick="bcPreview()">套用並重新預覽</button>
+      <button class="btn" onclick="bcPreview()">套用並預覽</button>
       <button class="btn" onclick="bcTplReset()">還原預設</button></div>
     <div id="bc-preview" style="display:none;margin-top:8px"></div>
     <div id="bc-msg" class="msg"></div>
     <!-- 補發：137 人裡總有人沒收到、換手機、或自己刪掉了。
-         不用 137 個勾選框——手機上不好用；改成挑一個人補一則。 -->
-    <details id="bc-one" style="margin-top:10px;display:none">
-      <summary style="font-size:13px;color:#888;cursor:pointer">補發給特定人</summary>
-      <div class="scope" style="margin-top:8px">
-        <select id="bc-one-sel" style="flex:1;border:1px solid #ddd;border-radius:8px;padding:8px 10px;font-size:13.5px"></select>
-        <button class="btn" onclick="bcSendOne()">補發一則</button></div>
-      <p style="font-size:12.5px;color:#888;margin:6px 0 0">
-        用的是上面同一份內容（改過內容要先按「套用並重新預覽」）。</p>
-    </details>
+         不收摺疊（2026-08-16 使用者要求）；改成先選單位再選人的兩段式，
+         137 個名字擠一個下拉在手機上挑不動。 -->
+    <div id="bc-one" style="margin-top:14px;display:none">
+      <div class="sec" style="margin:0 0 6px">補發給特定人</div>
+      <div class="scope">
+        <select id="bc-one-unit" onchange="bcFillPeople()" style="flex:1;font-size:13.5px;padding:8px 10px"></select>
+        <select id="bc-one-sel" style="flex:1;font-size:13.5px;padding:8px 10px"></select>
+        <button class="btn" onclick="bcSendOne()">補發</button></div>
+    </div>
     <!-- 發送鈕放最後：讀完內容與預覽才會看到它。收不回來的動作擺在閱讀順序的終點。 -->
     <div class="btnrow" style="margin-top:14px">
       <button class="btn btn-pri2" id="bc-send" onclick="bcSend()" disabled
@@ -328,9 +380,9 @@
   </div>
 
   <div class="card">
-    <div style="font-weight:700;font-size:16px;margin-bottom:4px">🔳 員工 QR</div>
-    <div class="btnrow"><button class="btn btn-pri2" onclick="dlAllQr()">⬇ 批次下載（確認參加者）</button></div>
-    <div style="font-size:12px;color:#888;margin-top:6px">ZIP・檔名 單位_姓名.png；單獨一張＝座位表各列的「⬇QR」。</div>
+    <h2>員工 QR</h2>
+    <div class="btnrow"><button class="btn" onclick="dlAllQr()">批次下載</button></div>
+    <p class="hint">ZIP・檔名 單位_姓名.png。單張在座位表點名字取得。</p>
     <div id="qr-msg" class="msg"></div>
   </div>
 </div>
@@ -348,6 +400,100 @@
 if(typeof esc!=='function'){window.esc=function(s){return (s==null?'':s).toString().replace(/</g,'&lt;');};}
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+
+/* ── 活動選擇器：橫向滑動的純文字 ─────────────────────────────────────────
+   原生 <select> 留在 DOM 裡當值的載體（全頁十幾處讀 .value、寫 .value，
+   改掉會牽動太多地方），只是整個隱藏；使用者互動走這排無邊框的文字鈕。
+   選中的那顆會 scrollIntoView，所以場次多的時候不會停在看不見的位置。 */
+function renderActBar(selId,barId){
+  var sel=document.getElementById(selId),bar=document.getElementById(barId);
+  if(!sel||!bar)return;
+  bar.innerHTML='';
+  for(var i=0;i<sel.options.length;i++){
+    (function(o){
+      var b=document.createElement('button');
+      b.type='button';
+      b.textContent=o.dataset.short||o.textContent;
+      if(o.value===sel.value)b.className='on';
+      b.onclick=function(){
+        if(sel.value===o.value)return;
+        sel.value=o.value;
+        renderActBar(selId,barId);
+        if(sel.onchange)sel.onchange();
+        else sel.dispatchEvent(new Event('change'));
+      };
+      bar.appendChild(b);
+    })(sel.options[i]);
+  }
+  var on=bar.querySelector('button.on');
+  if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest',inline:'center'});
+}
+
+/* ── 佔位符 ──────────────────────────────────────────────────────────────
+   一處定義、三處共用（清單顯示／點擊插入／打「{」跳選單／鏡像上底色）。
+   使用者要求：「到底有多少佔位符，都請一次提供給需要佔位符的地方」。 */
+var PH_SETS={
+  bc:[{k:'活動名'},{k:'日期'},{k:'桌次'},{k:'連結',lock:true,why:'沒有它同仁點不到報到碼'}],
+  sn:[{k:'姓名'},{k:'年資'},{k:'年度'}]
+};
+function phList(set){return PH_SETS[set]||[];}
+/** 把佔位符畫成一排可點的碼標；點一下插進游標處。 */
+function renderPhs(set,boxId,taId){
+  var box=document.getElementById(boxId);if(!box)return;
+  box.innerHTML='';
+  phList(set).forEach(function(p){
+    var b=document.createElement('button');
+    b.type='button';b.className=p.lock?'ph lock':'ph';
+    b.textContent='{'+p.k+'}';
+    if(p.why)b.title=p.why;
+    b.onclick=function(){insertAtCursor(taId,'{'+p.k+'}');};
+    box.appendChild(b);
+  });
+}
+function insertAtCursor(taId,text){
+  var ta=document.getElementById(taId);if(!ta)return;
+  var s=ta.selectionStart,e=ta.selectionEnd;
+  ta.value=ta.value.slice(0,s)+text+ta.value.slice(e);
+  ta.selectionStart=ta.selectionEnd=s+text.length;
+  ta.focus();
+  ta.dispatchEvent(new Event('input'));
+}
+/** 鏡像圖層：把 {…} 包成 <mark> 上底色。textarea 本身不能上色，只能疊一層同規格的 div。 */
+function paintMirror(taId,mirrorId,set){
+  var ta=document.getElementById(taId),mi=document.getElementById(mirrorId);
+  if(!ta||!mi)return;
+  var known={};phList(set).forEach(function(p){known[p.k]=1;});
+  var html=esc(ta.value).replace(/\{([^{}\n]{1,12})\}/g,function(m,k){
+    return known[k]?'<mark>'+m+'</mark>':m;   // 不認得的不上色＝一眼看出打錯字
+  });
+  mi.innerHTML=html+'\n';                     // 補一行，讓最後一行換行時高度跟得上
+  mi.scrollTop=ta.scrollTop;
+}
+/** 打出「{」就跳出選單，選了自動補完整個佔位符。 */
+function phPopup(taId,set,ev){
+  closePhPop();
+  var ta=document.getElementById(taId);
+  if(!ta||ta.value.charAt(ta.selectionStart-1)!=='{')return;
+  var pop=document.createElement('div');
+  pop.className='ph-pop';pop.id='ph-pop';
+  phList(set).forEach(function(p){
+    var b=document.createElement('button');
+    b.type='button';b.textContent='{'+p.k+'}';
+    b.onmousedown=b.ontouchstart=function(e){
+      e.preventDefault();
+      var s=ta.selectionStart;
+      ta.value=ta.value.slice(0,s-1)+'{'+p.k+'}'+ta.value.slice(s);   // 吃掉剛打的那個 {
+      ta.selectionStart=ta.selectionEnd=s+p.k.length+1;
+      closePhPop();ta.focus();ta.dispatchEvent(new Event('input'));
+    };
+    pop.appendChild(b);
+  });
+  var w=ta.closest('.tpl-wrap')||ta.parentNode;
+  w.appendChild(pop);
+  pop.style.left='10px';pop.style.top=(ta.offsetTop+28)+'px';
+  setTimeout(function(){document.addEventListener('click',closePhPop,{once:true});},0);
+}
+function closePhPop(){var p=document.getElementById('ph-pop');if(p)p.remove();}
 // 管理者專屬跨看板切換（只有管理者的 token 顯示；受眾分離維持：人事/企劃等其他看板使用者看不到）
 // ⚠️ 本 repo 為 PUBLIC，註解與程式碼都不要寫同仁真實姓名。
 function showAdminSwitch(isAdmin){
@@ -551,7 +697,8 @@ function loadTablesTab(){
     if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     var sel=document.getElementById('ti-act');
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（回覆 '+a.replies+'）</option>';}).join('');
+      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>';}).join('');
+    renderActBar('ti-act','ti-actbar');
     loadSeating();
   });
 }
@@ -575,6 +722,7 @@ function loadCheckinTab(){
     var sel=document.getElementById('ck-act');
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
       return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';}).join('');
+    renderActBar('ck-act','ck-actbar');
     stLoad(); bcPreview();   // 兩支並行；通知卡不再藏在「預覽」按鈕後面
   });
 }
@@ -587,11 +735,21 @@ function applySeating(r){
   // 座位表小字：實際出席＝員工＋廠商（同一份 SB.seats，與排位用檔的預定人數同源）
   var _emp=r.seats.filter(function(s){return s.kind==='emp';}).length;
   document.getElementById('s-sum').textContent='員工 '+_emp+' ＋ 廠商 '+r.guestSeats+' ＝ '+(_emp+r.guestSeats)+' 人';
+  // 發佈狀態＝一顆按鈕（2026-08-16 使用者要求：不要另外一個叫「危險操作」的摺疊區）。
+  // 三種狀態各自對應一個動作，按鈕文字就是接下來會發生的事：
+  //   none  → 還沒發 → 「發佈桌次」（主色）
+  //   dirty → 發過但桌次有調整 → 「重新發佈」（主色，因為這是該做的事）
+  //   clean → 已是最新 → 「取消發佈」（淡色，因為這是回頭路）
   var b=document.getElementById('pub-btn');
-  if(r.pubState==='none'){b.className='btn btn-amber';b.textContent='發佈桌次';}
-  else if(r.pubState==='clean'){b.className='btn btn-grey';b.textContent='已發佈';}
-  else {b.className='btn btn-red';b.textContent='重新發佈';}
+  if(r.pubState==='none'){b.className='btn btn-pri2';b.textContent='發佈桌次';}
+  else if(r.pubState==='dirty'){b.className='btn btn-pri2';b.textContent='重新發佈';}
+  else {b.className='btn';b.textContent='取消發佈';}
   renderBoard();
+}
+/** 一顆按鈕依現況決定要發佈還是取消。 */
+function togglePublish(){
+  if(!SB)return;
+  if(SB.pubState==='clean')seatUnpublish();else seatPublish();
 }
 function loadSeating(){
   var id=actId();
@@ -618,8 +776,17 @@ function setSeatView(v){
   document.getElementById('pv-veg').className='pill'+(v==='veg'?' on':'');
   document.getElementById('pv-table').className='pill'+(v==='table'?' on':'');
   document.getElementById('pv-unit').className='pill'+(v==='unit'?' on':'');
-  document.getElementById('scope-row').style.display=(v==='table')?'':'none';
   renderBoard();
+}
+/** 未排桌：一行小字常駐。沒有人就寫「無」，有人才點得開——不必先選下拉才知道有沒有。 */
+function renderUnseated(){
+  var box=document.getElementById('unseated-row');
+  if(!box)return;
+  if(!SB||seatView!=='table'){box.innerHTML='';return;}
+  var un=SB.seats.filter(function(s){return !String(s.table||'');});
+  if(!un.length){box.innerHTML='<p class="hint" style="margin:0 0 8px">未排桌：無</p>';return;}
+  box.innerHTML='<button class="btn btn-amber btn-sm" style="margin:0 0 8px" onclick="pickTile(\'__un\')">'
+    +'未排桌 '+un.length+' 人</button>';
 }
 function tableKeys_(seats){
   var ks=[];seats.forEach(function(s){var t=String(s.table||'');if(t&&ks.indexOf(t)<0)ks.push(t);});
@@ -646,13 +813,6 @@ function renderBoard(){
     return;
   }
   if(seatView==='table'){
-    var scope=document.getElementById('seat-scope').value;
-    if(scope==='unseated'){
-      var un=SB.seats.filter(function(s){return !String(s.table||'');});
-      box.innerHTML='';
-      renderDetail('未排桌（'+un.length+' 人）',un,true);
-      return;
-    }
     var keys=tableKeys_(SB.seats);
     if(!keys.length){box.innerHTML='<div class="empty">尚未排桌——先下載排位用檔，排好後上傳</div>';
       document.getElementById('seat-detail').innerHTML='';return;}
@@ -678,6 +838,7 @@ function renderBoard(){
     }).join('')+'</div>';
   }
   box.innerHTML=h;
+  renderUnseated();
   if(seatSel)pickTile(seatSel,true);else document.getElementById('seat-detail').innerHTML='';
 }
 function pickTile(key,keep){
@@ -685,6 +846,11 @@ function pickTile(key,keep){
   seatSel=key;
   if(!keep)renderBoard();
   var list,title;
+  if(key==='__un'){                                  // 未排桌那顆
+    list=SB.seats.filter(function(s){return !String(s.table||'');});
+    renderDetail('未排桌・'+list.length+' 人',list,false);
+    return;
+  }
   if(seatView==='table'){
     list=SB.seats.filter(function(s){return String(s.table||'')===key;});
     title=key+' 桌・'+list.length+' 人';
@@ -711,13 +877,15 @@ function renderDetail(title,list,showTableTag){
                               :'<span class="chg">未排桌</span>';   // 空白會看起來像漏資料
       h+='<span class="gtag">來賓</span>';
     }else{
-      h+='<span class="nm">'+esc(s.name)+'</span><span class="ti">'+esc(s.title||'')+'</span>';
+      // 姓名本身就是入口：點下去開個人頁（QR＋下載都在那裡）。
+      // 2026-08-16 使用者：原本每一列右邊掛「🔳」與「⬇QR」兩顆，重複且擠。
+      h+='<span class="nm" style="color:var(--g);cursor:pointer" '
+        +'onclick="showPerson(\''+esc(s.name)+'\')">'+esc(s.name)+'</span>'
+        +'<span class="ti">'+esc(s.title||'')+'</span>';
       if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
       if(showTableTag)h+=s.table?('<span class="tno">'+esc(s.table)+' 桌</span>')
                               :'<span class="chg">未排桌</span>';   // 空白會看起來像漏資料
-      h+='<span class="mini" onclick="showQr(\''+esc(s.name)+'\')">🔳</span>'
-        +'<span class="mini" onclick="dlOneQr(\''+esc(s.name)+'\')">⬇QR</span>';
     }
     h+='<span class="mini" onclick="moveSeat(\''+s.kind+'\',\''+esc(String(s.id))+'\',\''+esc(s.name)+'\')">移桌</span></div>';
   });
@@ -771,10 +939,10 @@ function snLoad(){
       ysel.innerHTML=r.years.map(function(y){
         return '<option value="'+y+'"'+(y===r.year?' selected':'')+'>'+y+' 年度期滿</option>';}).join('');
     }
-    var isel=document.getElementById('sn-idx');
-    if(!isel.options.length){
-      isel.innerHTML=r.titles.map(function(t,i){return '<option value="'+i+'">'+esc(t)+'</option>';}).join('');
-    }
+    // 則數會變（可新增／刪除），所以每次都重建；用 keep 保住目前選到的那則
+    var isel=document.getElementById('sn-idx'),keep=isel.value;
+    isel.innerHTML=r.titles.map(function(t,i){return '<option value="'+i+'">'+esc(t)+'</option>';}).join('');
+    if(keep&&Number(keep)<r.titles.length)isel.value=keep;
     if(!r.audience.length){box.innerHTML='<div class="empty">'+r.year+' 年度沒有年資逢 5 週年的在職同仁。</div>';}
     else{
       box.innerHTML=r.audience.map(function(p,i){
@@ -797,19 +965,52 @@ function snPickMsg(){
   if(!SN)return;
   var i=Number(document.getElementById('sn-idx').value||0);
   document.getElementById('sn-tpl').value=SN.templates[i]||'';
+  document.getElementById('sn-title').value=SN.titles[i]||'';
+  renderPhs('sn','sn-phs','sn-tpl');
+  paintMirror('sn-tpl','sn-mirror','sn');
   var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
   document.getElementById('sn-sent').textContent=rec
-    ? '這則已於 '+rec.at+' 發送給 '+rec.count+' 人：'+(rec.names||[]).join('、')
-    : '這則尚未發送過。';
+    ? '已於 '+rec.at+' 發給 '+rec.count+' 人：'+(rec.names||[]).join('、') : '';
   setMsg('sn-msg','','ok');
 }
-function snTplChanged(){setMsg('sn-msg','內容已修改，記得按「儲存內容」才會留到明年。','ok');}
+function snTplChanged(){
+  paintMirror('sn-tpl','sn-mirror','sn');
+  phPopup('sn-tpl','sn');
+  setMsg('sn-msg','改了記得按儲存。','ok');
+}
 function snSaveTpl(){
   var i=Number(document.getElementById('sn-idx').value||0);
-  jsonp('saveSeniorTemplate',{token:q('t'),idx:i,text:document.getElementById('sn-tpl').value}).then(function(r){
+  jsonp('saveSeniorTemplate',{token:q('t'),idx:i,
+    text:document.getElementById('sn-tpl').value,
+    title:document.getElementById('sn-title').value}).then(function(r){
     if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'儲存失敗','err');return;}
-    if(SN)SN.templates[i]=document.getElementById('sn-tpl').value;
-    setMsg('sn-msg','已儲存，明年打開就是這一份。','ok');
+    setMsg('sn-msg','已儲存。','ok');
+    snLoad();
+  });
+}
+/** 新增一則空白範本（則數不再寫死三則）。 */
+function snAddTpl(){
+  var t=prompt('新增一則訊息，名稱：');
+  if(t===null)return;
+  t=t.trim();if(!t){setMsg('sn-msg','要給它一個名稱。','err');return;}
+  jsonp('addSeniorTemplate',{token:q('t'),title:t}).then(function(r){
+    if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'新增失敗','err');return;}
+    document.getElementById('sn-idx').value=String(r.idx);
+    setMsg('sn-msg','已新增，內容還是空的。','ok');
+    snLoad();
+  });
+}
+/** 刪除目前這一則。刪掉之後索引會位移，所以刪完一律重載，不在前端自己拼。 */
+function snDelTpl(){
+  if(!SN)return;
+  var i=Number(document.getElementById('sn-idx').value||0);
+  if(SN.titles.length<=1){setMsg('sn-msg','只剩一則，不能再刪。','err');return;}
+  if(!confirm('刪除「'+SN.titles[i]+'」？'))return;
+  jsonp('removeSeniorTemplate',{token:q('t'),idx:i}).then(function(r){
+    if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'刪除失敗','err');return;}
+    document.getElementById('sn-idx').value='0';
+    setMsg('sn-msg','已刪除。','ok');
+    snLoad();
   });
 }
 function snSend(){
@@ -851,9 +1052,12 @@ function renderStations(rows){
     var box=document.getElementById('st-list');
     if(!rows.length){box.innerHTML='<div class="empty">還沒有任何掃描站。活動當天有幾台手機就開幾站。</div>';return;}
     box.innerHTML=rows.map(function(s){
-      return '<div style="border:1px solid #eee;border-radius:10px;padding:10px;margin-bottom:8px">'
-        +'<div style="font-weight:600;margin-bottom:4px">'+esc(s.station)+'</div>'
-        +'<div style="font-size:12px;color:#888;word-break:break-all;line-height:1.5">'+esc(s.url)+'</div>'
+      // 網址只留一行、超出用省略號：它的用途是「按複製」，不是給人讀
+      // （2026-08-16 使用者：整站文字說明要更簡短；三行 URL 在手機上佔掉整張卡）
+      return '<div style="border:1px solid var(--ln);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+        +'<div style="font-weight:600;margin-bottom:2px;font-size:14.5px">'+esc(s.station)+'</div>'
+        +'<div style="font-size:11.5px;color:var(--ink3);white-space:nowrap;overflow:hidden;'
+        +'text-overflow:ellipsis">'+esc(s.url)+'</div>'
         +'<div class="btnrow" style="margin-top:8px">'
         +'<button class="btn" style="font-size:13px" onclick="stCopy(\''+esc(s.token)+'\')">複製連結</button>'
         +'<button class="btn" style="font-size:13px" onclick="stRegen(\''+esc(s.token)+'\',\''+esc(s.station)+'\')">換 token</button>'
@@ -909,7 +1113,9 @@ function stDel(tok,name){
 var BC=null,BC_DEFAULT_TPL='';
 function bcTplChanged(){   // 改了範本＝預覽已過期，鎖回發送鈕逼人重新預覽
   document.getElementById('bc-send').disabled=true;
-  setMsg('bc-msg','內容已修改，請按「套用並重新預覽」確認後再發送。','ok');
+  paintMirror('bc-tpl','bc-mirror','bc');
+  phPopup('bc-tpl','bc');
+  setMsg('bc-msg','內容已修改，按「套用並預覽」後才能發送。','ok');
 }
 function bcTplReset(){
   if(!BC_DEFAULT_TPL)return;
@@ -925,17 +1131,21 @@ function bcPreview(){
     if(!BC_DEFAULT_TPL&&!tplEl.value)BC_DEFAULT_TPL=r.template;   // 第一次預覽時記下預設，供「還原預設」用
     if(!tplEl.value)tplEl.value=r.template;
     document.getElementById('bc-edit').style.display='block';
-    var warn=r.published?'':'<p style="color:#c33;margin:4px 0"><b>桌次尚未發布</b>——請先在座位總覽按「發佈桌次」，否則不給發送。</p>';
-    if(!r.tplHasUrl)warn+='<p style="color:#c33;margin:4px 0"><b>訊息內容少了 {連結}</b>——同仁點不到報到碼，補回去才給發送。</p>';
-    var un=r.unbound.length
-      ? '<p style="margin:4px 0;color:#a67">未綁定 LINE、收不到的 '+r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>'
-      : '<p style="margin:4px 0;color:#888">參加者全部已綁定，沒有人收不到。</p>';
+    renderPhs('bc','bc-phs','bc-tpl');
+    paintMirror('bc-tpl','bc-mirror','bc');
+    // 預覽只講「非預期」的事（2026-08-16 使用者：參加幾人發幾則、沒有人收不到，都是廢話）。
+    // 全部人都收得到＝正常，正常不必佔版面；有人收不到才要跳出來。
+    var W='margin:4px 0;font-size:13px;line-height:1.6;color:';
+    var warn='';
+    if(!r.published)warn+='<p style="'+W+'var(--bad)">桌次尚未發布，先在座位表按「發佈桌次」。</p>';
+    if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad)">內容少了 {連結}，同仁點不到報到碼。</p>';
+    if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
+      +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
     document.getElementById('bc-preview').innerHTML=
-      '<p style="margin:4px 0"><b>'+esc(r.actName)+'</b>　'+esc(r.eventDate)+'</p>'
-      +'<p style="margin:4px 0">參加 '+r.participants+' 人，<b>將發送 '+r.willSend+' 則</b></p>'
-      +warn+un
-      +'<p style="margin:8px 0 4px;color:#666;font-size:12.5px">內文範例（第一位收件人）：</p>'
-      +'<pre style="white-space:pre-wrap;background:#f6f6f6;border-radius:8px;padding:10px;font-size:12.5px;margin:0">'
+      '<p class="hint" style="margin:0 0 4px">'+esc(r.actName)+'　'+esc(r.eventDate)
+      +'　將發送 '+r.willSend+' 則</p>'+warn
+      +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:8px;padding:10px;'
+      +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
       +esc(r.sample)+'</pre>';
     document.getElementById('bc-preview').style.display='block';
     document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.tplHasUrl);
@@ -943,20 +1153,27 @@ function bcPreview(){
     setMsg('bc-msg','','ok');
   });
 }
-// 補發下拉：依單位分組，只列得到 userId 的人（拿不到的本來就發不出去）
-// ⚠️ 單位要寫進 option 文字，不能只靠 <optgroup>（2026-08-16 使用者指正「很難選」）：
-//    iOS 的原生 select 收合時只顯示 option 文字，看不到分組標籤，137 個名字裡挑人等於在猜。
+// 補發：兩段式（先單位、再人）。137 個名字擠一個下拉在手機上挑不動——
+// 2026-08-16 使用者指定的形態，不是把單位寫進選項文字而已。
+var BC_PEOPLE=[];
 function bcFillOne(people){
-  var sel=document.getElementById('bc-one-sel');
-  if(!people||!people.length){document.getElementById('bc-one').style.display='none';return;}
-  var byUnit={};
-  people.forEach(function(p){(byUnit[p.unit||'（未分類）']=byUnit[p.unit||'（未分類）']||[]).push(p);});
-  sel.innerHTML=Object.keys(byUnit).sort().map(function(u){
-    return '<optgroup label="'+esc(u)+'">'+byUnit[u].map(function(p){
-      return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'（'+esc(p.unit||'未分類')+'）</option>';
-    }).join('')+'</optgroup>';
-  }).join('');
-  document.getElementById('bc-one').style.display='';
+  BC_PEOPLE=people||[];
+  var box=document.getElementById('bc-one'),usel=document.getElementById('bc-one-unit');
+  if(!BC_PEOPLE.length){box.style.display='none';return;}
+  var units=[];
+  BC_PEOPLE.forEach(function(p){var u=p.unit||'（未分類）';if(units.indexOf(u)<0)units.push(u);});
+  units.sort();
+  usel.innerHTML='<option value="">選單位</option>'
+    +units.map(function(u){return '<option value="'+esc(u)+'">'+esc(u)+'</option>';}).join('');
+  bcFillPeople();
+  box.style.display='';
+}
+function bcFillPeople(){
+  var u=document.getElementById('bc-one-unit').value,sel=document.getElementById('bc-one-sel');
+  if(!u){sel.innerHTML='<option value="">請先選單位</option>';return;}
+  var list=BC_PEOPLE.filter(function(p){return (p.unit||'（未分類）')===u;});
+  sel.innerHTML=list.map(function(p){
+    return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'</option>';}).join('');
 }
 function bcSendOne(){
   var sel=document.getElementById('bc-one-sel');
@@ -1307,28 +1524,52 @@ function findQr(rows,name){
   for(var i=0;i<rows.length;i++)if(norm(rows[i].name)===norm(name))return rows[i];
   return null;
 }
-function showQr(name){
+/**
+ * 個人頁：點座位表上的姓名叫出來。QR 與下載合併在這裡，不再各佔列表一顆鈕
+ * （2026-08-16 使用者要求）。同一張 canvas 既顯示也下載，看到什麼就存到什麼。
+ */
+function showPerson(name){
   qrRows(actId()).then(function(rows){
     var p=findQr(rows,name);
-    if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
-    var ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:999;display:flex;align-items:center;justify-content:center';
-    ov.onclick=function(){ov.remove();};
+    if(!p){setMsg('sm-msg','找不到此人的報到碼（未回覆參加？）','err');return;}
+    var seat=(SB&&SB.seats||[]).filter(function(s){
+      return String(s.name||'').replace(/[\s　]+/g,'')===String(name).replace(/[\s　]+/g,'');})[0]||{};
     var cv=__qrCanvas(p.code,p.name,SB.actName,LOGO_DATA);
-    cv.style.cssText='max-width:82vw;max-height:82vh;border-radius:12px;background:#fff';
-    ov.appendChild(cv);document.body.appendChild(ov);
-  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
-}
-function dlOneQr(name){
-  qrRows(actId()).then(function(rows){
-    var p=findQr(rows,name);
-    if(!p){setMsg('sm-msg','找不到此人的 QR（未回覆參加？）','err');return;}
-    __qrCanvas(p.code,p.name,SB.actName,LOGO_DATA).toBlob(function(b){
-      var a=document.createElement('a');
-      a.href=URL.createObjectURL(b);a.download=(p.unit||'未分類')+'_'+p.name+'.png';
-      a.click();URL.revokeObjectURL(a.href);
-      setMsg('sm-msg','已下載 '+p.name+' 的 QR ✅','ok');
-    });
+    cv.style.cssText='width:100%;max-width:300px;border-radius:8px;background:#fff;display:block;margin:0 auto';
+
+    var ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;'
+      +'display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+
+    var card=document.createElement('div');
+    card.style.cssText='background:#fff;border-radius:12px;padding:20px;max-width:340px;width:100%;'
+      +'max-height:88vh;overflow:auto';
+    var head=document.createElement('div');
+    head.innerHTML='<div style="font-size:17px;font-weight:600;color:var(--ink)">'+esc(p.name)+'</div>'
+      +'<div style="font-size:13px;color:var(--ink3);margin:2px 0 12px">'
+      +esc([p.unit,seat.title,seat.table?(seat.table+' 桌'):'未排桌'].filter(Boolean).join('・'))+'</div>';
+    card.appendChild(head);
+    card.appendChild(cv);
+
+    var row=document.createElement('div');
+    row.className='btnrow';
+    var dl=document.createElement('button');
+    dl.className='btn btn-pri2';dl.textContent='下載 QR';
+    dl.onclick=function(){
+      cv.toBlob(function(b){
+        var a=document.createElement('a');
+        a.href=URL.createObjectURL(b);a.download=(p.unit||'未分類')+'_'+p.name+'.png';
+        a.click();URL.revokeObjectURL(a.href);
+      });
+    };
+    var cl=document.createElement('button');
+    cl.className='btn btn-grey';cl.textContent='關閉';
+    cl.onclick=function(){ov.remove();};
+    row.appendChild(dl);row.appendChild(cl);
+    card.appendChild(row);
+
+    ov.appendChild(card);document.body.appendChild(ov);
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
 function dlAllQr(){
@@ -1473,11 +1714,10 @@ pick('listActivities').then(function(r){
   if(!r||!r.ok||!r.rows.length)return;
   var sel=document.getElementById('act-picker');
   sel.innerHTML=r.rows.slice().reverse().map(function(a){
-    var st=a.status==='開放'?(a.open?'開放中':'已截止'):'已關閉';
-    return '<option value="'+esc(a.id)+'">'+esc(a.name)+'（'+st+'・回覆 '+a.replies+'）</option>';
+    return '<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>';
   }).join('');
   if(window._curAct)sel.value=window._curAct;
-  sel.style.display='';
+  renderActBar('act-picker','act-actbar');
 });
 
 var statsFirst=true;
@@ -1503,10 +1743,15 @@ function renderStats(r){
   if(!out.ok)return;
   window._curAct=out.actId;
   var sel=document.getElementById('act-picker');
-  if(sel.options.length&&out.actId)sel.value=out.actId;
+  if(sel.options.length&&out.actId){sel.value=out.actId;renderActBar('act-picker','act-actbar');}
 }
 loadStats(q('act'));
 annivInit(function(){return pick('getAnniversaries');}, q('t'), {emptyText:'今年度沒有年資逢 5 週年的同仁。'});   // 年資里程碑分頁（吃首載 batch 切片）
+// 鏡像圖層要跟著 textarea 捲動，否則長內容一捲，底色就對不到字了
+[['bc-tpl','bc-mirror'],['sn-tpl','sn-mirror']].forEach(function(p){
+  var ta=document.getElementById(p[0]),mi=document.getElementById(p[1]);
+  if(ta&&mi)ta.addEventListener('scroll',function(){mi.scrollTop=ta.scrollTop;});
+});
 rosterDlInit({ jsonp: jsonp, token: q('t'), leaversId: 's-dl-leavers',
   msg: function (t, ty) { setMsg('s-dl-msg', t, ty === 'info' ? '' : ty); } });
 </script></body></html>
