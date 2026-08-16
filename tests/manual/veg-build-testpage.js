@@ -32,6 +32,7 @@ const BC_OK = {
   participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
   sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
   template: BC_TPL, defaultTemplate: BC_TPL, tplHasUrl: true,
+  schedule: null, defaultDate: '2026-08-27',
   // 補發下拉用的名單（依單位分組）
   people: [
     { userId: 'U_a', name: '洪炫佑', unit: '工務管理組' },
@@ -73,6 +74,8 @@ const RESPONSES = {
     sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['林玉娟', '賴雅慧'] } } },
   saveSeniorTemplate: { ok: true },
   savePassTemplate: { ok: true },
+  schedulePassBroadcast: { ok: true },
+  cancelPassSchedule: { ok: true },
   addSeniorTemplate: { ok: true, idx: 3 },
   removeSeniorTemplate: { ok: true },
   sendSeniorNotice: { ok: true, sent: 2, failed: 0, failures: [] },
@@ -98,6 +101,13 @@ const stub = `<script>
   // ?sn=err → 伺服器丟例外的形狀 {ok:false,error}（沒有 msg）。
   // 2026-08-16 senior.js 漏部署時就是這個回應，而畫面只寫「載入失敗」。
   // 驗 surfaceErr() 有沒有把原因撈出來——這是唯一能證明它有效的情境。
+  var _sc = new URLSearchParams(location.search).get('sched');
+  if (_sc === 'on') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
+    { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' } });
+  if (_sc === 'sent') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
+    { schedule: { date: '2026-08-27', status: 'sent', sentAt: '2026-08-27 09:00', sent: 135, failed: 0 } });
+  if (_sc === 'failed') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
+    { schedule: { date: '2026-08-27', status: 'failed', error: '桌次尚未發布' } });
   if (new URLSearchParams(location.search).get('sn') === 'err')
     R.getSeniorNotice = { ok: false, error: 'SENIOR_TITLES is not defined' };
   window.__vegCalls = [];
