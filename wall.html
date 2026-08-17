@@ -1,0 +1,198 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>進場狀況</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<style>
+  /* 沿用看板既有的色彩系統。這頁只用綠一個色相的深淺——
+     15 個單位若各給一色，在馬賽克上其實分不出來；靠「分區塊＋標籤」才認得出。 */
+  :root {
+    --g: #4a7c62; --g-dk: #2f5341; --g-lt: #7aa891; --g-bg: #eff4f1;
+    --r: #ac1335;
+    --ink: #2c2c2b; --ink2: #6b6b68; --ink3: #9a9a96;
+    --bg: #fbfbfa; --card: #fff; --ln: #ececea; --cell-done: #e8e8e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --g: #8ab79c; --g-dk: #b5d3c2; --g-lt: #4e6d5c; --g-bg: #1e2a24;
+      --r: #e2879a;
+      --ink: #e8e8e5; --ink2: #a9a9a4; --ink3: #7c7c78;
+      --bg: #141413; --card: #1c1c1a; --ln: #2c2c29; --cell-done: #262624;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* ── 頂列：活動名 ＋ 三個數字。橫式大螢幕上這一列要一眼看完 ── */
+  header { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; flex: 0 0 auto; }
+  .act { font-size: clamp(17px, 2.2vw, 30px); font-weight: 600; letter-spacing: .01em; }
+  .nums { display: flex; gap: clamp(14px, 2.4vw, 40px); margin-left: auto; align-items: baseline; }
+  .n { display: flex; align-items: baseline; gap: 6px; }
+  .n b { font-size: clamp(22px, 4.4vw, 62px); font-weight: 600; line-height: 1;
+         font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .n span { font-size: clamp(11px, 1.1vw, 15px); color: var(--ink3); }
+  .n.arrived b { color: var(--g); }
+  .n.left b { color: var(--r); }
+  .n.total b { color: var(--ink3); }
+
+  /* ── 馬賽克：單位一區塊，區塊間留空隙 ── */
+  #wall { flex: 1 1 auto; overflow: hidden; display: flex; flex-wrap: wrap;
+          align-content: flex-start; gap: clamp(10px, 1.4vw, 26px); }
+  .unit { display: flex; flex-direction: column; gap: 4px; }
+  .uname { font-size: clamp(10px, .82vw, 14px); color: var(--ink3); white-space: nowrap;
+           font-variant-numeric: tabular-nums; }
+  .uname i { font-style: normal; color: var(--ink3); opacity: .7; }
+  .cells { display: flex; flex-wrap: wrap; gap: 3px; }
+
+  /* 未到＝有顏色的格子；已到＝原地淡成底色（位置不動，畫面才不會每 15 秒重排一次） */
+  .c { width: var(--cs); height: var(--cs); border-radius: 2px; background: var(--g);
+       transition: background .5s ease; }
+  .c.done { background: var(--cell-done); }
+  /* 剩下 30 人以內：未到的格子直接變成名字——格子與名字是同一個東西，不用兩邊對照 */
+  .c.named { width: auto; height: auto; padding: 3px 8px; background: var(--g);
+             color: #fff; font-size: clamp(12px, 1.15vw, 19px); line-height: 1.5;
+             white-space: nowrap; border-radius: 2px; font-weight: 500; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .c.named { color: #14201a; }
+  }
+
+  footer { flex: 0 0 auto; display: flex; gap: 14px; align-items: baseline;
+           font-size: clamp(10px, .8vw, 13px); color: var(--ink3); }
+  footer .err { color: var(--r); }
+  @media (prefers-reduced-motion: reduce) { .c { transition: none; } }
+</style></head><body>
+
+<header>
+  <span class="act" id="act">載入中…</span>
+  <div class="nums">
+    <span class="n arrived"><b id="nArrived">—</b><span>已報到</span></span>
+    <span class="n left"><b id="nLeft">—</b><span>未報到</span></span>
+    <span class="n total"><b id="nTotal">—</b><span>總人數</span></span>
+  </div>
+</header>
+
+<div id="wall"></div>
+
+<footer>
+  <span id="at">—</span>
+  <span id="msg" class="err"></span>
+</footer>
+
+<script>
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+function esc(s){return (s==null?'':s).toString()
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// JSONP：同 stats.html 的作法。逾時用 Promise.race，不用 AbortController
+// （iOS 12.1 以前沒有它，會讓整段初始化同步當掉且畫面不報錯）。
+function jsonp(action,params){
+  var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';})
+    .map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  var timer,timeout=new Promise(function(_,rej){
+    timer=setTimeout(function(){rej(new Error('timeout'));},25000);});
+  return Promise.race([timeout,
+    fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',
+      {credentials:'omit',redirect:'follow'})
+      .then(function(r){return r.text();})
+      .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');
+        if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
+    .then(function(v){clearTimeout(timer);return v;},function(e){clearTimeout(timer);throw e;});
+}
+
+/**
+ * 格子邊長：**先畫再量再調**，不用公式估。
+ *
+ * 為何不估：格子會依單位換行、標籤佔一行、區塊間隙隨視窗變——這些加起來
+ * 沒有一條算得準的式子。同一頁要投 55 吋橫式螢幕也要能在手機上看，估錯的
+ * 代價是「大螢幕只用到上半部」或「手機上溢出捲動」，兩種都難看。
+ *
+ * 做法：二分逼近。設一個邊長 → 量實際高度 → 太矮就加大、超出就縮小。
+ * 上限 96px：再大就變成一格一格的色塊，看不出是「一群人」。
+ */
+function fitCells(){
+  var wall=document.getElementById('wall');
+  var avail=wall.getBoundingClientRect().height;
+  if(avail<40)return;
+  var lo=6, hi=96, best=6;
+  for(var i=0;i<9 && lo<=hi;i++){
+    var mid=Math.floor((lo+hi)/2);
+    wall.style.setProperty('--cs',mid+'px');
+    if(contentHeight(wall)<=avail-2){ best=mid; lo=mid+1; } else { hi=mid-1; }
+  }
+  wall.style.setProperty('--cs',best+'px');
+}
+
+/**
+ * 內容實際佔多高。
+ *
+ * ⚠️ **不能用 scrollHeight**：內容比容器小的時候，它回的是容器高度（clientHeight），
+ * 不是內容高度——於是「還有空間可以放大」這件事永遠量不出來。
+ * 2026-08-17 實測：手機上 6px 與 24px 的 scrollHeight 都是 704（＝容器高），
+ * 二分逼近因此一路縮到下限，格子只有 6px、畫面只用到上面四分之一。
+ * 改成量「最後一個區塊的底端離容器頂端多遠」，那才是內容真正要的高度。
+ * 減 2px 是留給 getBoundingClientRect 的小數與 scrollHeight 取整之間的落差。
+ */
+function contentHeight(wall){
+  var top=wall.getBoundingClientRect().top, bottom=top;
+  var kids=wall.children;
+  for(var i=0;i<kids.length;i++){
+    var b=kids[i].getBoundingClientRect().bottom;
+    if(b>bottom)bottom=b;
+  }
+  return bottom-top;
+}
+
+function render(r){
+  document.getElementById('act').textContent=r.actName||'';
+  document.getElementById('nArrived').textContent=r.arrived;
+  document.getElementById('nLeft').textContent=r.notArrived;
+  document.getElementById('nTotal').textContent=r.total;
+  document.getElementById('at').textContent='更新於 '+(r.at||'');
+
+  var w=document.getElementById('wall');
+  w.innerHTML=r.units.map(function(u){
+    return '<div class="unit"><div class="uname">'+esc(u.name)
+      +' <i>'+u.arrived+'/'+u.total+'</i></div><div class="cells">'
+      +u.cells.map(function(c){
+          if(c.a)return '<div class="c done"></div>';
+          return c.n?('<div class="c named">'+esc(c.n)+'</div>'):'<div class="c"></div>';
+        }).join('')
+      +'</div></div>';
+  }).join('');
+  // ⚠️ 名單模式也一定要設 --cs：使用者要的是「馬賽克還在，只是未到的變成名字」。
+  //    跳過不設的話 --cs 是空值 → 已到的格子寬度無效 → 整片消失（2026-08-17 實測到）。
+  //    名單模式改用固定小方格，讓名字成為視覺主角、已到的退成背景節奏。
+  if(r.reveal)document.getElementById('wall').style.setProperty('--cs','22px');
+  else fitCells();
+}
+
+var failures=0;
+function tick(){
+  jsonp('getArrivalWall',{token:q('t'),actId:q('act')}).then(function(r){
+    if(!r||!r.ok){
+      // 有畫面就留著舊的——寧可看到 15 秒前的數字，也不要整片變成錯誤訊息
+      document.getElementById('msg').textContent=(r&&r.msg)||'讀取失敗';
+      return;
+    }
+    failures=0;
+    document.getElementById('msg').textContent='';
+    render(r);
+  }).catch(function(){
+    failures++;
+    document.getElementById('msg').textContent='連線不穩（已重試 '+failures+' 次），畫面停在上一次的數字';
+  });
+}
+tick();
+setInterval(tick,15000);
+// 視窗大小改變（旋轉、投影切換）要重算格子邊長，否則會溢出或縮成一小塊
+var rz;
+addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(tick,300);});
+</script>
+</body></html>
