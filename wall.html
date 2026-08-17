@@ -300,9 +300,13 @@ function flip(box,before,opts){
   });
   if(!moved.length)return;
   box.offsetHeight;   // 逼瀏覽器認一次舊位置，否則兩次設定會被合併成「沒有動畫」
-  var top=moved.reduce(function(m,x){return Math.min(m,x.row);},1e9);
+  var top=moved.reduce(function(m,x){return Math.min(m,x.row);},1e9),
+      bottom=moved.reduce(function(m,x){return Math.max(m,x.row);},0),
+      // 每列間隔隨列數縮放：手機上牆有 21 列，固定 80ms 會累積到 1.7 秒、
+      // 撞上限之後最後幾列變成同時動，瀑布的尾巴就糊掉了
+      per=Math.min(80,900/Math.max(bottom-top,1));
   moved.forEach(function(m,i){
-    var d=(mode==='wall')?Math.min((m.row-top)*80,1100)   // 第幾列決定何時落下
+    var d=(mode==='wall')?Math.round((m.row-top)*per)   // 第幾列決定何時落下
                          :Math.min(i*26,700);
     var ease=(mode==='wall')?'cubic-bezier(.34,.02,.24,1)'   // 重力感：起步慢、落下快
                             :'cubic-bezier(.22,.61,.36,1)';  // 推進感：推出去、穩住
