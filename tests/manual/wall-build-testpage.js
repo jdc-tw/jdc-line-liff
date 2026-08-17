@@ -89,6 +89,49 @@ const src = fs.readFileSync(path.join(__dirname, '..', '..', 'wall.html'), 'utf8
 if (src.indexOf('<head>') === -1) { console.error('wall.html 找不到 <head>，插入點要重找'); process.exit(1); }
 
 fs.mkdirSync(OUT, { recursive: true });
+
+/* --artifact＝產出可以遠端開的版本（人不在本機時用）。
+   差別只在外殼：拆掉 <!DOCTYPE>/<html>/<head>（發布端會自己包一層），
+   輪詢改成跑完循環回第一輪，並在角落標明這是模擬資料。牆本身一個字都不改。 */
+if (process.argv.indexOf('--artifact') > -1) {
+  const cuts = [
+    [/^[\s\S]*?<head>/, ''],          // doctype/html/head 開頭
+    [/<meta[^>]*>\s*/g, ''],          // charset/viewport/robots 由發布端提供
+    [/<link[^>]*>\s*/g, ''],          // favicon 走發布參數，外部檔案會被 CSP 擋
+    [/<\/head><body>/, ''],
+    [/<\/body><\/html>\s*$/, ''],
+    [/<title>.*?<\/title>/, '<title>進場牆預覽</title>'],
+  ];
+  let out = src;
+  cuts.forEach(function (c, i) {
+    if (!c[0].test(out)) { console.error('❌ 第 ' + (i + 1) + ' 條外殼裁切沒命中，wall.html 結構變了'); process.exit(1); }
+    out = out.replace(c[0], c[1]);
+  });
+  // 主題第三態：原檔只處理了「系統偏好深色」，補上「檢視者手動選深色」
+  const DARK_STAMP = `
+  :root[data-theme="dark"] {
+    --r: #e2879a;
+    --ink: #e8e8e5; --ink2: #a9a9a4; --ink3: #7c7c78;
+    --bg: #141413; --done: #232321;
+    --scrim: rgba(20,20,19,.86);
+  }
+  #note { position: fixed; left: 14px; bottom: 12px; z-index: 3;
+          font-size: 12px; color: var(--ink3); letter-spacing: .02em; }
+`;
+  out = out.replace('</style>', DARK_STAMP + '</style>');
+  // 跑完回第一輪。遠端的人隨時打開都要看得到動畫，不能停在最後一格畫面
+  const LOOP = STUB.replace('SEQ[Math.min(i,SEQ.length-1)]', 'SEQ[i%SEQ.length]');
+  if (LOOP === STUB) { console.error('❌ 循環改寫沒命中'); process.exit(1); }
+  out = LOOP + out;   // ⚠️ 一定要插進去。漏了這行＝頁面真的去打後端，畫面停在「無權限」
+  out = out.replace('<div id="stage">',
+    '<div id="note">模擬資料 · 每 4 秒推進一輪 · 跑完自動從頭開始</div>\n<div id="stage">');
+  // 遠端看的人沒辦法在網址加 ?tick，把預設輪詢間隔直接壓到 4 秒
+  out = out.replace('setInterval(tick,15000)', 'setInterval(tick,4000)');
+  fs.writeFileSync(path.join(OUT, 'wall-artifact.html'), out);
+  console.log('✅ 產出 ' + path.join(OUT, 'wall-artifact.html') + '（遠端預覽版）');
+  process.exit(0);
+}
+
 const NAME = BIG ? 'wall-test-big.html' : 'wall-test.html';
 fs.writeFileSync(path.join(OUT, NAME), src.replace('<head>', '<head>' + STUB));
 const link = path.join(OUT, 'assets');
