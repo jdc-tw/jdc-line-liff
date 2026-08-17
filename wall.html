@@ -42,8 +42,10 @@
   .lg { display: flex; align-items: baseline; justify-content: flex-end; gap: .5em;
         font-size: var(--legfs, 15px); color: var(--ink2); }
   .lg .nm2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 人數欄等寬且右對齊，單位名的右緣才會對齊成一直線。
+     不給固定寬度的話，「9/9」比「18/18」窄，每一列的單位名右緣就會參差。 */
   .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em;
-            flex: 0 0 auto; }
+            flex: 0 0 auto; min-width: 4.4em; text-align: right; }
 
   /* 牆靠左貼著清單。置中的話人少時牆會飄到右半邊、跟清單拉開一大段空白 */
   #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: flex-start; }
@@ -54,6 +56,8 @@
        display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .c .nm { color: #fff; font-weight: 600; line-height: 1.1; text-align: center;
            padding: 2px; font-size: var(--nmfs); }
+  /* 第二階的格子是淡色，白字會看不見。字色固定不隨主題變——格子底色也不隨主題變 */
+  .c.light .nm { color: #2c2c2b; }
 
   /* ⚠️ pop 一定要掛在 .pop 上、放完就拿掉：CSS animation 的 fill 狀態會蓋過 inline style，
      格子若一直留著 animation，FLIP 寫進去的 transform 會被它吃掉、完全不動。 */
@@ -143,8 +147,9 @@ function jsonp(action,params){
  * 舊版把色環平均切成 n 份。問題在**類別數**：定性配色的人眼辨識上限大約 8–12 色，
  * 15 個單位切 15 份，必然出現兩兩認不出來的鄰居（實際跑起來就是這樣）。
  *
- * 解法＝**8 個色相 × 2 個明度階**：前八個單位用亮階，第九個起同色相走暗階。
- * 明度是人眼最敏感的維度，兩階拉開 22% 才真的分得出來。
+ * 解法＝**8 個色相 × 2 個階**：前八個單位用標準階，第九個起同色相走「更淡」的一階
+ * （明度提高、彩度降低）。整體維持粉彩調（2026-08-18 使用者指定的色系），
+ * 同色相的兩階又分得開。
  *
  * ⚠️ 兩次實測失敗留在這裡，別再走回去：
  * ① 一開始直接抄 Okabe-Ito 八色的**色相**（41/202/164/56/215/27/326/285）。
@@ -158,10 +163,14 @@ function jsonp(action,params){
  * ・黃色段（45–75°）在淺底上對比最差，亮階明度單獨再壓低，否則第一眼像壞掉的格子。
  */
 var UNIT_HUES=[20,55,100,155,200,250,295,335];
+function unitStep(i){ return i>=UNIT_HUES.length; }   // true＝走「更淡」的第二階
 function unitColor(i){
-  var h=UNIT_HUES[i%UNIT_HUES.length],second=i>=UNIT_HUES.length;
-  var lit=second?36:58;
-  if(h>=45&&h<=75&&!second)lit-=8;   // 黃色段在淺底上對比最差，亮階要再壓低
+  var h=UNIT_HUES[i%UNIT_HUES.length],second=unitStep(i);
+  /* ⚠️ 兩階只差明度，**彩度不能跟著降**。試過第二階降到 22%：
+     彩度趨近 0 時所有色相都往灰收斂，七個淡階色互相之間只剩 16–30 的距離，
+     等於七個單位共用一個顏色。這是色彩學的必然，不是調參數能繞過的。 */
+  var lit=second?74:58;
+  if(h>=45&&h<=75)lit-=8;   // 黃色段在淺底上對比最差，明度要再壓低
   return 'hsl('+h+',38%,'+lit+'%)';
 }
 
@@ -269,6 +278,7 @@ function makeCell(it){
 }
 function updCell(el,it){
   el.style.setProperty('--u',it.col);
+  el.classList.toggle('light',!!it.light);
   var s=el.firstChild;
   if(it.n){
     if(!s){ s=document.createElement('span'); s.className='nm'; el.appendChild(s); }
@@ -295,7 +305,7 @@ function build(r){
     var left=[];
     u.cells.forEach(function(c,i){ if(!c.a)left.push({k:u.name+'#'+i,n:c.n}); });
     if(left.length)live.push({k:u.name,name:u.name,total:u.total,left:left,
-                              col:unitColor(ci[u.name])});
+                              col:unitColor(ci[u.name]),light:unitStep(ci[u.name])});
   });
   return live;
 }
@@ -324,7 +334,8 @@ function layout(live){
 
   // 牆：把所有「還沒到」的人攤平，依單位順序排——同單位會聚成一片色塊
   var flat=[];
-  live.forEach(function(u){ u.left.forEach(function(c){ flat.push({k:c.k,n:c.n,col:u.col}); }); });
+  live.forEach(function(u){ u.left.forEach(function(c){
+    flat.push({k:c.k,n:c.n,col:u.col,light:u.light}); }); });
 
   var beforeW=snap(wall);
   var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
