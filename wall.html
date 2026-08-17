@@ -4,69 +4,90 @@
 <title>進場狀況</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
-  /* 沿用看板既有的色彩系統。這頁只用綠一個色相的深淺——
-     15 個單位若各給一色，在馬賽克上其實分不出來；靠「分區塊＋標籤」才認得出。 */
+  /* 整頁鋪滿的方格牆。單位靠**顏色**分辨（使用者原始需求），格子在流向上依單位相鄰，
+     所以同色會聚成一片區域——即使兩個單位的色相接近，位置也分得開。
+     色票走同一族的綠→青，只變色相與明度，不亂跳彩度：整面牆才不會花。 */
   :root {
-    --g: #4a7c62; --g-dk: #2f5341; --g-lt: #7aa891; --g-bg: #eff4f1;
     --r: #ac1335;
     --ink: #2c2c2b; --ink2: #6b6b68; --ink3: #9a9a96;
-    --bg: #fbfbfa; --card: #fff; --ln: #ececea; --cell-done: #e8e8e5;
+    --bg: #fbfbfa; --done: #ebebe8;
+    --scrim: rgba(251,251,250,.86);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --g: #8ab79c; --g-dk: #b5d3c2; --g-lt: #4e6d5c; --g-bg: #1e2a24;
       --r: #e2879a;
       --ink: #e8e8e5; --ink2: #a9a9a4; --ink3: #7c7c78;
-      --bg: #141413; --card: #1c1c1a; --ln: #2c2c29; --cell-done: #262624;
+      --bg: #141413; --done: #232321;
+      --scrim: rgba(20,20,19,.86);
     }
   }
   *, *::before, *::after { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    margin: 0; padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px;
+    margin: 0; overflow: hidden; background: var(--bg); color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
-    color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased;
-    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* ── 頂列：活動名 ＋ 三個數字。橫式大螢幕上這一列要一眼看完 ── */
-  header { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; flex: 0 0 auto; }
-  .act { font-size: clamp(17px, 2.2vw, 30px); font-weight: 600; letter-spacing: .01em; }
-  .nums { display: flex; gap: clamp(14px, 2.4vw, 40px); margin-left: auto; align-items: baseline; }
-  .n { display: flex; align-items: baseline; gap: 6px; }
-  .n b { font-size: clamp(22px, 4.4vw, 62px); font-weight: 600; line-height: 1;
+  /* 牆＝整個視窗。格子用 grid 的 1fr 平分，邊到邊剛好鋪滿，不留邊界 */
+  /* 版面＝左邊單位清單（依未報到比例排序）＋ 右邊馬賽克牆。
+     牆上只畫「還沒到」的格子——報到的直接從畫面消失，所以整面牆會一路縮到空。
+     色塊在流向上依同一個排序相鄰，比例一變，整片顏色就換位置。 */
+  #stage { position: fixed; inset: 0; display: flex; gap: clamp(16px, 2vw, 40px);
+           padding: var(--pad-top, 60px) 26px 26px; }
+  #legend { flex: 0 0 auto; width: var(--legw, 190px); display: flex; flex-direction: column;
+            justify-content: center; gap: var(--leggap, 6px); overflow: hidden; }
+  .lg { display: grid; grid-template-columns: var(--dot) 1fr auto; gap: 8px; align-items: center;
+        font-size: var(--legfs, 15px); color: var(--ink2); }
+  .lg .sw { width: var(--dot); height: var(--dot); border-radius: 2px; background: var(--u); }
+  .lg .nm2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em; }
+
+  #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
+  #wall { display: grid; gap: 3px; }
+  .c { width: var(--cs); height: var(--cs); border-radius: 3px; background: var(--u);
+       display: flex; align-items: center; justify-content: center; overflow: hidden;
+       animation: pop .45s ease both; }
+  .c .nm { color: #fff; font-weight: 600; line-height: 1.1; text-align: center;
+           padding: 2px; font-size: var(--nmfs); }
+  /* 新畫出來的格子淡入；報到那格是直接從 DOM 移除，所以「消失」不需要動畫 */
+  @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .c { animation: none; } }
+
+  /* 窄螢幕：清單改成牆下方的一排小標籤，不吃掉牆的寬度 */
+  @media (max-aspect-ratio: 4/5) {
+    #stage { flex-direction: column-reverse; }
+    #legend { width: auto; flex: 0 0 auto; flex-direction: row; flex-wrap: wrap;
+              justify-content: center; gap: 4px 10px; }
+    .lg { grid-template-columns: var(--dot) auto auto; font-size: 12px; }
+  }
+
+  /* 標題與數字浮在牆上方，不佔走牆的空間 */
+  header { position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+           display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
+           padding: 14px 20px 16px; background: var(--scrim);
+           backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .act { font-size: clamp(16px, 1.9vw, 28px); font-weight: 600; }
+  .nums { display: flex; gap: clamp(14px, 2.2vw, 38px); margin-left: auto; align-items: baseline; }
+  .n { display: flex; align-items: baseline; gap: 5px; }
+  .n b { font-size: clamp(20px, 3.6vw, 52px); font-weight: 600; line-height: 1;
          font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  .n span { font-size: clamp(11px, 1.1vw, 15px); color: var(--ink3); }
-  .n.arrived b { color: var(--g); }
+  .n span { font-size: clamp(10px, 1vw, 14px); color: var(--ink3); }
+  .n.arrived b { color: #3f7a5e; }
   .n.left b { color: var(--r); }
   .n.total b { color: var(--ink3); }
-
-  /* ── 馬賽克：單位一區塊，區塊間留空隙 ── */
-  #wall { flex: 1 1 auto; overflow: hidden; display: flex; flex-wrap: wrap;
-          align-content: flex-start; gap: clamp(10px, 1.4vw, 26px); }
-  .unit { display: flex; flex-direction: column; gap: 4px; }
-  .uname { font-size: clamp(10px, .82vw, 14px); color: var(--ink3); white-space: nowrap;
-           font-variant-numeric: tabular-nums; }
-  .uname i { font-style: normal; color: var(--ink3); opacity: .7; }
-  .cells { display: flex; flex-wrap: wrap; gap: 3px; }
-
-  /* 未到＝有顏色的格子；已到＝原地淡成底色（位置不動，畫面才不會每 15 秒重排一次） */
-  .c { width: var(--cs); height: var(--cs); border-radius: 2px; background: var(--g);
-       transition: background .5s ease; }
-  .c.done { background: var(--cell-done); }
-  /* 剩下 30 人以內：未到的格子直接變成名字——格子與名字是同一個東西，不用兩邊對照 */
-  .c.named { width: auto; height: auto; padding: 3px 8px; background: var(--g);
-             color: #fff; font-size: clamp(12px, 1.15vw, 19px); line-height: 1.5;
-             white-space: nowrap; border-radius: 2px; font-weight: 500; }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .c.named { color: #14201a; }
+    :root:not([data-theme="light"]) .n.arrived b { color: #8ab79c; }
   }
 
-  footer { flex: 0 0 auto; display: flex; gap: 14px; align-items: baseline;
-           font-size: clamp(10px, .8vw, 13px); color: var(--ink3); }
-  footer .err { color: var(--r); }
-  @media (prefers-reduced-motion: reduce) { .c { transition: none; } }
+  /* 錯誤才出現。正常運作時畫面上只有四個資訊 */
+  #msg { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: none;
+         padding: 8px 20px 10px; background: var(--scrim); color: var(--r);
+         backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+         font-size: clamp(11px, .85vw, 14px); }
 </style></head><body>
+
+<div id="stage"><div id="legend"></div><div id="wallbox"><div id="wall"></div></div></div>
 
 <header>
   <span class="act" id="act">載入中…</span>
@@ -77,12 +98,7 @@
   </div>
 </header>
 
-<div id="wall"></div>
-
-<footer>
-  <span id="at">—</span>
-  <span id="msg" class="err"></span>
-</footer>
+<div id="msg"></div>
 
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -107,46 +123,38 @@ function jsonp(action,params){
 }
 
 /**
- * 格子邊長：**先畫再量再調**，不用公式估。
+ * 單位配色：**繽紛**（使用者指定）。15 個單位各給一個明確不同的色相，
+ * 走遍整個色環，但把彩度與明度鎖在同一檔——這樣才是「繽紛」而不是「花」。
  *
- * 為何不估：格子會依單位換行、標籤佔一行、區塊間隙隨視窗變——這些加起來
- * 沒有一條算得準的式子。同一頁要投 55 吋橫式螢幕也要能在手機上看，估錯的
- * 代價是「大螢幕只用到上半部」或「手機上溢出捲動」，兩種都難看。
- *
- * 做法：二分逼近。設一個邊長 → 量實際高度 → 太矮就加大、超出就縮小。
- * 上限 96px：再大就變成一格一格的色塊，看不出是「一群人」。
+ * 起點刻意錯開黃綠（≈70°）：那一段在淺底上對比最差，第一眼會像壞掉的格子。
+ * 相鄰單位再交錯明度，兩塊色相接近時也分得開。
  */
-function fitCells(){
-  var wall=document.getElementById('wall');
-  var avail=wall.getBoundingClientRect().height;
-  if(avail<40)return;
-  var lo=6, hi=96, best=6;
-  for(var i=0;i<9 && lo<=hi;i++){
-    var mid=Math.floor((lo+hi)/2);
-    wall.style.setProperty('--cs',mid+'px');
-    if(contentHeight(wall)<=avail-2){ best=mid; lo=mid+1; } else { hi=mid-1; }
-  }
-  wall.style.setProperty('--cs',best+'px');
+function unitColor(i,n){
+  var h=(18+i*(360/Math.max(n,1)))%360;
+  // 彩度壓到 26–32%（2026-08-17 使用者：繽紛但彩度低一點）。
+  // 色相走遍整個色環＝繽紛；彩度低＝整面牆不刺眼、投在大螢幕上久看不累。
+  var sat=(i%3===0)?32:26;
+  var lit=(i%2===0)?62:54;
+  return 'hsl('+h.toFixed(0)+','+sat+'%,'+lit+'%)';
 }
 
 /**
- * 內容實際佔多高。
- *
- * ⚠️ **不能用 scrollHeight**：內容比容器小的時候，它回的是容器高度（clientHeight），
- * 不是內容高度——於是「還有空間可以放大」這件事永遠量不出來。
- * 2026-08-17 實測：手機上 6px 與 24px 的 scrollHeight 都是 704（＝容器高），
- * 二分逼近因此一路縮到下限，格子只有 6px、畫面只用到上面四分之一。
- * 改成量「最後一個區塊的底端離容器頂端多遠」，那才是內容真正要的高度。
- * 減 2px 是留給 getBoundingClientRect 的小數與 scrollHeight 取整之間的落差。
+ * 欄數：讓整塊接近視窗的長寬比，格子維持正方形。
+ * 只在 guess 附近試幾個，挑「最後一列空格最少」的那個——缺角越少，整塊越像一個完整的方陣。
  */
-function contentHeight(wall){
-  var top=wall.getBoundingClientRect().top, bottom=top;
-  var kids=wall.children;
-  for(var i=0;i<kids.length;i++){
-    var b=kids[i].getBoundingClientRect().bottom;
-    if(b>bottom)bottom=b;
+function bestCols(n,w,h){
+  var guess=Math.max(1,Math.round(Math.sqrt(n*w/h)));
+  var best=guess,score=Infinity;
+  for(var c=Math.max(1,guess-4);c<=guess+4;c++){
+    var rows=Math.ceil(n/c);
+    var waste=c*rows-n;
+    var sq=Math.abs(Math.log((w/c)/(h/rows)));
+    // 「格子要方」壓過「缺角要少」。權重反過來的話，手機上會挑出 6 欄 × 23 列
+    // ——缺角只有 1 格，但整塊縮成一條窄長方形、寬度完全沒用到（2026-08-17 實測）。
+    var sc=sq*10+waste*0.4;
+    if(sc<score){score=sc;best=c;}
   }
-  return bottom-top;
+  return best;
 }
 
 function render(r){
@@ -154,45 +162,77 @@ function render(r){
   document.getElementById('nArrived').textContent=r.arrived;
   document.getElementById('nLeft').textContent=r.notArrived;
   document.getElementById('nTotal').textContent=r.total;
-  document.getElementById('at').textContent='更新於 '+(r.at||'');
 
-  var w=document.getElementById('wall');
-  w.innerHTML=r.units.map(function(u){
-    return '<div class="unit"><div class="uname">'+esc(u.name)
-      +' <i>'+u.arrived+'/'+u.total+'</i></div><div class="cells">'
-      +u.cells.map(function(c){
-          if(c.a)return '<div class="c done"></div>';
-          return c.n?('<div class="c named">'+esc(c.n)+'</div>'):'<div class="c"></div>';
-        }).join('')
-      +'</div></div>';
+  // 只留還有人沒到的單位。到齊的整個消失——這頁的用途是「誰還沒到」。
+  // r.units 已由後端依未報到比例排好序，這裡不重排，照收即可。
+  var live=[];
+  r.units.forEach(function(u,i){
+    var left=u.cells.filter(function(c){return !c.a;});
+    if(left.length)live.push({name:u.name,total:u.total,left:left,col:unitColor(i,r.units.length)});
+  });
+
+  var stage=document.getElementById('stage'),wallbox=document.getElementById('wallbox'),
+      wall=document.getElementById('wall'),legend=document.getElementById('legend');
+  stage.style.setProperty('--pad-top',
+    Math.ceil(document.querySelector('header').getBoundingClientRect().height)+10+'px');
+
+  // 左清單：色塊＋單位名＋剩幾人。順序與牆上的色塊流向完全一致
+  var narrow=(innerWidth/innerHeight)<0.8;
+  var legw=narrow?0:Math.round(Math.max(150,Math.min(260,innerWidth*0.14)));
+  stage.style.setProperty('--legw',legw+'px');
+  legend.style.setProperty('--dot',(narrow?10:Math.max(10,Math.min(18,Math.round(innerWidth*0.0075))))+'px');
+  legend.style.setProperty('--legfs',(narrow?12:Math.max(12,Math.min(19,Math.round(innerWidth*0.0085))))+'px');
+  legend.style.setProperty('--leggap',(narrow?4:Math.max(4,Math.min(14,Math.floor(innerHeight/(live.length+2)*0.18))))+'px');
+  legend.innerHTML=live.map(function(u){
+    return '<div class="lg"><span class="sw" style="--u:'+u.col+'"></span>'
+      +'<span class="nm2">'+esc(u.name)+'</span>'
+      +'<span class="ct">'+u.left.length+'/'+u.total+'</span></div>';
   }).join('');
-  // ⚠️ 名單模式也一定要設 --cs：使用者要的是「馬賽克還在，只是未到的變成名字」。
-  //    跳過不設的話 --cs 是空值 → 已到的格子寬度無效 → 整片消失（2026-08-17 實測到）。
-  //    名單模式改用固定小方格，讓名字成為視覺主角、已到的退成背景節奏。
-  if(r.reveal)document.getElementById('wall').style.setProperty('--cs','22px');
-  else fitCells();
+
+  // 牆：把所有「還沒到」的人攤平，依單位順序排——同單位會聚成一片色塊
+  var flat=[];
+  live.forEach(function(u){ u.left.forEach(function(c){ flat.push({n:c.n,col:u.col}); }); });
+
+  var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
+  var cols=bestCols(flat.length,bw,bh);
+  var rows=Math.ceil(flat.length/cols);
+  var gap=3;
+  // ⚠️ 上限 64px 是關鍵：早期 137 格會被縮到剛好填滿，後期格數少了就撞到上限、
+  //    整塊跟著縮小——「越來越少」這件事才看得出來。不設上限的話格子會一路放大，
+  //    畫面永遠是滿的，人數在減少完全感覺不到。
+  var cs=Math.max(8,Math.floor(Math.min(
+    (bw-gap*(cols-1))/cols, (bh-gap*(rows-1))/rows, 64)));
+  wall.style.gridTemplateColumns='repeat('+cols+',var(--cs))';
+  wall.style.setProperty('--cs',cs+'px');
+  wall.style.setProperty('--nmfs',Math.max(8,Math.floor(cs*0.30))+'px');
+
+  wall.innerHTML=flat.map(function(c){
+    return '<div class="c" style="--u:'+c.col+'">'
+      +(c.n?'<span class="nm">'+esc(c.n)+'</span>':'')+'</div>';
+  }).join('');
 }
 
-var failures=0;
+var last=null,failures=0;
 function tick(){
   jsonp('getArrivalWall',{token:q('t'),actId:q('act')}).then(function(r){
-    if(!r||!r.ok){
-      // 有畫面就留著舊的——寧可看到 15 秒前的數字，也不要整片變成錯誤訊息
-      document.getElementById('msg').textContent=(r&&r.msg)||'讀取失敗';
-      return;
-    }
-    failures=0;
-    document.getElementById('msg').textContent='';
-    render(r);
+    if(!r||!r.ok){ showErr((r&&r.msg)||'讀取失敗'); return; }
+    failures=0; showErr(''); last=r; render(r);
   }).catch(function(){
     failures++;
-    document.getElementById('msg').textContent='連線不穩（已重試 '+failures+' 次），畫面停在上一次的數字';
+    // 有畫面就留著舊的——寧可看到 15 秒前的數字，也不要整片變成錯誤訊息
+    showErr('連線不穩（'+failures+' 次），畫面停在上一次');
   });
+}
+// 錯誤才出現，正常時畫面只有四個資訊（活動名／已報到／未報到／總人數）
+function showErr(t){
+  var el=document.getElementById('msg');
+  el.textContent=t; el.style.display=t?'block':'none';
 }
 tick();
 setInterval(tick,15000);
-// 視窗大小改變（旋轉、投影切換）要重算格子邊長，否則會溢出或縮成一小塊
+// 旋轉或切換投影輸出時要重排格子，否則會溢出或縮成一小塊
 var rz;
-addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(tick,300);});
+addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(function(){
+  if(last)render(last);},250);});
 </script>
 </body></html>
