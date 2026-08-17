@@ -45,7 +45,7 @@
   /* 人數欄等寬且右對齊，單位名的右緣才會對齊成一直線。
      不給固定寬度的話，「9/9」比「18/18」窄，每一列的單位名右緣就會參差。 */
   .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em;
-            flex: 0 0 auto; min-width: 4.4em; text-align: right; }
+            flex: 0 0 auto; min-width: 3.2em; text-align: right; }
 
   /* 牆靠左貼著清單。置中的話人少時牆會飄到右半邊、跟清單拉開一大段空白 */
   #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: flex-start; }
@@ -323,10 +323,15 @@ function layout(live){
   var legw=Math.round(innerWidth*(narrow?0.38:1/3));
   var beforeL=snap(legend);
   stage.style.setProperty('--legw',legw+'px');
-  // 字級吃欄寬——1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到。
-  // 但單位多的時候要改以高度為準，否則清單會長到超出畫面、後幾個單位直接看不見。
+  /* 字級由三件事一起決定，少算一件就會出事：
+     ① 最長單位名要放得下——只用欄寬的固定比例算，手機上「經營企劃管理室」
+        會被截成一半（2026-08-18 實測：需要 133px 只拿到 68px）。
+        分母＝名字字數 ＋ 人數欄 3.2em ＋ 間隔 0.5em ＋ 餘裕。
+     ② 單位多的時候以高度為準，否則清單會長到超出畫面、後幾個單位直接看不見。
+     ③ 1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到，所以上限放到 44。 */
+  var maxLen=live.reduce(function(m,u){return Math.max(m,u.name.length);},3);
   var fs=Math.max(11,Math.min(44,Math.floor(Math.min(
-    legw*0.135, (innerHeight-headerH)/Math.max(live.length,1)*0.42))));
+    legw/(maxLen+3.9), (innerHeight-headerH)/Math.max(live.length,1)*0.42))));
   legend.style.setProperty('--legfs',fs+'px');
   legend.style.setProperty('--leggap',Math.round(fs*0.55)+'px');
   reconcile(legend,live,makeLg,updLg);
