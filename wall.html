@@ -37,15 +37,20 @@
            padding: var(--pad-top, 60px) 26px 26px; }
   #legend { flex: 0 0 auto; width: var(--legw, 190px); display: flex; flex-direction: column;
             justify-content: center; gap: var(--leggap, 6px); overflow: hidden; }
-  .lg { display: grid; grid-template-columns: var(--dot) 1fr auto; gap: 8px; align-items: center;
+  /* 沒有色塊符號（2026-08-18 使用者：沒人會去看）。單位名與人數靠在一起、整組靠右，
+     貼著馬賽克牆——視線只在「還沒來的前幾個單位」與牆之間來回，不必橫跨空白。 */
+  .lg { display: flex; align-items: baseline; justify-content: flex-end; gap: .5em;
         font-size: var(--legfs, 15px); color: var(--ink2); }
-  .lg .sw { width: var(--dot); height: var(--dot); border-radius: 2px; background: var(--u); }
   .lg .nm2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em; }
+  .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em;
+            flex: 0 0 auto; }
 
-  #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
-  #wall { display: grid; gap: 3px; }
-  .c { width: var(--cs); height: var(--cs); border-radius: 3px; background: var(--u);
+  /* 牆靠左貼著清單。置中的話人少時牆會飄到右半邊、跟清單拉開一大段空白 */
+  #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: flex-start; }
+  /* ⚠️ 格子間距是 CSS 與 JS 共用的數字（JS 要拿它算格子邊長）。只能有一個來源，
+     所以定義在這裡、由 JS 讀 --gap，兩邊各寫一個數字必然會漂移。 */
+  #wall { display: grid; gap: var(--gap, 6px); }
+  .c { width: var(--cs); height: var(--cs); border-radius: 6px; background: var(--u);
        display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .c .nm { color: #fff; font-weight: 600; line-height: 1.1; text-align: center;
            padding: 2px; font-size: var(--nmfs); }
@@ -65,12 +70,10 @@
     .c.out, .lg.out { transition: none; }
   }
 
-  /* 窄螢幕：清單改成牆下方的一排小標籤，不吃掉牆的寬度 */
+  /* 窄螢幕仍然是「左清單、右牆」（2026-08-18 使用者指定：手機也要單位在左邊）。
+     只把左右間距收窄，把寬度讓給牆。舊版在這裡把清單搬到牆下方，已移除。 */
   @media (max-aspect-ratio: 4/5) {
-    #stage { flex-direction: column-reverse; }
-    #legend { width: auto; flex: 0 0 auto; flex-direction: row; flex-wrap: wrap;
-              justify-content: center; gap: 4px 10px; }
-    .lg { grid-template-columns: var(--dot) auto auto; font-size: 12px; }
+    #stage { gap: 10px; padding-left: 12px; padding-right: 12px; }
   }
 
   /* 主要資訊置中在畫面上方（2026-08-18 使用者指定）。浮在牆上方，不佔走牆的空間。
@@ -134,19 +137,32 @@ function jsonp(action,params){
 }
 
 /**
- * 單位配色：**繽紛**（使用者指定）。15 個單位各給一個明確不同的色相，
- * 走遍整個色環，但把彩度與明度鎖在同一檔——這樣才是「繽紛」而不是「花」。
+ * 單位配色＝**定性配色**（qualitative colour scheme，2026-08-18 改）。
  *
- * 起點刻意錯開黃綠（≈70°）：那一段在淺底上對比最差，第一眼會像壞掉的格子。
- * 相鄰單位再交錯明度，兩塊色相接近時也分得開。
+ * 類別型資料的標準做法：只讓色相變化，彩度與明度鎖在同一檔——這樣才是「繽紛」不是「花」。
+ * 舊版把色環平均切成 n 份。問題在**類別數**：定性配色的人眼辨識上限大約 8–12 色，
+ * 15 個單位切 15 份，必然出現兩兩認不出來的鄰居（實際跑起來就是這樣）。
+ *
+ * 解法＝**8 個色相 × 2 個明度階**：前八個單位用亮階，第九個起同色相走暗階。
+ * 明度是人眼最敏感的維度，兩階拉開 22% 才真的分得出來。
+ *
+ * ⚠️ 兩次實測失敗留在這裡，別再走回去：
+ * ① 一開始直接抄 Okabe-Ito 八色的**色相**（41/202/164/56/215/27/326/285）。
+ *    那組色是為色覺障礙者設計的，但它的 sky blue 與 blue 本來靠**明度**區分，
+ *    色相只差 13°——只取色相就撞在一起。實測最接近的三對 RGB 距離 12／13／18，
+ *    數字上是 15 種顏色，肉眼是同一色。所以這裡用等距色相，不用它的色相清單。
+ * ② 第二階一開始只「亮 12%」，同樣量到 15／17／17，等於沒分開。
+ *
+ * 另外兩個刻意的設定：
+ * ・彩度壓到 38%（2026-08-17 使用者：繽紛但彩度低一點）——投在大螢幕上久看不累。
+ * ・黃色段（45–75°）在淺底上對比最差，亮階明度單獨再壓低，否則第一眼像壞掉的格子。
  */
-function unitColor(i,n){
-  var h=(18+i*(360/Math.max(n,1)))%360;
-  // 彩度壓到 26–32%（2026-08-17 使用者：繽紛但彩度低一點）。
-  // 色相走遍整個色環＝繽紛；彩度低＝整面牆不刺眼、投在大螢幕上久看不累。
-  var sat=(i%3===0)?32:26;
-  var lit=(i%2===0)?62:54;
-  return 'hsl('+h.toFixed(0)+','+sat+'%,'+lit+'%)';
+var UNIT_HUES=[20,55,100,155,200,250,295,335];
+function unitColor(i){
+  var h=UNIT_HUES[i%UNIT_HUES.length],second=i>=UNIT_HUES.length;
+  var lit=second?36:58;
+  if(h>=45&&h<=75&&!second)lit-=8;   // 黃色段在淺底上對比最差，亮階要再壓低
+  return 'hsl('+h+',38%,'+lit+'%)';
 }
 
 /**
@@ -262,25 +278,24 @@ function updCell(el,it){
 function makeLg(it){
   var el=document.createElement('div');
   el.className='lg';
-  el.innerHTML='<span class="sw"></span><span class="nm2"></span><span class="ct"></span>';
+  el.innerHTML='<span class="nm2"></span><span class="ct"></span>';
   updLg(el,it);
   return el;
 }
 function updLg(el,it){
-  el.firstChild.style.setProperty('--u',it.col);
-  el.childNodes[1].textContent=it.name;
-  el.childNodes[2].textContent=it.left.length+'/'+it.total;
+  el.firstChild.textContent=it.name;
+  el.childNodes[1].textContent=it.left.length+'/'+it.total;
 }
 
 /** 只留還有人沒到的單位。到齊的整個消失——這頁的用途是「誰還沒到」。 */
 function build(r){
-  var ci=colorIndex(r.units),n=r.units.length,live=[];
+  var ci=colorIndex(r.units),live=[];
   // r.units 已由後端依未報到比例排好序，這裡不重排，照收即可
   r.units.forEach(function(u){
     var left=[];
     u.cells.forEach(function(c,i){ if(!c.a)left.push({k:u.name+'#'+i,n:c.n}); });
     if(left.length)live.push({k:u.name,name:u.name,total:u.total,left:left,
-                              col:unitColor(ci[u.name],n)});
+                              col:unitColor(ci[u.name])});
   });
   return live;
 }
@@ -291,19 +306,19 @@ function layout(live){
   var headerH=document.querySelector('header').getBoundingClientRect().height;
   stage.style.setProperty('--pad-top',Math.ceil(headerH)+10+'px');
 
-  // 左清單：色塊＋單位名＋剩幾人。順序與牆上的色塊流向完全一致。
+  // 左清單：單位名＋剩幾人，順序與牆上的色塊流向完全一致。
   // 寬度＝畫面的 1/3（2026-08-18 使用者指定：左 1/3 清單、右 2/3 牆）。
+  // 手機也維持在左邊，只是比例收窄到 38%——再窄下去四個字的單位名就要被截斷。
   var narrow=(innerWidth/innerHeight)<0.8;
-  var legw=narrow?0:Math.round(innerWidth/3);
+  var legw=Math.round(innerWidth*(narrow?0.38:1/3));
   var beforeL=snap(legend);
   stage.style.setProperty('--legw',legw+'px');
   // 字級吃欄寬——1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到。
   // 但單位多的時候要改以高度為準，否則清單會長到超出畫面、後幾個單位直接看不見。
-  var fs=narrow?12:Math.max(12,Math.min(44,Math.floor(Math.min(
-    legw*0.115, (innerHeight-headerH)/Math.max(live.length,1)*0.42))));
-  legend.style.setProperty('--dot',(narrow?10:Math.round(fs*0.8))+'px');
+  var fs=Math.max(11,Math.min(44,Math.floor(Math.min(
+    legw*0.135, (innerHeight-headerH)/Math.max(live.length,1)*0.42))));
   legend.style.setProperty('--legfs',fs+'px');
-  legend.style.setProperty('--leggap',(narrow?4:Math.round(fs*0.55))+'px');
+  legend.style.setProperty('--leggap',Math.round(fs*0.55)+'px');
   reconcile(legend,live,makeLg,updLg);
   flip(legend,beforeL,26);   // 清單項目少，間隔可以大一點，看得出來是一個一個換位
 
@@ -315,7 +330,8 @@ function layout(live){
   var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
   var cols=bestCols(flat.length,bw,bh);
   var rows=Math.ceil(flat.length/cols);
-  var gap=3;
+  // 間距的唯一來源是 CSS 的 --gap。在這裡再寫一次數字，改了一邊就會算錯格子邊長
+  var gap=parseFloat(getComputedStyle(wall).gap)||6;
   // ⚠️ 上限 64px 是關鍵：早期 137 格會被縮到剛好填滿，後期格數少了就撞到上限、
   //    整塊跟著縮小——「越來越少」這件事才看得出來。不設上限的話格子會一路放大，
   //    畫面永遠是滿的，人數在減少完全感覺不到。
