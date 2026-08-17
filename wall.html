@@ -46,13 +46,24 @@
   #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
   #wall { display: grid; gap: 3px; }
   .c { width: var(--cs); height: var(--cs); border-radius: 3px; background: var(--u);
-       display: flex; align-items: center; justify-content: center; overflow: hidden;
-       animation: pop .45s ease both; }
+       display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .c .nm { color: #fff; font-weight: 600; line-height: 1.1; text-align: center;
            padding: 2px; font-size: var(--nmfs); }
-  /* 新畫出來的格子淡入；報到那格是直接從 DOM 移除，所以「消失」不需要動畫 */
+
+  /* ⚠️ pop 一定要掛在 .pop 上、放完就拿掉：CSS animation 的 fill 狀態會蓋過 inline style，
+     格子若一直留著 animation，FLIP 寫進去的 transform 會被它吃掉、完全不動。 */
+  .c.pop { animation: pop .45s ease both; }
   @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .c { animation: none; } }
+
+  /* 報到的格子先淡出縮小，讓「誰到了」看得見，之後才重排剩下的 */
+  .c.out { opacity: 0; transform: scale(.6);
+           transition: opacity .38s ease, transform .38s ease; }
+  .lg.out { opacity: 0; transition: opacity .38s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .c.pop { animation: none; }
+    .c.out, .lg.out { transition: none; }
+  }
 
   /* 窄螢幕：清單改成牆下方的一排小標籤，不吃掉牆的寬度 */
   @media (max-aspect-ratio: 4/5) {
@@ -62,13 +73,15 @@
     .lg { grid-template-columns: var(--dot) auto auto; font-size: 12px; }
   }
 
-  /* 標題與數字浮在牆上方，不佔走牆的空間 */
+  /* 主要資訊置中在畫面上方（2026-08-18 使用者指定）。浮在牆上方，不佔走牆的空間。
+     活動名一行、三個數字一行，整組水平置中——大螢幕上視線第一個落點就在正中央。 */
   header { position: fixed; top: 0; left: 0; right: 0; z-index: 2;
-           display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
+           display: flex; flex-direction: column; align-items: center; gap: 4px;
            padding: 14px 20px 16px; background: var(--scrim);
            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
   .act { font-size: clamp(16px, 1.9vw, 28px); font-weight: 600; }
-  .nums { display: flex; gap: clamp(14px, 2.2vw, 38px); margin-left: auto; align-items: baseline; }
+  .nums { display: flex; gap: clamp(14px, 2.2vw, 38px); align-items: baseline;
+          flex-wrap: wrap; justify-content: center; }
   .n { display: flex; align-items: baseline; gap: 5px; }
   .n b { font-size: clamp(20px, 3.6vw, 52px); font-weight: 600; line-height: 1;
          font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
@@ -103,8 +116,6 @@
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
-function esc(s){return (s==null?'':s).toString()
-  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 // JSONP：同 stats.html 的作法。逾時用 Promise.race，不用 AbortController
 // （iOS 12.1 以前沒有它，會讓整段初始化同步當掉且畫面不報錯）。
@@ -139,6 +150,20 @@ function unitColor(i,n){
 }
 
 /**
+ * 配色的索引：綁**單位名稱**，不是綁「目前排第幾」（2026-08-18 修）。
+ *
+ * 後端的 units 依未報到比例排序，名次每 15 秒都在動。原本拿陣列索引去算色相，
+ * 名次一掉顏色就跟著換——舊版整塊重畫看不太出來，改成滑動之後會變成
+ * 「色塊一邊滑一邊變色」，整面牆再也讀不出「哪一片是哪個單位」。
+ * 改用單位名排序後的固定位置：同一場活動內，一個單位的顏色從頭到尾不變。
+ */
+function colorIndex(units){
+  var m={};
+  units.map(function(u){return u.name;}).sort().forEach(function(n,i){m[n]=i;});
+  return m;
+}
+
+/**
  * 欄數：讓整塊接近視窗的長寬比，格子維持正方形。
  * 只在 guess 附近試幾個，挑「最後一列空格最少」的那個——缺角越少，整塊越像一個完整的方陣。
  */
@@ -157,42 +182,136 @@ function bestCols(n,w,h){
   return best;
 }
 
-function render(r){
-  document.getElementById('act').textContent=r.actName||'';
-  document.getElementById('nArrived').textContent=r.arrived;
-  document.getElementById('nLeft').textContent=r.notArrived;
-  document.getElementById('nTotal').textContent=r.total;
-
-  // 只留還有人沒到的單位。到齊的整個消失——這頁的用途是「誰還沒到」。
-  // r.units 已由後端依未報到比例排好序，這裡不重排，照收即可。
-  var live=[];
-  r.units.forEach(function(u,i){
-    var left=u.cells.filter(function(c){return !c.a;});
-    if(left.length)live.push({name:u.name,total:u.total,left:left,col:unitColor(i,r.units.length)});
+/* ═══════ 移動（2026-08-18 使用者指定：左清單與右牆都隨出席比例逐一移動）═══════
+ *
+ * 做法是 FLIP：先量舊位置 → 換完 DOM → 把元素拉回舊位置 → 放開，瀏覽器就會把它滑過去。
+ * 前提是**元素身分要留著**——舊版每 15 秒 innerHTML 整塊重畫，元素全是新的，
+ * 沒有「舊位置」可言，畫面只會瞬間跳位。所以下面改成依 key 復用既有元素。
+ *
+ * key：單位＝單位名；格子＝單位名＋它在該單位裡的固定序號（後端已依員編排好，不會變）。
+ */
+function reduced(){
+  return !!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function snap(box){
+  var m={};
+  Array.prototype.forEach.call(box.children,function(el){
+    if(el.dataset.k)m[el.dataset.k]=el.getBoundingClientRect();
   });
+  return m;
+}
+/** 依 key 復用既有元素、補新的、丟掉不在清單裡的，順序照 items 排好 */
+function reconcile(box,items,make,upd){
+  var old={};
+  Array.prototype.forEach.call(box.children,function(el){ if(el.dataset.k)old[el.dataset.k]=el; });
+  var frag=document.createDocumentFragment();
+  items.forEach(function(it){
+    var el=old[it.k];
+    if(el){ delete old[it.k]; upd(el,it); } else { el=make(it); el.dataset.k=it.k; }
+    frag.appendChild(el);
+  });
+  Object.keys(old).forEach(function(k){
+    var e=old[k]; if(e.parentNode)e.parentNode.removeChild(e);
+  });
+  box.appendChild(frag);
+}
+/** stagger＝每個元素之間差幾毫秒。這就是「逐一」移動而不是整片一起搬 */
+function flip(box,before,stagger){
+  if(reduced())return;
+  var moved=[];
+  Array.prototype.forEach.call(box.children,function(el){
+    var b=before[el.dataset.k]; if(!b)return;            // 新來的沒有舊位置，交給 pop 淡入
+    var a=el.getBoundingClientRect();
+    var dx=b.left-a.left, dy=b.top-a.top;
+    var sc=(a.width>1&&b.width>1)?(b.width/a.width):1;   // 格子會隨人數變大，尺寸也要一起補
+    if(Math.abs(dx)<0.5&&Math.abs(dy)<0.5&&Math.abs(sc-1)<0.01)return;
+    el.style.transition='none';
+    el.style.transform='translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)+'px) scale('+sc.toFixed(4)+')';
+    moved.push(el);
+  });
+  if(!moved.length)return;
+  box.offsetHeight;   // 逼瀏覽器認一次舊位置，否則兩次設定會被合併成「沒有動畫」
+  moved.forEach(function(el,i){
+    el.style.transition='transform .55s cubic-bezier(.22,.61,.36,1) '+Math.min(i*stagger,700)+'ms';
+    el.style.transform='';
+  });
+}
+/** 這一輪要離場的（報到了／整個單位到齊了）先標記，讓它淡出，晚一點才真的移除 */
+function markOut(box,keep,outs){
+  Array.prototype.forEach.call(box.children,function(el){
+    var k=el.dataset.k;
+    if(k&&!keep[k]&&!el.classList.contains('out')){ el.classList.add('out'); outs.push(el); }
+  });
+}
 
+function makeCell(it){
+  var el=document.createElement('div');
+  el.className='c pop';
+  el.addEventListener('animationend',function(){ el.classList.remove('pop'); });
+  updCell(el,it);
+  return el;
+}
+function updCell(el,it){
+  el.style.setProperty('--u',it.col);
+  var s=el.firstChild;
+  if(it.n){
+    if(!s){ s=document.createElement('span'); s.className='nm'; el.appendChild(s); }
+    if(s.textContent!==it.n)s.textContent=it.n;
+  } else if(s){ el.removeChild(s); }
+}
+function makeLg(it){
+  var el=document.createElement('div');
+  el.className='lg';
+  el.innerHTML='<span class="sw"></span><span class="nm2"></span><span class="ct"></span>';
+  updLg(el,it);
+  return el;
+}
+function updLg(el,it){
+  el.firstChild.style.setProperty('--u',it.col);
+  el.childNodes[1].textContent=it.name;
+  el.childNodes[2].textContent=it.left.length+'/'+it.total;
+}
+
+/** 只留還有人沒到的單位。到齊的整個消失——這頁的用途是「誰還沒到」。 */
+function build(r){
+  var ci=colorIndex(r.units),n=r.units.length,live=[];
+  // r.units 已由後端依未報到比例排好序，這裡不重排，照收即可
+  r.units.forEach(function(u){
+    var left=[];
+    u.cells.forEach(function(c,i){ if(!c.a)left.push({k:u.name+'#'+i,n:c.n}); });
+    if(left.length)live.push({k:u.name,name:u.name,total:u.total,left:left,
+                              col:unitColor(ci[u.name],n)});
+  });
+  return live;
+}
+
+function layout(live){
   var stage=document.getElementById('stage'),wallbox=document.getElementById('wallbox'),
       wall=document.getElementById('wall'),legend=document.getElementById('legend');
-  stage.style.setProperty('--pad-top',
-    Math.ceil(document.querySelector('header').getBoundingClientRect().height)+10+'px');
+  var headerH=document.querySelector('header').getBoundingClientRect().height;
+  stage.style.setProperty('--pad-top',Math.ceil(headerH)+10+'px');
 
-  // 左清單：色塊＋單位名＋剩幾人。順序與牆上的色塊流向完全一致
+  // 左清單：色塊＋單位名＋剩幾人。順序與牆上的色塊流向完全一致。
+  // 寬度＝畫面的 1/3（2026-08-18 使用者指定：左 1/3 清單、右 2/3 牆）。
   var narrow=(innerWidth/innerHeight)<0.8;
-  var legw=narrow?0:Math.round(Math.max(150,Math.min(260,innerWidth*0.14)));
+  var legw=narrow?0:Math.round(innerWidth/3);
+  var beforeL=snap(legend);
   stage.style.setProperty('--legw',legw+'px');
-  legend.style.setProperty('--dot',(narrow?10:Math.max(10,Math.min(18,Math.round(innerWidth*0.0075))))+'px');
-  legend.style.setProperty('--legfs',(narrow?12:Math.max(12,Math.min(19,Math.round(innerWidth*0.0085))))+'px');
-  legend.style.setProperty('--leggap',(narrow?4:Math.max(4,Math.min(14,Math.floor(innerHeight/(live.length+2)*0.18))))+'px');
-  legend.innerHTML=live.map(function(u){
-    return '<div class="lg"><span class="sw" style="--u:'+u.col+'"></span>'
-      +'<span class="nm2">'+esc(u.name)+'</span>'
-      +'<span class="ct">'+u.left.length+'/'+u.total+'</span></div>';
-  }).join('');
+  // 字級吃欄寬——1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到。
+  // 但單位多的時候要改以高度為準，否則清單會長到超出畫面、後幾個單位直接看不見。
+  var fs=narrow?12:Math.max(12,Math.min(44,Math.floor(Math.min(
+    legw*0.115, (innerHeight-headerH)/Math.max(live.length,1)*0.42))));
+  legend.style.setProperty('--dot',(narrow?10:Math.round(fs*0.8))+'px');
+  legend.style.setProperty('--legfs',fs+'px');
+  legend.style.setProperty('--leggap',(narrow?4:Math.round(fs*0.55))+'px');
+  reconcile(legend,live,makeLg,updLg);
+  flip(legend,beforeL,26);   // 清單項目少，間隔可以大一點，看得出來是一個一個換位
 
   // 牆：把所有「還沒到」的人攤平，依單位順序排——同單位會聚成一片色塊
   var flat=[];
-  live.forEach(function(u){ u.left.forEach(function(c){ flat.push({n:c.n,col:u.col}); }); });
+  live.forEach(function(u){ u.left.forEach(function(c){ flat.push({k:c.k,n:c.n,col:u.col}); }); });
 
+  var beforeW=snap(wall);
   var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
   var cols=bestCols(flat.length,bw,bh);
   var rows=Math.ceil(flat.length/cols);
@@ -205,11 +324,28 @@ function render(r){
   wall.style.gridTemplateColumns='repeat('+cols+',var(--cs))';
   wall.style.setProperty('--cs',cs+'px');
   wall.style.setProperty('--nmfs',Math.max(8,Math.floor(cs*0.30))+'px');
+  reconcile(wall,flat,makeCell,updCell);
+  flip(wall,beforeW,4);      // 格子多，間隔要小，否則最後一格要等好幾秒才動
+}
 
-  wall.innerHTML=flat.map(function(c){
-    return '<div class="c" style="--u:'+c.col+'">'
-      +(c.n?'<span class="nm">'+esc(c.n)+'</span>':'')+'</div>';
-  }).join('');
+var outTimer=null;
+function render(r){
+  document.getElementById('act').textContent=r.actName||'';
+  document.getElementById('nArrived').textContent=r.arrived;
+  document.getElementById('nLeft').textContent=r.notArrived;
+  document.getElementById('nTotal').textContent=r.total;
+
+  var live=build(r);
+  // 兩段：先讓報到的格子淡出（看得到「誰到了」），再重排剩下的（看得到「整體在移動」）。
+  // 同時做的話兩件事會疊在一起，兩件都看不清楚。
+  var keepC={},keepL={},outs=[];
+  live.forEach(function(u){ keepL[u.k]=1; u.left.forEach(function(c){ keepC[c.k]=1; }); });
+  markOut(document.getElementById('wall'),keepC,outs);
+  markOut(document.getElementById('legend'),keepL,outs);
+
+  clearTimeout(outTimer);
+  if(outs.length&&!reduced())outTimer=setTimeout(function(){layout(live);},400);
+  else layout(live);
 }
 
 var last=null,failures=0;
