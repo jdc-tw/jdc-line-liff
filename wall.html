@@ -64,10 +64,12 @@
   .c.pop { animation: pop .45s ease both; }
   @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
 
-  /* 報到的格子先淡出縮小，讓「誰到了」看得見，之後才重排剩下的 */
-  .c.out { opacity: 0; transform: scale(.6);
-           transition: opacity .38s ease, transform .38s ease; }
-  .lg.out { opacity: 0; transition: opacity .38s ease; }
+  /* 報到的格子往下掉著消失，之後上面的才塌下來補位——這是瀑布的第一段。
+     單純原地縮小的話，後面那段「一列一列往下流」會像憑空發生 */
+  .c.out { opacity: 0; transform: translateY(60%) scale(.86);
+           transition: opacity .38s ease-in, transform .38s cubic-bezier(.4,0,.7,1); }
+  .lg.out { opacity: 0; transform: translateX(-14px);
+            transition: opacity .38s ease, transform .38s ease; }
 
   @media (prefers-reduced-motion: reduce) {
     .c.pop { animation: none; }
@@ -162,16 +164,38 @@ function jsonp(action,params){
  * ・彩度壓到 38%（2026-08-17 使用者：繽紛但彩度低一點）——投在大螢幕上久看不累。
  * ・黃色段（45–75°）在淺底上對比最差，亮階明度單獨再壓低，否則第一眼像壞掉的格子。
  */
-var UNIT_HUES=[20,55,100,155,200,250,295,335];
-function unitStep(i){ return i>=UNIT_HUES.length; }   // true＝走「更淡」的第二階
+/* 大地色盤（2026-08-18 使用者：往大地色系跑一點，但別違背前面採用的理論）。
+ *
+ * 理論沒有變：色相仍然繞一整圈、由色相承載類別區分。換的是**檔位**——
+ * 彩度與明度整組往低走、冷色段偏灰，那就是「大地色」的定義。
+ *
+ * ⚠️ 低彩度會壓縮色差，所以色相**必須拉得比高彩度時更開**。
+ * 第一版大地色排成 15°／32°／45°，三個都在橙褐段——彩度只有 24% 時，
+ * 13° 的色相差量到只剩 10（粉彩版最差是 27）。低彩度下能容納的類別數本來就更少，
+ * 這是物理限制，不是調參數繞得過的。現在八個色相最小間隔 33°。
+ *
+ * 明度也刻意不齊：真實的大地色盤本來就有深橄欖、淺砂、中調板岩之分，
+ * 這個明度差補回彩度讓出去的辨識度。
+ */
+/* [色相, 彩度, 明度, 第二階往上加多少明度]
+   第四欄刻意每個都不同：第二階（第 9–15 個單位）是整組裡最擠的一段，
+   統一加同一個值的話它們彼此只剩 22 的距離。 */
+var UNIT_TONES=[
+  [15,34,48,28],   // 陶土
+  [48,36,44,20],   // 芥末
+  [85,28,38,30],   // 橄欖
+  [130,20,46,22],  // 苔
+  [180,20,40,30],  // 銅綠
+  [215,22,48,20],  // 板岩
+  [265,18,52,18],  // 灰紫
+  [320,22,46,26]   // 乾燥玫瑰
+];
+function unitStep(i){ return i>=UNIT_TONES.length; }   // true＝走「更淺」的第二階
 function unitColor(i){
-  var h=UNIT_HUES[i%UNIT_HUES.length],second=unitStep(i);
-  /* ⚠️ 兩階只差明度，**彩度不能跟著降**。試過第二階降到 22%：
-     彩度趨近 0 時所有色相都往灰收斂，七個淡階色互相之間只剩 16–30 的距離，
-     等於七個單位共用一個顏色。這是色彩學的必然，不是調參數能繞過的。 */
-  var lit=second?74:58;
-  if(h>=45&&h<=75)lit-=8;   // 黃色段在淺底上對比最差，明度要再壓低
-  return 'hsl('+h+',38%,'+lit+'%)';
+  var t=UNIT_TONES[i%UNIT_TONES.length];
+  // 第二階只動明度、彩度不減——彩度一降，所有色相就往灰收斂、互相認不出來
+  return unitStep(i) ? 'hsl('+t[0]+','+t[1]+'%,'+(t[2]+t[3])+'%)'
+                     : 'hsl('+t[0]+','+t[1]+'%,'+t[2]+'%)';
 }
 
 /**
@@ -240,9 +264,24 @@ function reconcile(box,items,make,upd){
   });
   box.appendChild(frag);
 }
-/** stagger＝每個元素之間差幾毫秒。這就是「逐一」移動而不是整片一起搬 */
-function flip(box,before,stagger){
+/**
+ * 兩種運動，一種節奏（2026-08-18 使用者指定）。
+ *
+ * ・牆＝**瀑布**：延遲依「新位置落在第幾列」給，整列一起動、一列接一列往下流。
+ *   對應的事實是「人在減少」——格子往下塌陷、補位。
+ * ・清單＝**往前推**：名次上升的從右側推進來，下降的先往左退一點。
+ *   對應的事實是「排名在變」。
+ *
+ * 兩種混在一起會不會打架？不會——**衝突來自節奏不一致，不是方向不一致**。
+ * 所以兩邊的 duration 完全相同，只有延遲策略與加速曲線不同：
+ * 牆用偏 ease-in 的曲線（起步慢、落下快，像重力），清單用 ease-out（推出去、穩住）。
+ * 同一個拍子上的兩個聲部，不是兩首歌。
+ *
+ * @param {{mode:'wall'|'list', step:number}} opts step＝牆的一列有多高，用來算第幾列
+ */
+function flip(box,before,opts){
   if(reduced())return;
+  var mode=(opts&&opts.mode)||'list',step=(opts&&opts.step)||0;
   var moved=[];
   Array.prototype.forEach.call(box.children,function(el){
     var b=before[el.dataset.k]; if(!b)return;            // 新來的沒有舊位置，交給 pop 淡入
@@ -250,15 +289,25 @@ function flip(box,before,stagger){
     var dx=b.left-a.left, dy=b.top-a.top;
     var sc=(a.width>1&&b.width>1)?(b.width/a.width):1;   // 格子會隨人數變大，尺寸也要一起補
     if(Math.abs(dx)<0.5&&Math.abs(dy)<0.5&&Math.abs(sc-1)<0.01)return;
+    /* 清單的「推」：名次往前的從右邊推進來，往後的先退半步。牆不加，否則瀑布會歪掉。
+       ⚠️ dy 是「新位置回推到舊位置」的位移，符號跟直覺相反：
+       元素往上移（名次上升）時新的 top 比較小，dy = 舊top - 新top 是**正**的。
+       寫成 dy<0 會讓推進的方向整個顛倒（2026-08-18 實測抓到）。 */
+    var push=(mode==='list')?(dy>0?20:-8):0;
     el.style.transition='none';
-    el.style.transform='translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)+'px) scale('+sc.toFixed(4)+')';
-    moved.push(el);
+    el.style.transform='translate('+(dx+push).toFixed(1)+'px,'+dy.toFixed(1)+'px) scale('+sc.toFixed(4)+')';
+    moved.push({el:el,row:step?Math.round(a.top/step):0});
   });
   if(!moved.length)return;
   box.offsetHeight;   // 逼瀏覽器認一次舊位置，否則兩次設定會被合併成「沒有動畫」
-  moved.forEach(function(el,i){
-    el.style.transition='transform .55s cubic-bezier(.22,.61,.36,1) '+Math.min(i*stagger,700)+'ms';
-    el.style.transform='';
+  var top=moved.reduce(function(m,x){return Math.min(m,x.row);},1e9);
+  moved.forEach(function(m,i){
+    var d=(mode==='wall')?Math.min((m.row-top)*80,1100)   // 第幾列決定何時落下
+                         :Math.min(i*26,700);
+    var ease=(mode==='wall')?'cubic-bezier(.34,.02,.24,1)'   // 重力感：起步慢、落下快
+                            :'cubic-bezier(.22,.61,.36,1)';  // 推進感：推出去、穩住
+    m.el.style.transition='transform .55s '+ease+' '+d+'ms';
+    m.el.style.transform='';
   });
 }
 /** 這一輪要離場的（報到了／整個單位到齊了）先標記，讓它淡出，晚一點才真的移除 */
@@ -335,7 +384,7 @@ function layout(live){
   legend.style.setProperty('--legfs',fs+'px');
   legend.style.setProperty('--leggap',Math.round(fs*0.55)+'px');
   reconcile(legend,live,makeLg,updLg);
-  flip(legend,beforeL,26);   // 清單項目少，間隔可以大一點，看得出來是一個一個換位
+  flip(legend,beforeL,{mode:'list'});
 
   // 牆：把所有「還沒到」的人攤平，依單位順序排——同單位會聚成一片色塊
   var flat=[];
@@ -357,7 +406,7 @@ function layout(live){
   wall.style.setProperty('--cs',cs+'px');
   wall.style.setProperty('--nmfs',Math.max(8,Math.floor(cs*0.30))+'px');
   reconcile(wall,flat,makeCell,updCell);
-  flip(wall,beforeW,4);      // 格子多，間隔要小，否則最後一格要等好幾秒才動
+  flip(wall,beforeW,{mode:'wall',step:cs+gap});   // step＝一列的高度，用來分辨第幾列
 }
 
 var outTimer=null;
