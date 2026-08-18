@@ -101,8 +101,10 @@
     .hint a { color: #06c755; font-weight: 700; white-space: nowrap; }   /* 提示文字裡的電話等連結：品牌綠標示可點，且不從中間斷行 */
     hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
     #section-report { margin-top: 8px; }
-    .brand { text-align: center; margin: 4px 0 14px; }
-    .brand img { width: 100%; max-width: 260px; height: auto; display: block; margin: 0 auto; }
+    /* logo 是裝飾：LIFF 標頭本身已經寫了「日本國土開發 LINE 平台」，這裡不必再喊一次公司名，
+       所以只留一個小尺寸的視覺定錨（2026-08-18 使用者指出原本 260px 太搶版面）。 */
+    .brand { text-align: center; margin: 2px 0 10px; }
+    .brand img { width: 100%; max-width: 150px; height: auto; display: block; margin: 0 auto; }
     .mascot { display: block; width: 116px; height: auto; margin: 2px auto 12px; }
     #ob-birth, #bind-birth {
       /* 必須 appearance:none——iOS 原生日期欄會用固有寬度撐破容器(width/max-width 都壓不住)。
@@ -244,13 +246,14 @@
 
     <!-- 通行證：一頁三區＝姓名與桌次／報到 QR／獎金卡（?mode=pass） -->
     <div id="section-pass" class="card" style="display:none">
-      <h2>我的報到碼</h2>
-      <!-- 活動名一定要顯示：連結可省略 ?act 交由伺服器挑場次，萬一挑錯場，
-           同仁在這裡就看得出來，不必等到現場掃描才發現（2026-08-16 拍板的補償措施）。 -->
-      <p id="pass-act" class="hint" style="text-align:center;margin:0 0 4px"></p>
+      <!-- 活動名當標題（2026-08-18）：原本標題是「我的報到碼」，但點進來的人本來就知道自己在看報到碼，
+           真正需要確認的是「這是哪一場」——連結可省略 ?act 交由伺服器挑場次，萬一挑錯場，同仁在這裡
+           就看得出來，不必等到現場掃描才發現（2026-08-16 拍板的補償措施）。日期不放：通知訊息裡已經有，
+           擺在通行證上不影響任何判斷。 -->
+      <h2 id="pass-act" style="text-align:center;font-size:21px;margin:0 0 10px"></h2>
       <div id="pass-msg"></div>
       <div id="pass-seat" style="display:none;text-align:center;margin:8px 0 12px">
-        <div id="pass-name" style="font-size:17px;color:#555"></div>
+        <div id="pass-name" style="font-size:20px;font-weight:700;color:#333"></div>
         <div><span id="pass-table" style="font-size:64px;font-weight:700;line-height:1.05;color:#06c755"></span><span
               id="pass-table-unit" style="font-size:17px;color:#555;margin-left:4px">桌</span></div>
       </div>
@@ -495,8 +498,7 @@
      */
     function renderPass(res) {
       var a = res.activity || {};
-      document.getElementById('pass-act').textContent =
-        [a.name || '', a.eventDate || ''].filter(Boolean).join('\u3000');
+      document.getElementById('pass-act').textContent = a.name || '';
       var qrEl = document.getElementById('pass-qr');
       var hintEl = document.getElementById('pass-hint');
       var seatEl = document.getElementById('pass-seat');
