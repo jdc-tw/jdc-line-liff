@@ -835,8 +835,13 @@ function applySeating(r){
  * 所以副總開這一頁也看得到，不必另外配權限。
  */
 function openArrival(){
-  var act=window._curAct||q('act');
-  if(!act){setMsg('sm-msg','目前沒有選定的活動，無法開啟進場人數。','err');return;}
+  /* ⚠️ 活動 ID 一定要跟座位表**同一個來源**＝ actId()（讀桌次分頁自己的 #ti-act）。
+     第一版寫 `window._curAct||q('act')`，那是**統計分頁**才會設定的變數——
+     直接開桌次分頁時它是空的，按鈕就永遠回「目前沒有選定的活動」。
+     2026-08-19 上線後使用者第一次按就踩到。這一頁每個分頁各有自己的活動選擇器
+     （桌次 #ti-act、報到 #ck-act），跨分頁借變數必錯。 */
+  var act=actId();
+  if(!act){setMsg('sm-msg','請先在上方選擇活動，才能開啟進場人數。','err');return;}
   window.open('wall.html?t='+encodeURIComponent(q('t'))+'&act='+encodeURIComponent(act),'_blank');
 }
 
