@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>訊息紀錄</title>
+<style>
+  body { font-family: system-ui, "Noto Sans TC", sans-serif; margin: 0; padding: 16px;
+         background: #fafafa; color: #222; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .since { font-size: 13px; color: #666; margin-bottom: 16px; }
+  .since.warn { color: #b00; font-weight: 600; }
+  .batch { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+           margin-bottom: 10px; overflow: hidden; }
+  .batch > summary { padding: 12px 14px; cursor: pointer; font-size: 14px; }
+  .fail { color: #b00; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-top: 1px solid #eee; padding: 8px 10px; text-align: left;
+           vertical-align: top; word-break: break-all; }
+  .wrap { overflow-x: auto; }
+  #msg { padding: 24px; text-align: center; color: #666; }
+</style>
+</head>
+<body>
+<h1>訊息紀錄</h1>
+<div class="since" id="since"></div>
+<div id="msg">載入中…</div>
+<div id="list"></div>
+
+<script src="assets/messages-view.js"></script>
+<script>
+// 這一頁的後端是 jdc-line-hub（獨立的 GAS 專案），不是本站其他頁用的 line-platform。
+// 部署後填入 hub 的 /exec 網址（jdc-line-hub 計畫 Task 10）。
+var EXEC_URL = 'https://script.google.com/macros/s/AKfycb__PLACEHOLDER__/exec';
+
+function qs(k) { return new URLSearchParams(location.search).get(k) || ''; }
+
+/**
+ * 呼叫 hub。行為照抄本站 board.html 的 jsonp()，兩邊必須一致。
+ *
+ * ⚠️ 一律 fetch + credentials:'omit'，不可用 script 標籤 JSONP——
+ *    script 標籤必帶瀏覽器的 Google 帳號 cookies，帳號 session 半殘的電腦
+ *    會被 Google 拒絕回 Drive 錯誤頁，症狀是「特定人永遠失敗、無痕就好」。
+ *
+ * ⚠️ 逾時**不可用 AbortController**：iOS 12.1 以前沒有它，`new AbortController()`
+ *    會直接 ReferenceError，讓整段初始化同步當掉 → 畫面永遠停在「載入中」
+ *    且不顯示任何錯誤（2026-07-31 於 attend.html 查出，全站已移除）。
+ *    改用 Promise.race 計時，代價只是底層請求不會真的被取消。
+ *
+ * 30 秒逾時＋逾時/斷線自動重試一次（隔 2 秒）：GAS 偶發 8–17 秒長尾會踩斷頭線。
+ * 正常回應（含 ok:false）不重試。回應仍是 JSONP 包裝，這裡剝殼。
+ *
+ * 📌 刻意不掛 assets/deny-no-role.js（board/stats/hr-stats 有掛，這頁沒有）：
+ *    那支攔的是後端 roles.js 回的「此連結非您的權限範圍。」，而 hub 的 doGet
+ *    只回「無權限或連結已失效。」，掛了也不會觸發；且它為了「附屬功能被擋不該
+ *    蓋整頁」而延遲 2.5 秒判定，這一頁只有單一 action，沒有那個情境。
+ */
+function callApi(params) {
+  var url = EXEC_URL + '?' + new URLSearchParams(params).toString() + '&callback=cb';
+  function attempt() {
+    var timer;
+    var timeout = new Promise(function (_, rej) {
+      timer = setTimeout(function () {
+        var e = new Error('timeout'); e.name = 'AbortError'; rej(e);
+      }, 30000);
+    });
+    return Promise.race([timeout,
+      fetch(url, { credentials: 'omit', redirect: 'follow' })
+        .then(function (r) { return r.text(); })
+        .then(function (t) {
+          var a = t.indexOf('('), b = t.lastIndexOf(')');
+          if (a === -1 || b === -1) throw new Error('回應格式不正確');
+          return JSON.parse(t.slice(a + 1, b));
+        })])
+      .then(function (v) { clearTimeout(timer); return v; },
+            function (e) { clearTimeout(timer); throw e; });
+  }
+  return attempt().catch(function () {
+    return new Promise(function (res) { setTimeout(res, 2000); }).then(attempt);
+  }).catch(function (e) {
+    return { ok: false, msg: (e && e.name === 'AbortError')
+      ? '連線逾時（伺服器喚醒中），請重新整理再試。' : '連線失敗' };
+  });
+}
+
+// 渲染邏輯在 assets/messages-view.js（純函式、有測試）。這裡只負責塞進 DOM。
+function render(data) {
+  var s = sinceText(data.logSince);
+  var since = document.getElementById('since');
+  since.textContent = s.text;
+  since.className = s.warn ? 'since warn' : 'since';
+
+  var rows = data.rows || [];
+  var msg = document.getElementById('msg');
+  msg.style.display = rows.length ? 'none' : '';
+  if (!rows.length) { msg.textContent = '這段期間沒有你權限內的紀錄。'; return; }
+  document.getElementById('list').innerHTML = batchesHtml(data.header, rows);
+}
+
+callApi({ action: 'listMessageLog', t: qs('t'), days: qs('days') || '30' })
+  .then(function (res) {
+    if (!res.ok) { document.getElementById('msg').textContent = res.msg || '無法載入。'; return; }
+    render(res);
+  })
+  .catch(function (err) {
+    document.getElementById('msg').textContent = '載入失敗：' + (err && err.message ? err.message : err);
+  });
+</script>
+</body>
+</html>
