@@ -11,6 +11,8 @@
   <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg" />
   <script src="assets/groups.js"></script>
   <script src="assets/qrcode-gen.js"></script>
+  <script src="assets/qr-badge.js"></script>
+  <script src="assets/pass-cache.js"></script>
   <script src="assets/lottery-card.js"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
@@ -253,7 +255,7 @@
               id="pass-table-unit" style="font-size:17px;color:#555;margin-left:4px">桌</span></div>
       </div>
       <div id="pass-qr" style="text-align:center"></div>
-      <p class="hint" style="text-align:center">出示給工作人員掃描</p>
+      <p class="hint" id="pass-hint" style="text-align:center">出示給工作人員掃描</p>
       <p style="text-align:center"><a href="#" id="pass-retry" style="font-size:14px;color:#1a56c4">重新整理</a></p>
       <div id="pass-lottery" style="display:none"></div>
     </div>
@@ -321,27 +323,20 @@
         });
     }
 
-    // 取網址 ?mode=<模式>；LIFF 有時把原始 query 包進 liff.state，兩處都找。
-    function getMode() {
+    // 取網址參數；LIFF 有時把原始 query 包進 liff.state，兩處都找。
+    // 2026-08-18 收攏：原本 getMode/getAct 各自抄一份同樣的 liff.state 邏輯，
+    // 這次要再加一個 v（快取版本）——第三份就該收成一支，不然哪天 LIFF 改了包法要改三處。
+    function getParam(name) {
       try {
         var p = new URLSearchParams(location.search);
-        if (p.get('mode')) return p.get('mode');
+        if (p.get(name)) return p.get(name);
         var st = p.get('liff.state');
-        if (st) return new URLSearchParams(decodeURIComponent(st)).get('mode') || '';
+        if (st) return new URLSearchParams(decodeURIComponent(st)).get(name) || '';
       } catch (e) {}
       return '';
     }
-
-    // 取網址 ?act=<活動ID>；LIFF 有時把原始 query 包進 liff.state，兩處都找。
-    function getAct() {
-      try {
-        var p = new URLSearchParams(location.search);
-        if (p.get('act')) return p.get('act');
-        var st = p.get('liff.state');
-        if (st) return new URLSearchParams(decodeURIComponent(st)).get('act') || '';
-      } catch (e) {}
-      return '';
-    }
+    function getMode() { return getParam('mode'); }
+    function getAct() { return getParam('act'); }
 
     // ─── 全域狀態 ──────────────────────────────────────────────────────────────
     var gUserId = '';
@@ -443,6 +438,21 @@
       }
     }
 
+    // ─── 通行證的本機快取（2026-08-18）────────────────────────────────────────
+    // 判斷邏輯（鍵怎麼組、什麼時候算數）住在 assets/pass-cache.js，那支有測試；
+    // 這裡只留真正碰 localStorage 的三支——它們在 node 裡沒東西可測。
+    function passCacheRead(userId, act) {
+      try { return JSON.parse(localStorage.getItem(passCacheKey(userId, act)) || 'null'); }
+      catch (e) { return null; }
+    }
+    function passCacheWrite(userId, act, v, res) {
+      try { localStorage.setItem(passCacheKey(userId, act), JSON.stringify({ v: v, res: res })); }
+      catch (e) {}
+    }
+    function passCacheClear(userId, act) {
+      try { localStorage.removeItem(passCacheKey(userId, act)); } catch (e) {}
+    }
+
     // 通行證模式（?mode=pass）：秀個人報到 QR，不走綁定/roster 主流程。
     function startPass(userId) {
       document.getElementById('loading').style.display = 'none';
@@ -450,37 +460,79 @@
       show('section-pass');
       // act 可省略：圖文選單那顆是常駐按鈕、活動 ID 每場不同，故不帶 act 時由伺服器
       // 挑「今天(含)之後最早的一場」（pickDefaultAct）。挑到哪一場一律顯示在 #pass-act。
-      var act = getAct();
+      var act = getAct(), urlV = getParam('v');
       var msgEl = document.getElementById('pass-msg');
+
+      var cached = passCacheRead(userId, act);
+      if (passCacheUsable(cached, urlV)) {
+        renderPass(cached.res);
+        loadLottery(userId, cached.res.actId || act);
+        return;                                   // 這條路一次 GAS 都不打
+      }
+
       jsonp('getEventCheckinPass', { userId: userId, act: act }).then(function (res) {
         if (!res || !res.ok) {
           showMsg(msgEl, escHtml((res && res.msg) || '取得報到碼失敗，請稍後再試。'), 'err');
           return;
         }
-        renderPassHeader(res);
-        var qr = qrcode(0, 'H');
-        qr.addData(res.code);
-        qr.make();
-        document.getElementById('pass-qr').innerHTML = qr.createImgTag(6, 8);
+        renderPass(res);
+        // 未發佈的不留快取，否則發佈後那支手機會一直吃到「還沒公布」那份
+        if (res.published) passCacheWrite(userId, act, urlV, res);
+        else passCacheClear(userId, act);
         loadLottery(userId, res.actId || act);   // 伺服器挑的場次為準，否則獎金卡會查錯場
       }).catch(function (err) {
         showMsg(msgEl, escHtml('網路錯誤：' + (err && err.message ? err.message : err)), 'err');
       });
     }
 
-    // 通行證上半部：活動名／姓名／大字桌號。桌次未發布或查無回覆時整區不出現，
-    // 不留「未定」佔位——佔位只會讓人來問，等於製造工作。
-    function renderPassHeader(res) {
+    /**
+     * 通行證整頁：活動名／姓名／大字桌號／QR。
+     *
+     * **桌次未發佈就不出 QR**（2026-08-18 使用者拍板）：未發佈時同仁點進來看到的是一張
+     * 沒有桌號的通行證，QR 擺在那裡只會讓人以為「已經好了」。改成明說還沒公布。
+     * ⚠️ 連帶效果：活動當天若忘了按「發佈」，全體都拿不出 QR，現場只能靠工作人員
+     * 搜名字報到——使用者知悉並選擇這個行為（不加「當日一律顯示」的保險）。
+     */
+    function renderPass(res) {
       var a = res.activity || {};
       document.getElementById('pass-act').textContent =
-        [a.name || '', a.eventDate || ''].filter(Boolean).join('　');
+        [a.name || '', a.eventDate || ''].filter(Boolean).join('\u3000');
+      var qrEl = document.getElementById('pass-qr');
+      var hintEl = document.getElementById('pass-hint');
+      var seatEl = document.getElementById('pass-seat');
+
+      if (!res.published) {
+        seatEl.style.display = 'none';
+        qrEl.innerHTML = '';
+        hintEl.textContent = '桌次公布後，您的報到 QR 就會出現在這裡。';
+        return;
+      }
+
       var table = String(res.table == null ? '' : res.table).trim();
-      if (!table) return;
-      document.getElementById('pass-name').textContent = res.name || '';
-      document.getElementById('pass-table').textContent = table;
-      // 「主桌」這種非數字桌號本身已含「桌」意，再接一個「桌」字會變「主桌桌」
-      document.getElementById('pass-table-unit').style.display = /^\d+$/.test(table) ? '' : 'none';
-      document.getElementById('pass-seat').style.display = 'block';
+      if (table) {
+        document.getElementById('pass-name').textContent = res.name || '';
+        document.getElementById('pass-table').textContent = table;
+        // 「主桌」這種非數字桌號本身已含「桌」意，再接一個「桌」字會變「主桌桌」
+        document.getElementById('pass-table-unit').style.display = /^\d+$/.test(table) ? '' : 'none';
+        seatEl.style.display = 'block';
+      } else {
+        seatEl.style.display = 'none';
+      }
+      hintEl.textContent = '出示給工作人員掃描';
+
+      // 與看板座位表同一支畫法（assets/qr-badge.js）——中央膠囊帶 logo／活動名／姓名。
+      // 2026-08-18 之前這裡是光禿禿的黑白格，看板那顆有膠囊，使用者一眼就看出不一致。
+      // 掃出來的碼兩邊本來就一模一樣，差的只有外觀。
+      qrBadgeReady().then(function () {
+        qrEl.innerHTML = '';
+        var cv = qrBadgeCanvas(res.code, res.name || '', a.name || '');
+        cv.style.cssText = 'width:100%;max-width:280px;height:auto;display:block;margin:0 auto';
+        qrEl.appendChild(cv);
+      }).catch(function () {
+        // logo 拿不到也不能讓人沒有 QR：退回沒有膠囊的陽春版（掃出來的碼一樣）
+        var qr = qrcode(0, 'H'); qr.addData(res.code); qr.make();
+        qrEl.innerHTML = qr.createImgTag(6, 8);
+      });
     }
 
     // ─── 我的獎金卡（pass 頁·報到後顯示·尾牙專用）───────────────────────────────
@@ -844,6 +896,8 @@
     // ─── 通行證重新整理（?mode=pass）───────────────────────────────────────────
     document.getElementById('pass-retry').addEventListener('click', function (e) {
       e.preventDefault();
+      // 先清快取再重載——不清的話按了還是同一份（活動後若輪替 CHECKIN_SECRET，這顆是解法）
+      passCacheClear(gUserId, getAct());
       location.reload();
     });
 
