@@ -351,7 +351,8 @@
     <div id="seat-board"><div class="empty">載入中…</div></div>
     <div id="seat-detail"></div>
     <div class="btnrow"><button class="btn" onclick="dlFormal()">正式座位表</button>
-      <button class="btn" id="pub-btn" onclick="togglePublish()">發佈桌次</button></div>
+      <button class="btn" id="pub-btn" onclick="togglePublish()">發佈桌次</button>
+      <button class="btn" onclick="openArrival()">進場人數</button></div>
     <div id="sm-msg" class="msg"></div>
   </div>
 
@@ -822,6 +823,23 @@ function applySeating(r){
   renderBoard();
 }
 /** 一顆按鈕依現況決定要發佈還是取消。 */
+/**
+ * 進場人數：另開一個乾淨的整頁畫面（wall.html），直接投到大螢幕。
+ *
+ * 刻意**不嵌進這個分頁**：那一頁是 `position: fixed; inset: 0` 的全螢幕設計，
+ * 塞進看板要跟這裡的標題列、分頁列、捲動打架，等於把它的版面重做一次。
+ * 開新視窗則是開了就能投，牆本身一行都不用改。
+ *
+ * 權限沿用目前這條看板連結的 token——後端 roles.js 對 getArrivalWall 標的是
+ * `activity,view`，管理身分（工務／佳岑）與唯讀身分（副總）本來就都放行，
+ * 所以副總開這一頁也看得到，不必另外配權限。
+ */
+function openArrival(){
+  var act=window._curAct||q('act');
+  if(!act){setMsg('sm-msg','目前沒有選定的活動，無法開啟進場人數。','err');return;}
+  window.open('wall.html?t='+encodeURIComponent(q('t'))+'&act='+encodeURIComponent(act),'_blank');
+}
+
 function togglePublish(){
   if(!SB)return;
   if(SB.pubState==='clean')seatUnpublish();else seatPublish();

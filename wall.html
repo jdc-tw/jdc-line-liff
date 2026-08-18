@@ -33,42 +33,105 @@
   /* 版面＝左邊單位清單（依未報到比例排序）＋ 右邊馬賽克牆。
      牆上只畫「還沒到」的格子——報到的直接從畫面消失，所以整面牆會一路縮到空。
      色塊在流向上依同一個排序相鄰，比例一變，整片顏色就換位置。 */
-  #stage { position: fixed; inset: 0; display: flex; gap: clamp(16px, 2vw, 40px);
-           padding: var(--pad-top, 60px) 26px 26px; }
-  #legend { flex: 0 0 auto; width: var(--legw, 190px); display: flex; flex-direction: column;
-            justify-content: center; gap: var(--leggap, 6px); overflow: hidden; }
-  .lg { display: grid; grid-template-columns: var(--dot) 1fr auto; gap: 8px; align-items: center;
-        font-size: var(--legfs, 15px); color: var(--ink2); }
-  .lg .sw { width: var(--dot); height: var(--dot); border-radius: 2px; background: var(--u); }
-  .lg .nm2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em; }
+  /* 清單與牆都靠上（2026-08-18 使用者指定：兩邊上緣要對齊）。
+     置中的話，牆隨人數變短就會往下飄，清單也跟著移，兩邊永遠對不齊。
 
-  #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
-  #wall { display: grid; gap: 3px; }
-  .c { width: var(--cs); height: var(--cs); border-radius: 3px; background: var(--u);
-       display: flex; align-items: center; justify-content: center; overflow: hidden;
-       animation: pop .45s ease both; }
+     ⚠️ 對齊要做在**子容器內部**（#legend 的 justify-content、#wallbox 的 align-items），
+     **不可以把 #stage 改成 align-items: flex-start**。那樣 #wallbox 的高度會縮到內容高，
+     首次繪製時牆還是空的 ⇒ clientHeight = 0 ⇒ bestCols() 拿到 h=0 算出 guess=Infinity
+     ⇒ `for(c=Infinity; c<=Infinity; c++)` **無窮迴圈、整個 renderer 凍死**。
+     2026-08-18 實測踩過：頁面標題出得來、畫面全白、瀏覽器完全沒反應。 */
+  #stage { position: fixed; inset: 0; display: flex;
+           gap: clamp(16px, 2vw, 40px); padding: var(--pad-top, 60px) 26px 26px; }
+  #legend { flex: 0 0 auto; width: var(--legw, 190px); display: flex; flex-direction: column;
+            justify-content: flex-start; gap: var(--leggap, 6px); overflow: hidden; }
+  /* 沒有色塊符號（2026-08-18 使用者：沒人會去看）。單位名與人數靠在一起、整組靠右，
+     貼著馬賽克牆——視線只在「還沒來的前幾個單位」與牆之間來回，不必橫跨空白。 */
+  .lg { display: flex; align-items: baseline; justify-content: flex-end; gap: .5em;
+        font-size: var(--legfs, 15px); color: var(--ink2); }
+  .lg .nm2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 人數欄等寬且右對齊，單位名的右緣才會對齊成一直線。
+     不給固定寬度的話，「9/9」比「18/18」窄，每一列的單位名右緣就會參差。 */
+  .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em;
+            flex: 0 0 auto; min-width: 3.2em; text-align: right; }
+
+  /* 牆靠左貼著清單、靠上對齊。置中的話人少時牆會飄走，跟清單對不上。
+     ⚠️ `min-width: 0` 不可拿掉：flex item 預設 `min-width: auto`，**不會縮到比內容窄**。
+     牆的格子是固定 px 寬，所以視窗縮小時 wallbox.clientWidth 會一直回報舊的內容寬度，
+     bestCols() 拿到假的可用寬度 ⇒ 欄數再也不重算、牆整片溢出畫面右側。
+     2026-08-18 實測：桌面 1660 縮到 500 時，牆寬仍停在 970。 */
+  #wallbox { flex: 1 1 auto; min-width: 0; display: flex;
+             align-items: flex-start; justify-content: flex-start; }
+  /* ⚠️ 格子間距是 CSS 與 JS 共用的數字（JS 要拿它算格子邊長）。只能有一個來源，
+     所以定義在這裡、由 JS 讀 --gap，兩邊各寫一個數字必然會漂移。 */
+  #wall { display: grid; gap: var(--gap, 6px); }
+  .c { width: var(--cs); height: var(--cs); border-radius: 6px; background: var(--u);
+       display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .c .nm { color: #fff; font-weight: 600; line-height: 1.1; text-align: center;
            padding: 2px; font-size: var(--nmfs); }
-  /* 新畫出來的格子淡入；報到那格是直接從 DOM 移除，所以「消失」不需要動畫 */
-  @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .c { animation: none; } }
+  /* 第二階的格子是淡色，白字會看不見。字色固定不隨主題變——格子底色也不隨主題變 */
+  .c.light .nm { color: #2c2c2b; }
 
-  /* 窄螢幕：清單改成牆下方的一排小標籤，不吃掉牆的寬度 */
-  @media (max-aspect-ratio: 4/5) {
-    #stage { flex-direction: column-reverse; }
-    #legend { width: auto; flex: 0 0 auto; flex-direction: row; flex-wrap: wrap;
-              justify-content: center; gap: 4px 10px; }
-    .lg { grid-template-columns: var(--dot) auto auto; font-size: 12px; }
+  /* ⚠️ pop 一定要掛在 .pop 上、放完就拿掉：CSS animation 的 fill 狀態會蓋過 inline style，
+     格子若一直留著 animation，FLIP 寫進去的 transform 會被它吃掉、完全不動。 */
+  .c.pop { animation: pop .45s ease both; }
+  @keyframes pop { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+
+  /* 報到的格子往下掉著消失，之後上面的才塌下來補位——這是瀑布的第一段。
+     單純原地縮小的話，後面那段「一列一列往下流」會像憑空發生 */
+  .c.out { opacity: 0; transform: translateY(60%) scale(.86);
+           transition: opacity .38s ease-in, transform .38s cubic-bezier(.4,0,.7,1); }
+  .lg.out { opacity: 0; transform: translateX(-14px);
+            transition: opacity .38s ease, transform .38s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .c.pop { animation: none; }
+    .c.out, .lg.out { transition: none; }
   }
 
-  /* 標題與數字浮在牆上方，不佔走牆的空間 */
+  /* 窄螢幕仍然是「左清單、右牆」（2026-08-18 使用者指定：手機也要單位在左邊）。
+     只把左右間距收窄，把寬度讓給牆。舊版在這裡把清單搬到牆下方，已移除。 */
+  @media (max-aspect-ratio: 4/5) {
+    #stage { gap: 10px; padding-left: 12px; padding-right: 12px; }
+  }
+
+  /* 主要資訊置中在畫面上方（2026-08-18 使用者指定）。浮在牆上方，不佔走牆的空間。
+     活動名一行、三個數字一行，整組水平置中——大螢幕上視線第一個落點就在正中央。 */
+  /* 左右各保留 logo 的寬度（--logow 由 JS 量實際渲染寬度後寫入）。
+     兩側對稱 ⇒ 活動名稱仍然是對整個畫面置中，但**永遠不可能與左上角的 logo 相撞**。
+     窄螢幕配上長活動名是這個碰撞唯一會發生的場合，而那個情境不好重現，
+     所以不靠「測不到就當沒事」，直接讓它不可能發生。 */
   header { position: fixed; top: 0; left: 0; right: 0; z-index: 2;
-           display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
-           padding: 14px 20px 16px; background: var(--scrim);
+           display: flex; flex-direction: column; align-items: center; gap: 4px;
+           padding: 14px calc(var(--logow, 0px) + 26px) 16px; background: var(--scrim);
            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  /* 公司 logo 與活動名稱同一行（2026-08-19 使用者指定）。用 assets/logo-full.svg，
+     跟 index／attend／checkin 同一個寫法，不另外做一套。
+     ⚠️ 這個 logo 是深色的，深色主題下會整片消失 ⇒ 濾成純白剪影。
+     代價是失去標誌本身的洋紅，換來的是在兩種主題下都讀得到。 */
+  /* logo 釘在左上角、活動名稱置中（2026-08-19 使用者指定）。
+     ⚠️ 用 absolute 讓 logo **脫離排版流**，活動名稱才會是對整個畫面置中；
+     如果把 logo 跟名稱排在同一個 flex 列裡，名稱會被 logo 的寬度推偏。 */
+  .brand { position: absolute; left: 20px; top: 14px; }   /* 14px＝header 的上內距，貼齊左上角 */
+
+  /* 窄畫面：logo 回到排版流、自己站一行（仍靠左），活動名稱退到第二行。
+     ⚠️ 這裡不能沿用「左右保留 logo 寬度」那招——400px 的標題列左右各留 172px
+     只剩 56px 可用，長活動名塞不下就整個溢出，反而比不留還糟（2026-08-19 實測）。 */
+  @media (max-width: 700px) {
+    header { padding-left: 20px; padding-right: 20px; }
+    .brand { position: static; align-self: flex-start; }
+  }
+  .brand img { height: clamp(20px, 2.4vw, 38px); width: auto; display: block; }
+  /* ⚠️ logo 的濾鏡只能跟著**這一頁真的有定義的那一種深色**走，也就是系統偏好。
+     本頁沒有 `:root[data-theme="dark"]` 的色票（那一態只有預覽端會蓋章、並自帶色票），
+     單獨替 logo 補一條 data-theme 規則的話，會變成「白 logo 疊在白底上」整個消失。
+     2026-08-19 實測抓到：data-theme=dark 時濾鏡生效、底色卻仍是 rgb(251,251,250)。 */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand img { filter: brightness(0) invert(1); }
+  }
   .act { font-size: clamp(16px, 1.9vw, 28px); font-weight: 600; }
-  .nums { display: flex; gap: clamp(14px, 2.2vw, 38px); margin-left: auto; align-items: baseline; }
+  .nums { display: flex; gap: clamp(14px, 2.2vw, 38px); align-items: baseline;
+          flex-wrap: wrap; justify-content: center; }
   .n { display: flex; align-items: baseline; gap: 5px; }
   .n b { font-size: clamp(20px, 3.6vw, 52px); font-weight: 600; line-height: 1;
          font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
@@ -90,6 +153,7 @@
 <div id="stage"><div id="legend"></div><div id="wallbox"><div id="wall"></div></div></div>
 
 <header>
+  <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
   <span class="act" id="act">載入中…</span>
   <div class="nums">
     <span class="n arrived"><b id="nArrived">—</b><span>已報到</span></span>
@@ -103,8 +167,6 @@
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
-function esc(s){return (s==null?'':s).toString()
-  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 // JSONP：同 stats.html 的作法。逾時用 Promise.race，不用 AbortController
 // （iOS 12.1 以前沒有它，會讓整段初始化同步當掉且畫面不報錯）。
@@ -123,19 +185,78 @@ function jsonp(action,params){
 }
 
 /**
- * 單位配色：**繽紛**（使用者指定）。15 個單位各給一個明確不同的色相，
- * 走遍整個色環，但把彩度與明度鎖在同一檔——這樣才是「繽紛」而不是「花」。
+ * 單位配色＝**定性配色**（qualitative colour scheme，2026-08-18 改）。
  *
- * 起點刻意錯開黃綠（≈70°）：那一段在淺底上對比最差，第一眼會像壞掉的格子。
- * 相鄰單位再交錯明度，兩塊色相接近時也分得開。
+ * 類別型資料的標準做法：只讓色相變化，彩度與明度鎖在同一檔——這樣才是「繽紛」不是「花」。
+ * 舊版把色環平均切成 n 份。問題在**類別數**：定性配色的人眼辨識上限大約 8–12 色，
+ * 15 個單位切 15 份，必然出現兩兩認不出來的鄰居（實際跑起來就是這樣）。
+ *
+ * 解法＝**8 個色相 × 2 個階**：前八個單位用標準階，第九個起同色相走「更淡」的一階
+ * （明度提高、彩度降低）。整體維持粉彩調（2026-08-18 使用者指定的色系），
+ * 同色相的兩階又分得開。
+ *
+ * ⚠️ 兩次實測失敗留在這裡，別再走回去：
+ * ① 一開始直接抄 Okabe-Ito 八色的**色相**（41/202/164/56/215/27/326/285）。
+ *    那組色是為色覺障礙者設計的，但它的 sky blue 與 blue 本來靠**明度**區分，
+ *    色相只差 13°——只取色相就撞在一起。實測最接近的三對 RGB 距離 12／13／18，
+ *    數字上是 15 種顏色，肉眼是同一色。所以這裡用等距色相，不用它的色相清單。
+ * ② 第二階一開始只「亮 12%」，同樣量到 15／17／17，等於沒分開。
+ *
+ * 另外兩個刻意的設定：
+ * ・彩度壓到 38%（2026-08-17 使用者：繽紛但彩度低一點）——投在大螢幕上久看不累。
+ * ・黃色段（45–75°）在淺底上對比最差，亮階明度單獨再壓低，否則第一眼像壞掉的格子。
  */
-function unitColor(i,n){
-  var h=(18+i*(360/Math.max(n,1)))%360;
-  // 彩度壓到 26–32%（2026-08-17 使用者：繽紛但彩度低一點）。
-  // 色相走遍整個色環＝繽紛；彩度低＝整面牆不刺眼、投在大螢幕上久看不累。
-  var sat=(i%3===0)?32:26;
-  var lit=(i%2===0)?62:54;
-  return 'hsl('+h.toFixed(0)+','+sat+'%,'+lit+'%)';
+/* 大地色盤（2026-08-18 使用者：往大地色系跑一點，但別違背前面採用的理論）。
+ *
+ * 理論沒有變：色相仍然繞一整圈、由色相承載類別區分。換的是**檔位**——
+ * 彩度與明度整組往低走、冷色段偏灰，那就是「大地色」的定義。
+ *
+ * ⚠️ 低彩度會壓縮色差，所以色相**必須拉得比高彩度時更開**。
+ * 第一版大地色排成 15°／32°／45°，三個都在橙褐段——彩度只有 24% 時，
+ * 13° 的色相差量到只剩 10（粉彩版最差是 27）。低彩度下能容納的類別數本來就更少，
+ * 這是物理限制，不是調參數繞得過的。現在八個色相最小間隔 33°。
+ *
+ * 明度也刻意不齊：真實的大地色盤本來就有深橄欖、淺砂、中調板岩之分，
+ * 這個明度差補回彩度讓出去的辨識度。
+ *
+ * 「涼一點」（2026-08-18 使用者）的做法不是把顏色全部換成冷色——那會讓八個色相
+ * 擠在冷色段，回到色差被壓縮的老問題。改成**把色相的分布往冷色段加權**：
+ * 八個色裡五個落在綠→藍（70–265°），暖色只留陶灰與灰玫瑰兩個當點綴。
+ * 色相仍然繞環、間隔仍然守住 35°，理論沒有讓步，只是重心移了。
+ */
+/* [色相, 彩度, 明度, 第二階往上加多少明度]
+   第四欄刻意每個都不同：第二階（第 9–15 個單位）是整組裡最擠的一段，
+   統一加同一個值的話它們彼此只剩 22 的距離。 */
+var UNIT_TONES=[
+  [30,26,46,28],   // 陶灰（暖色只留兩個當點綴）
+  [70,26,40,20],   // 橄欖
+  [110,22,44,30],  // 苔
+  [150,20,40,22],  // 灰綠
+  [190,22,44,28],  // 銅綠
+  [225,22,46,20],  // 板岩
+  [265,18,50,18],  // 灰藍紫
+  [330,20,44,26]   // 灰玫瑰
+];
+function unitStep(i){ return i>=UNIT_TONES.length; }   // true＝走「更淺」的第二階
+function unitColor(i){
+  var t=UNIT_TONES[i%UNIT_TONES.length];
+  // 第二階只動明度、彩度不減——彩度一降，所有色相就往灰收斂、互相認不出來
+  return unitStep(i) ? 'hsl('+t[0]+','+t[1]+'%,'+(t[2]+t[3])+'%)'
+                     : 'hsl('+t[0]+','+t[1]+'%,'+t[2]+'%)';
+}
+
+/**
+ * 配色的索引：綁**單位名稱**，不是綁「目前排第幾」（2026-08-18 修）。
+ *
+ * 後端的 units 依未報到比例排序，名次每 15 秒都在動。原本拿陣列索引去算色相，
+ * 名次一掉顏色就跟著換——舊版整塊重畫看不太出來，改成滑動之後會變成
+ * 「色塊一邊滑一邊變色」，整面牆再也讀不出「哪一片是哪個單位」。
+ * 改用單位名排序後的固定位置：同一場活動內，一個單位的顏色從頭到尾不變。
+ */
+function colorIndex(units){
+  var m={};
+  units.map(function(u){return u.name;}).sort().forEach(function(n,i){m[n]=i;});
+  return m;
 }
 
 /**
@@ -143,7 +264,12 @@ function unitColor(i,n){
  * 只在 guess 附近試幾個，挑「最後一列空格最少」的那個——缺角越少，整塊越像一個完整的方陣。
  */
 function bestCols(n,w,h){
-  var guess=Math.max(1,Math.round(Math.sqrt(n*w/h)));
+  /* ⚠️ 先擋掉非正數與 0。w 或 h 是 0 時 n*w/h 會變 Infinity，guess 跟著是 Infinity，
+     下面那個 for 迴圈 `c<=guess+4` 恆真、`c++` 也仍是 Infinity ⇒ 無窮迴圈、renderer 凍死。
+     2026-08-18 真的踩過：一行 CSS（把 #stage 改成 align-items: flex-start）讓 wallbox
+     高度變 0，整頁就掛在這裡，畫面全白、瀏覽器沒反應、零錯誤訊息。 */
+  if(!(w>0)||!(h>0)||!(n>0))return 1;
+  var guess=Math.max(1,Math.min(n,Math.round(Math.sqrt(n*w/h))));
   var best=guess,score=Infinity;
   for(var c=Math.max(1,guess-4);c<=guess+4;c++){
     var rows=Math.ceil(n/c);
@@ -157,59 +283,214 @@ function bestCols(n,w,h){
   return best;
 }
 
+/* ═══════ 移動（2026-08-18 使用者指定：左清單與右牆都隨出席比例逐一移動）═══════
+ *
+ * 做法是 FLIP：先量舊位置 → 換完 DOM → 把元素拉回舊位置 → 放開，瀏覽器就會把它滑過去。
+ * 前提是**元素身分要留著**——舊版每 15 秒 innerHTML 整塊重畫，元素全是新的，
+ * 沒有「舊位置」可言，畫面只會瞬間跳位。所以下面改成依 key 復用既有元素。
+ *
+ * key：單位＝單位名；格子＝單位名＋它在該單位裡的固定序號（後端已依員編排好，不會變）。
+ */
+function reduced(){
+  return !!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function snap(box){
+  var m={};
+  Array.prototype.forEach.call(box.children,function(el){
+    if(el.dataset.k)m[el.dataset.k]=el.getBoundingClientRect();
+  });
+  return m;
+}
+/** 依 key 復用既有元素、補新的、丟掉不在清單裡的，順序照 items 排好 */
+function reconcile(box,items,make,upd){
+  var old={};
+  Array.prototype.forEach.call(box.children,function(el){ if(el.dataset.k)old[el.dataset.k]=el; });
+  var frag=document.createDocumentFragment();
+  items.forEach(function(it){
+    var el=old[it.k];
+    if(el){ delete old[it.k]; upd(el,it); } else { el=make(it); el.dataset.k=it.k; }
+    frag.appendChild(el);
+  });
+  Object.keys(old).forEach(function(k){
+    var e=old[k]; if(e.parentNode)e.parentNode.removeChild(e);
+  });
+  box.appendChild(frag);
+}
+/**
+ * 兩種運動，一種節奏（2026-08-18 使用者指定）。
+ *
+ * ・牆＝**瀑布**：延遲依「新位置落在第幾列」給，整列一起動、一列接一列往下流。
+ *   對應的事實是「人在減少」——格子往下塌陷、補位。
+ * ・清單＝**往前推**：名次上升的從右側推進來，下降的先往左退一點。
+ *   對應的事實是「排名在變」。
+ *
+ * 兩種混在一起會不會打架？不會——**衝突來自節奏不一致，不是方向不一致**。
+ * 所以兩邊的 duration 完全相同，只有延遲策略與加速曲線不同：
+ * 牆用偏 ease-in 的曲線（起步慢、落下快，像重力），清單用 ease-out（推出去、穩住）。
+ * 同一個拍子上的兩個聲部，不是兩首歌。
+ *
+ * @param {{mode:'wall'|'list', step:number}} opts step＝牆的一列有多高，用來算第幾列
+ */
+function flip(box,before,opts){
+  if(reduced())return;
+  var mode=(opts&&opts.mode)||'list',step=(opts&&opts.step)||0;
+  var moved=[];
+  Array.prototype.forEach.call(box.children,function(el){
+    var b=before[el.dataset.k]; if(!b)return;            // 新來的沒有舊位置，交給 pop 淡入
+    var a=el.getBoundingClientRect();
+    var dx=b.left-a.left, dy=b.top-a.top;
+    var sc=(a.width>1&&b.width>1)?(b.width/a.width):1;   // 格子會隨人數變大，尺寸也要一起補
+    if(Math.abs(dx)<0.5&&Math.abs(dy)<0.5&&Math.abs(sc-1)<0.01)return;
+    /* 清單的「推」：名次往前的從右邊推進來，往後的先退半步。牆不加，否則瀑布會歪掉。
+       ⚠️ dy 是「新位置回推到舊位置」的位移，符號跟直覺相反：
+       元素往上移（名次上升）時新的 top 比較小，dy = 舊top - 新top 是**正**的。
+       寫成 dy<0 會讓推進的方向整個顛倒（2026-08-18 實測抓到）。 */
+    var push=(mode==='list')?(dy>0?20:-8):0;
+    el.style.transition='none';
+    el.style.transform='translate('+(dx+push).toFixed(1)+'px,'+dy.toFixed(1)+'px) scale('+sc.toFixed(4)+')';
+    moved.push({el:el,row:step?Math.round(a.top/step):0});
+  });
+  if(!moved.length)return;
+  box.offsetHeight;   // 逼瀏覽器認一次舊位置，否則兩次設定會被合併成「沒有動畫」
+  var top=moved.reduce(function(m,x){return Math.min(m,x.row);},1e9),
+      bottom=moved.reduce(function(m,x){return Math.max(m,x.row);},0),
+      // 每列間隔隨列數縮放：手機上牆有 21 列，固定 80ms 會累積到 1.7 秒、
+      // 撞上限之後最後幾列變成同時動，瀑布的尾巴就糊掉了
+      per=Math.min(80,900/Math.max(bottom-top,1));
+  moved.forEach(function(m,i){
+    var d=(mode==='wall')?Math.round((m.row-top)*per)   // 第幾列決定何時落下
+                         :Math.min(i*26,700);
+    var ease=(mode==='wall')?'cubic-bezier(.34,.02,.24,1)'   // 重力感：起步慢、落下快
+                            :'cubic-bezier(.22,.61,.36,1)';  // 推進感：推出去、穩住
+    m.el.style.transition='transform .55s '+ease+' '+d+'ms';
+    m.el.style.transform='';
+  });
+}
+/** 這一輪要離場的（報到了／整個單位到齊了）先標記，讓它淡出，晚一點才真的移除 */
+function markOut(box,keep,outs){
+  Array.prototype.forEach.call(box.children,function(el){
+    var k=el.dataset.k;
+    if(k&&!keep[k]&&!el.classList.contains('out')){ el.classList.add('out'); outs.push(el); }
+  });
+}
+
+function makeCell(it){
+  var el=document.createElement('div');
+  el.className='c pop';
+  el.addEventListener('animationend',function(){ el.classList.remove('pop'); });
+  updCell(el,it);
+  return el;
+}
+function updCell(el,it){
+  el.style.setProperty('--u',it.col);
+  el.classList.toggle('light',!!it.light);
+  var s=el.firstChild;
+  if(it.n){
+    if(!s){ s=document.createElement('span'); s.className='nm'; el.appendChild(s); }
+    if(s.textContent!==it.n)s.textContent=it.n;
+  } else if(s){ el.removeChild(s); }
+}
+function makeLg(it){
+  var el=document.createElement('div');
+  el.className='lg';
+  el.innerHTML='<span class="nm2"></span><span class="ct"></span>';
+  updLg(el,it);
+  return el;
+}
+function updLg(el,it){
+  el.firstChild.textContent=it.name;
+  el.childNodes[1].textContent=it.left.length+'/'+it.total;
+}
+
+/** 只留還有人沒到的單位。到齊的整個消失——這頁的用途是「誰還沒到」。 */
+function build(r){
+  var ci=colorIndex(r.units),live=[];
+  // r.units 已由後端依未報到比例排好序，這裡不重排，照收即可
+  r.units.forEach(function(u){
+    var left=[];
+    u.cells.forEach(function(c,i){ if(!c.a)left.push({k:u.name+'#'+i,n:c.n}); });
+    if(left.length)live.push({k:u.name,name:u.name,total:u.total,left:left,
+                              col:unitColor(ci[u.name]),light:unitStep(ci[u.name])});
+  });
+  return live;
+}
+
+function layout(live,total){
+  var stage=document.getElementById('stage'),wallbox=document.getElementById('wallbox'),
+      wall=document.getElementById('wall'),legend=document.getElementById('legend');
+  // logo 的實際渲染寬度餵回 CSS，讓標題列左右保留同樣寬度（見 header 的 padding 註解）
+  var head=document.querySelector('header'),bimg=head.querySelector('.brand img');
+  head.style.setProperty('--logow',
+    (bimg?Math.ceil(bimg.getBoundingClientRect().width):0)+'px');
+  var headerH=head.getBoundingClientRect().height;
+  stage.style.setProperty('--pad-top',Math.ceil(headerH)+10+'px');
+
+  // 左清單的寬度＝畫面的 1/3（2026-08-18 使用者指定：左 1/3 清單、右 2/3 牆）。
+  // 手機也維持在左邊，只是比例收窄到 38%——再窄下去四個字的單位名就要被截斷。
+  var narrow=(innerWidth/innerHeight)<0.8;
+  var legw=Math.round(innerWidth*(narrow?0.38:1/3));
+  stage.style.setProperty('--legw',legw+'px');
+
+  /* 牆的幾何＝**整場固定**（2026-08-18 使用者指定：寬度與位置從頭到尾不能變）。
+     欄數與格子邊長都用「總人數」算，不用「還沒到的人數」——用後者的話，
+     每有人報到就重算一次，牆的寬度與位置整晚都在跳。
+     人數減少時變的是**列數**：牆從底部往上縮短，左緣、上緣、寬度一動也不動。 */
+  var gap=parseFloat(getComputedStyle(wall).gap)||6;   // 間距的唯一來源是 CSS 的 --gap
+  var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
+  var cols=bestCols(total,bw,bh);
+  var fullRows=Math.ceil(total/cols);
+  // 上限 64px：不設的話，人少的場次格子會放大到整面牆都是，看不出規模差異
+  var cs=Math.max(8,Math.floor(Math.min(
+    (bw-gap*(cols-1))/cols, (bh-gap*(fullRows-1))/fullRows, 64)));
+
+  /* 字級由四件事一起決定，少算一件就會出事：
+     ① 最長單位名要放得下——只用欄寬的固定比例算，手機上「經營企劃管理室」
+        會被截成一半（2026-08-18 實測：需要 133px 只拿到 68px）。
+        分母＝名字字數 ＋ 人數欄 3.2em ＋ 間隔 0.5em ＋ 餘裕。
+     ② 單位多的時候以高度為準，否則清單會長到超出畫面、後幾個單位直接看不見。
+     ③ **不超過方塊邊長的一半**（2026-08-18 使用者：文字要配合區塊縮減）——
+        沒有這條的話，剩十幾個人時方塊 64px、清單字級卻吃到上限 44px，字比方塊還大。
+     ④ 上限 44：1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到。 */
+  var maxLen=live.reduce(function(m,u){return Math.max(m,u.name.length);},3);
+  var beforeL=snap(legend);
+  var fs=Math.max(11,Math.min(44,Math.floor(Math.min(
+    legw/(maxLen+3.9), (innerHeight-headerH)/Math.max(live.length,1)*0.42, cs*0.5))));
+  legend.style.setProperty('--legfs',fs+'px');
+  legend.style.setProperty('--leggap',Math.round(fs*0.55)+'px');
+  reconcile(legend,live,makeLg,updLg);
+  flip(legend,beforeL,{mode:'list'});
+
+  // 牆：把所有「還沒到」的人攤平，依單位順序排——同單位會聚成一片色塊
+  var flat=[];
+  live.forEach(function(u){ u.left.forEach(function(c){
+    flat.push({k:c.k,n:c.n,col:u.col,light:u.light}); }); });
+
+  var beforeW=snap(wall);
+  wall.style.gridTemplateColumns='repeat('+cols+',var(--cs))';
+  wall.style.setProperty('--cs',cs+'px');
+  wall.style.setProperty('--nmfs',Math.max(8,Math.floor(cs*0.30))+'px');
+  reconcile(wall,flat,makeCell,updCell);
+  flip(wall,beforeW,{mode:'wall',step:cs+gap});   // step＝一列的高度，用來分辨第幾列
+}
+
+var outTimer=null;
 function render(r){
   document.getElementById('act').textContent=r.actName||'';
   document.getElementById('nArrived').textContent=r.arrived;
   document.getElementById('nLeft').textContent=r.notArrived;
   document.getElementById('nTotal').textContent=r.total;
 
-  // 只留還有人沒到的單位。到齊的整個消失——這頁的用途是「誰還沒到」。
-  // r.units 已由後端依未報到比例排好序，這裡不重排，照收即可。
-  var live=[];
-  r.units.forEach(function(u,i){
-    var left=u.cells.filter(function(c){return !c.a;});
-    if(left.length)live.push({name:u.name,total:u.total,left:left,col:unitColor(i,r.units.length)});
-  });
+  var live=build(r);
+  // 兩段：先讓報到的格子淡出（看得到「誰到了」），再重排剩下的（看得到「整體在移動」）。
+  // 同時做的話兩件事會疊在一起，兩件都看不清楚。
+  var keepC={},keepL={},outs=[];
+  live.forEach(function(u){ keepL[u.k]=1; u.left.forEach(function(c){ keepC[c.k]=1; }); });
+  markOut(document.getElementById('wall'),keepC,outs);
+  markOut(document.getElementById('legend'),keepL,outs);
 
-  var stage=document.getElementById('stage'),wallbox=document.getElementById('wallbox'),
-      wall=document.getElementById('wall'),legend=document.getElementById('legend');
-  stage.style.setProperty('--pad-top',
-    Math.ceil(document.querySelector('header').getBoundingClientRect().height)+10+'px');
-
-  // 左清單：色塊＋單位名＋剩幾人。順序與牆上的色塊流向完全一致
-  var narrow=(innerWidth/innerHeight)<0.8;
-  var legw=narrow?0:Math.round(Math.max(150,Math.min(260,innerWidth*0.14)));
-  stage.style.setProperty('--legw',legw+'px');
-  legend.style.setProperty('--dot',(narrow?10:Math.max(10,Math.min(18,Math.round(innerWidth*0.0075))))+'px');
-  legend.style.setProperty('--legfs',(narrow?12:Math.max(12,Math.min(19,Math.round(innerWidth*0.0085))))+'px');
-  legend.style.setProperty('--leggap',(narrow?4:Math.max(4,Math.min(14,Math.floor(innerHeight/(live.length+2)*0.18))))+'px');
-  legend.innerHTML=live.map(function(u){
-    return '<div class="lg"><span class="sw" style="--u:'+u.col+'"></span>'
-      +'<span class="nm2">'+esc(u.name)+'</span>'
-      +'<span class="ct">'+u.left.length+'/'+u.total+'</span></div>';
-  }).join('');
-
-  // 牆：把所有「還沒到」的人攤平，依單位順序排——同單位會聚成一片色塊
-  var flat=[];
-  live.forEach(function(u){ u.left.forEach(function(c){ flat.push({n:c.n,col:u.col}); }); });
-
-  var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
-  var cols=bestCols(flat.length,bw,bh);
-  var rows=Math.ceil(flat.length/cols);
-  var gap=3;
-  // ⚠️ 上限 64px 是關鍵：早期 137 格會被縮到剛好填滿，後期格數少了就撞到上限、
-  //    整塊跟著縮小——「越來越少」這件事才看得出來。不設上限的話格子會一路放大，
-  //    畫面永遠是滿的，人數在減少完全感覺不到。
-  var cs=Math.max(8,Math.floor(Math.min(
-    (bw-gap*(cols-1))/cols, (bh-gap*(rows-1))/rows, 64)));
-  wall.style.gridTemplateColumns='repeat('+cols+',var(--cs))';
-  wall.style.setProperty('--cs',cs+'px');
-  wall.style.setProperty('--nmfs',Math.max(8,Math.floor(cs*0.30))+'px');
-
-  wall.innerHTML=flat.map(function(c){
-    return '<div class="c" style="--u:'+c.col+'">'
-      +(c.n?'<span class="nm">'+esc(c.n)+'</span>':'')+'</div>';
-  }).join('');
+  clearTimeout(outTimer);
+  if(outs.length&&!reduced())outTimer=setTimeout(function(){layout(live,r.total);},400);
+  else layout(live,r.total);
 }
 
 var last=null,failures=0;
@@ -234,5 +515,12 @@ setInterval(tick,15000);
 var rz;
 addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(function(){
   if(last)render(last);},250);});
+
+// logo 比第一次繪製晚載入時，--logow 會停在 0、標題列少留了那塊空間。
+// 載完重排一次補正——不必等下一輪輪詢（那要 15 秒）。
+(function(){
+  var bi=document.querySelector('.brand img');
+  if(bi&&!bi.complete)bi.addEventListener('load',function(){ if(last)render(last); });
+})();
 </script>
 </body></html>
