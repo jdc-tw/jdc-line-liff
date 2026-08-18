@@ -97,15 +97,30 @@
 
   /* 主要資訊置中在畫面上方（2026-08-18 使用者指定）。浮在牆上方，不佔走牆的空間。
      活動名一行、三個數字一行，整組水平置中——大螢幕上視線第一個落點就在正中央。 */
+  /* 左右各保留 logo 的寬度（--logow 由 JS 量實際渲染寬度後寫入）。
+     兩側對稱 ⇒ 活動名稱仍然是對整個畫面置中，但**永遠不可能與左上角的 logo 相撞**。
+     窄螢幕配上長活動名是這個碰撞唯一會發生的場合，而那個情境不好重現，
+     所以不靠「測不到就當沒事」，直接讓它不可能發生。 */
   header { position: fixed; top: 0; left: 0; right: 0; z-index: 2;
            display: flex; flex-direction: column; align-items: center; gap: 4px;
-           padding: 14px 20px 16px; background: var(--scrim);
+           padding: 14px calc(var(--logow, 0px) + 26px) 16px; background: var(--scrim);
            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
   /* 公司 logo 與活動名稱同一行（2026-08-19 使用者指定）。用 assets/logo-full.svg，
      跟 index／attend／checkin 同一個寫法，不另外做一套。
      ⚠️ 這個 logo 是深色的，深色主題下會整片消失 ⇒ 濾成純白剪影。
      代價是失去標誌本身的洋紅，換來的是在兩種主題下都讀得到。 */
-  .brand { display: flex; align-items: center; gap: clamp(8px, 1vw, 18px); }
+  /* logo 釘在左上角、活動名稱置中（2026-08-19 使用者指定）。
+     ⚠️ 用 absolute 讓 logo **脫離排版流**，活動名稱才會是對整個畫面置中；
+     如果把 logo 跟名稱排在同一個 flex 列裡，名稱會被 logo 的寬度推偏。 */
+  .brand { position: absolute; left: 20px; top: 14px; }   /* 14px＝header 的上內距，貼齊左上角 */
+
+  /* 窄畫面：logo 回到排版流、自己站一行（仍靠左），活動名稱退到第二行。
+     ⚠️ 這裡不能沿用「左右保留 logo 寬度」那招——400px 的標題列左右各留 172px
+     只剩 56px 可用，長活動名塞不下就整個溢出，反而比不留還糟（2026-08-19 實測）。 */
+  @media (max-width: 700px) {
+    header { padding-left: 20px; padding-right: 20px; }
+    .brand { position: static; align-self: flex-start; }
+  }
   .brand img { height: clamp(20px, 2.4vw, 38px); width: auto; display: block; }
   /* ⚠️ logo 的濾鏡只能跟著**這一頁真的有定義的那一種深色**走，也就是系統偏好。
      本頁沒有 `:root[data-theme="dark"]` 的色票（那一態只有預覽端會蓋章、並自帶色票），
@@ -138,10 +153,8 @@
 <div id="stage"><div id="legend"></div><div id="wallbox"><div id="wall"></div></div></div>
 
 <header>
-  <div class="brand">
-    <img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司">
-    <span class="act" id="act">載入中…</span>
-  </div>
+  <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+  <span class="act" id="act">載入中…</span>
   <div class="nums">
     <span class="n arrived"><b id="nArrived">—</b><span>已報到</span></span>
     <span class="n left"><b id="nLeft">—</b><span>未報到</span></span>
@@ -405,7 +418,11 @@ function build(r){
 function layout(live,total){
   var stage=document.getElementById('stage'),wallbox=document.getElementById('wallbox'),
       wall=document.getElementById('wall'),legend=document.getElementById('legend');
-  var headerH=document.querySelector('header').getBoundingClientRect().height;
+  // logo 的實際渲染寬度餵回 CSS，讓標題列左右保留同樣寬度（見 header 的 padding 註解）
+  var head=document.querySelector('header'),bimg=head.querySelector('.brand img');
+  head.style.setProperty('--logow',
+    (bimg?Math.ceil(bimg.getBoundingClientRect().width):0)+'px');
+  var headerH=head.getBoundingClientRect().height;
   stage.style.setProperty('--pad-top',Math.ceil(headerH)+10+'px');
 
   // 左清單的寬度＝畫面的 1/3（2026-08-18 使用者指定：左 1/3 清單、右 2/3 牆）。
@@ -498,5 +515,12 @@ setInterval(tick,15000);
 var rz;
 addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(function(){
   if(last)render(last);},250);});
+
+// logo 比第一次繪製晚載入時，--logow 會停在 0、標題列少留了那塊空間。
+// 載完重排一次補正——不必等下一輪輪詢（那要 15 秒）。
+(function(){
+  var bi=document.querySelector('.brand img');
+  if(bi&&!bi.complete)bi.addEventListener('load',function(){ if(last)render(last); });
+})();
 </script>
 </body></html>
