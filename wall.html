@@ -33,10 +33,12 @@
   /* 版面＝左邊單位清單（依未報到比例排序）＋ 右邊馬賽克牆。
      牆上只畫「還沒到」的格子——報到的直接從畫面消失，所以整面牆會一路縮到空。
      色塊在流向上依同一個排序相鄰，比例一變，整片顏色就換位置。 */
-  #stage { position: fixed; inset: 0; display: flex; gap: clamp(16px, 2vw, 40px);
-           padding: var(--pad-top, 60px) 26px 26px; }
+  /* 清單與牆都靠上（2026-08-18 使用者指定：兩邊上緣要對齊）。
+     置中的話，牆隨人數變短就會往下飄，清單也跟著移，兩邊永遠對不齊。 */
+  #stage { position: fixed; inset: 0; display: flex; align-items: flex-start;
+           gap: clamp(16px, 2vw, 40px); padding: var(--pad-top, 60px) 26px 26px; }
   #legend { flex: 0 0 auto; width: var(--legw, 190px); display: flex; flex-direction: column;
-            justify-content: center; gap: var(--leggap, 6px); overflow: hidden; }
+            justify-content: flex-start; gap: var(--leggap, 6px); overflow: hidden; }
   /* 沒有色塊符號（2026-08-18 使用者：沒人會去看）。單位名與人數靠在一起、整組靠右，
      貼著馬賽克牆——視線只在「還沒來的前幾個單位」與牆之間來回，不必橫跨空白。 */
   .lg { display: flex; align-items: baseline; justify-content: flex-end; gap: .5em;
@@ -47,8 +49,8 @@
   .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em;
             flex: 0 0 auto; min-width: 3.2em; text-align: right; }
 
-  /* 牆靠左貼著清單。置中的話人少時牆會飄到右半邊、跟清單拉開一大段空白 */
-  #wallbox { flex: 1 1 auto; display: flex; align-items: center; justify-content: flex-start; }
+  /* 牆靠左貼著清單、靠上對齊。置中的話人少時牆會飄走，跟清單對不上 */
+  #wallbox { flex: 1 1 auto; display: flex; align-items: flex-start; justify-content: flex-start; }
   /* ⚠️ 格子間距是 CSS 與 JS 共用的數字（JS 要拿它算格子邊長）。只能有一個來源，
      所以定義在這裡、由 JS 讀 --gap，兩邊各寫一個數字必然會漂移。 */
   #wall { display: grid; gap: var(--gap, 6px); }
@@ -176,19 +178,24 @@ function jsonp(action,params){
  *
  * 明度也刻意不齊：真實的大地色盤本來就有深橄欖、淺砂、中調板岩之分，
  * 這個明度差補回彩度讓出去的辨識度。
+ *
+ * 「涼一點」（2026-08-18 使用者）的做法不是把顏色全部換成冷色——那會讓八個色相
+ * 擠在冷色段，回到色差被壓縮的老問題。改成**把色相的分布往冷色段加權**：
+ * 八個色裡五個落在綠→藍（70–265°），暖色只留陶灰與灰玫瑰兩個當點綴。
+ * 色相仍然繞環、間隔仍然守住 35°，理論沒有讓步，只是重心移了。
  */
 /* [色相, 彩度, 明度, 第二階往上加多少明度]
    第四欄刻意每個都不同：第二階（第 9–15 個單位）是整組裡最擠的一段，
    統一加同一個值的話它們彼此只剩 22 的距離。 */
 var UNIT_TONES=[
-  [15,34,48,28],   // 陶土
-  [48,36,44,20],   // 芥末
-  [85,28,38,30],   // 橄欖
-  [130,20,46,22],  // 苔
-  [180,20,40,30],  // 銅綠
-  [215,22,48,20],  // 板岩
-  [265,18,52,18],  // 灰紫
-  [320,22,46,26]   // 乾燥玫瑰
+  [30,26,46,28],   // 陶灰（暖色只留兩個當點綴）
+  [70,26,40,20],   // 橄欖
+  [110,22,44,30],  // 苔
+  [150,20,40,22],  // 灰綠
+  [190,22,44,28],  // 銅綠
+  [225,22,46,20],  // 板岩
+  [265,18,50,18],  // 灰藍紫
+  [330,20,44,26]   // 灰玫瑰
 ];
 function unitStep(i){ return i>=UNIT_TONES.length; }   // true＝走「更淺」的第二階
 function unitColor(i){
@@ -363,28 +370,42 @@ function build(r){
   return live;
 }
 
-function layout(live){
+function layout(live,total){
   var stage=document.getElementById('stage'),wallbox=document.getElementById('wallbox'),
       wall=document.getElementById('wall'),legend=document.getElementById('legend');
   var headerH=document.querySelector('header').getBoundingClientRect().height;
   stage.style.setProperty('--pad-top',Math.ceil(headerH)+10+'px');
 
-  // 左清單：單位名＋剩幾人，順序與牆上的色塊流向完全一致。
-  // 寬度＝畫面的 1/3（2026-08-18 使用者指定：左 1/3 清單、右 2/3 牆）。
+  // 左清單的寬度＝畫面的 1/3（2026-08-18 使用者指定：左 1/3 清單、右 2/3 牆）。
   // 手機也維持在左邊，只是比例收窄到 38%——再窄下去四個字的單位名就要被截斷。
   var narrow=(innerWidth/innerHeight)<0.8;
   var legw=Math.round(innerWidth*(narrow?0.38:1/3));
-  var beforeL=snap(legend);
   stage.style.setProperty('--legw',legw+'px');
-  /* 字級由三件事一起決定，少算一件就會出事：
+
+  /* 牆的幾何＝**整場固定**（2026-08-18 使用者指定：寬度與位置從頭到尾不能變）。
+     欄數與格子邊長都用「總人數」算，不用「還沒到的人數」——用後者的話，
+     每有人報到就重算一次，牆的寬度與位置整晚都在跳。
+     人數減少時變的是**列數**：牆從底部往上縮短，左緣、上緣、寬度一動也不動。 */
+  var gap=parseFloat(getComputedStyle(wall).gap)||6;   // 間距的唯一來源是 CSS 的 --gap
+  var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
+  var cols=bestCols(total,bw,bh);
+  var fullRows=Math.ceil(total/cols);
+  // 上限 64px：不設的話，人少的場次格子會放大到整面牆都是，看不出規模差異
+  var cs=Math.max(8,Math.floor(Math.min(
+    (bw-gap*(cols-1))/cols, (bh-gap*(fullRows-1))/fullRows, 64)));
+
+  /* 字級由四件事一起決定，少算一件就會出事：
      ① 最長單位名要放得下——只用欄寬的固定比例算，手機上「經營企劃管理室」
         會被截成一半（2026-08-18 實測：需要 133px 只拿到 68px）。
         分母＝名字字數 ＋ 人數欄 3.2em ＋ 間隔 0.5em ＋ 餘裕。
      ② 單位多的時候以高度為準，否則清單會長到超出畫面、後幾個單位直接看不見。
-     ③ 1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到，所以上限放到 44。 */
+     ③ **不超過方塊邊長的一半**（2026-08-18 使用者：文字要配合區塊縮減）——
+        沒有這條的話，剩十幾個人時方塊 64px、清單字級卻吃到上限 44px，字比方塊還大。
+     ④ 上限 44：1/3 的欄位配舊的 15px 會空得像沒東西，投在大螢幕上也讀不到。 */
   var maxLen=live.reduce(function(m,u){return Math.max(m,u.name.length);},3);
+  var beforeL=snap(legend);
   var fs=Math.max(11,Math.min(44,Math.floor(Math.min(
-    legw/(maxLen+3.9), (innerHeight-headerH)/Math.max(live.length,1)*0.42))));
+    legw/(maxLen+3.9), (innerHeight-headerH)/Math.max(live.length,1)*0.42, cs*0.5))));
   legend.style.setProperty('--legfs',fs+'px');
   legend.style.setProperty('--leggap',Math.round(fs*0.55)+'px');
   reconcile(legend,live,makeLg,updLg);
@@ -396,16 +417,6 @@ function layout(live){
     flat.push({k:c.k,n:c.n,col:u.col,light:u.light}); }); });
 
   var beforeW=snap(wall);
-  var bw=wallbox.clientWidth, bh=wallbox.clientHeight;
-  var cols=bestCols(flat.length,bw,bh);
-  var rows=Math.ceil(flat.length/cols);
-  // 間距的唯一來源是 CSS 的 --gap。在這裡再寫一次數字，改了一邊就會算錯格子邊長
-  var gap=parseFloat(getComputedStyle(wall).gap)||6;
-  // ⚠️ 上限 64px 是關鍵：早期 137 格會被縮到剛好填滿，後期格數少了就撞到上限、
-  //    整塊跟著縮小——「越來越少」這件事才看得出來。不設上限的話格子會一路放大，
-  //    畫面永遠是滿的，人數在減少完全感覺不到。
-  var cs=Math.max(8,Math.floor(Math.min(
-    (bw-gap*(cols-1))/cols, (bh-gap*(rows-1))/rows, 64)));
   wall.style.gridTemplateColumns='repeat('+cols+',var(--cs))';
   wall.style.setProperty('--cs',cs+'px');
   wall.style.setProperty('--nmfs',Math.max(8,Math.floor(cs*0.30))+'px');
@@ -429,8 +440,8 @@ function render(r){
   markOut(document.getElementById('legend'),keepL,outs);
 
   clearTimeout(outTimer);
-  if(outs.length&&!reduced())outTimer=setTimeout(function(){layout(live);},400);
-  else layout(live);
+  if(outs.length&&!reduced())outTimer=setTimeout(function(){layout(live,r.total);},400);
+  else layout(live,r.total);
 }
 
 var last=null,failures=0;
