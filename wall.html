@@ -34,8 +34,14 @@
      牆上只畫「還沒到」的格子——報到的直接從畫面消失，所以整面牆會一路縮到空。
      色塊在流向上依同一個排序相鄰，比例一變，整片顏色就換位置。 */
   /* 清單與牆都靠上（2026-08-18 使用者指定：兩邊上緣要對齊）。
-     置中的話，牆隨人數變短就會往下飄，清單也跟著移，兩邊永遠對不齊。 */
-  #stage { position: fixed; inset: 0; display: flex; align-items: flex-start;
+     置中的話，牆隨人數變短就會往下飄，清單也跟著移，兩邊永遠對不齊。
+
+     ⚠️ 對齊要做在**子容器內部**（#legend 的 justify-content、#wallbox 的 align-items），
+     **不可以把 #stage 改成 align-items: flex-start**。那樣 #wallbox 的高度會縮到內容高，
+     首次繪製時牆還是空的 ⇒ clientHeight = 0 ⇒ bestCols() 拿到 h=0 算出 guess=Infinity
+     ⇒ `for(c=Infinity; c<=Infinity; c++)` **無窮迴圈、整個 renderer 凍死**。
+     2026-08-18 實測踩過：頁面標題出得來、畫面全白、瀏覽器完全沒反應。 */
+  #stage { position: fixed; inset: 0; display: flex;
            gap: clamp(16px, 2vw, 40px); padding: var(--pad-top, 60px) 26px 26px; }
   #legend { flex: 0 0 auto; width: var(--legw, 190px); display: flex; flex-direction: column;
             justify-content: flex-start; gap: var(--leggap, 6px); overflow: hidden; }
@@ -49,8 +55,13 @@
   .lg .ct { color: var(--ink3); font-variant-numeric: tabular-nums; font-size: .84em;
             flex: 0 0 auto; min-width: 3.2em; text-align: right; }
 
-  /* 牆靠左貼著清單、靠上對齊。置中的話人少時牆會飄走，跟清單對不上 */
-  #wallbox { flex: 1 1 auto; display: flex; align-items: flex-start; justify-content: flex-start; }
+  /* 牆靠左貼著清單、靠上對齊。置中的話人少時牆會飄走，跟清單對不上。
+     ⚠️ `min-width: 0` 不可拿掉：flex item 預設 `min-width: auto`，**不會縮到比內容窄**。
+     牆的格子是固定 px 寬，所以視窗縮小時 wallbox.clientWidth 會一直回報舊的內容寬度，
+     bestCols() 拿到假的可用寬度 ⇒ 欄數再也不重算、牆整片溢出畫面右側。
+     2026-08-18 實測：桌面 1660 縮到 500 時，牆寬仍停在 970。 */
+  #wallbox { flex: 1 1 auto; min-width: 0; display: flex;
+             align-items: flex-start; justify-content: flex-start; }
   /* ⚠️ 格子間距是 CSS 與 JS 共用的數字（JS 要拿它算格子邊長）。只能有一個來源，
      所以定義在這裡、由 JS 讀 --gap，兩邊各寫一個數字必然會漂移。 */
   #wall { display: grid; gap: var(--gap, 6px); }
@@ -224,7 +235,12 @@ function colorIndex(units){
  * 只在 guess 附近試幾個，挑「最後一列空格最少」的那個——缺角越少，整塊越像一個完整的方陣。
  */
 function bestCols(n,w,h){
-  var guess=Math.max(1,Math.round(Math.sqrt(n*w/h)));
+  /* ⚠️ 先擋掉非正數與 0。w 或 h 是 0 時 n*w/h 會變 Infinity，guess 跟著是 Infinity，
+     下面那個 for 迴圈 `c<=guess+4` 恆真、`c++` 也仍是 Infinity ⇒ 無窮迴圈、renderer 凍死。
+     2026-08-18 真的踩過：一行 CSS（把 #stage 改成 align-items: flex-start）讓 wallbox
+     高度變 0，整頁就掛在這裡，畫面全白、瀏覽器沒反應、零錯誤訊息。 */
+  if(!(w>0)||!(h>0)||!(n>0))return 1;
+  var guess=Math.max(1,Math.min(n,Math.round(Math.sqrt(n*w/h))));
   var best=guess,score=Infinity;
   for(var c=Math.max(1,guess-4);c<=guess+4;c++){
     var rows=Math.ceil(n/c);
