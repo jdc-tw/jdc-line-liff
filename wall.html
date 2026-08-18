@@ -101,6 +101,19 @@
            display: flex; flex-direction: column; align-items: center; gap: 4px;
            padding: 14px 20px 16px; background: var(--scrim);
            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  /* 公司 logo 與活動名稱同一行（2026-08-19 使用者指定）。用 assets/logo-full.svg，
+     跟 index／attend／checkin 同一個寫法，不另外做一套。
+     ⚠️ 這個 logo 是深色的，深色主題下會整片消失 ⇒ 濾成純白剪影。
+     代價是失去標誌本身的洋紅，換來的是在兩種主題下都讀得到。 */
+  .brand { display: flex; align-items: center; gap: clamp(8px, 1vw, 18px); }
+  .brand img { height: clamp(20px, 2.4vw, 38px); width: auto; display: block; }
+  /* ⚠️ logo 的濾鏡只能跟著**這一頁真的有定義的那一種深色**走，也就是系統偏好。
+     本頁沒有 `:root[data-theme="dark"]` 的色票（那一態只有預覽端會蓋章、並自帶色票），
+     單獨替 logo 補一條 data-theme 規則的話，會變成「白 logo 疊在白底上」整個消失。
+     2026-08-19 實測抓到：data-theme=dark 時濾鏡生效、底色卻仍是 rgb(251,251,250)。 */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand img { filter: brightness(0) invert(1); }
+  }
   .act { font-size: clamp(16px, 1.9vw, 28px); font-weight: 600; }
   .nums { display: flex; gap: clamp(14px, 2.2vw, 38px); align-items: baseline;
           flex-wrap: wrap; justify-content: center; }
@@ -125,7 +138,10 @@
 <div id="stage"><div id="legend"></div><div id="wallbox"><div id="wall"></div></div></div>
 
 <header>
-  <span class="act" id="act">載入中…</span>
+  <div class="brand">
+    <img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司">
+    <span class="act" id="act">載入中…</span>
+  </div>
   <div class="nums">
     <span class="n arrived"><b id="nArrived">—</b><span>已報到</span></span>
     <span class="n left"><b id="nLeft">—</b><span>未報到</span></span>

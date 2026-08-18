@@ -121,6 +121,20 @@ if (process.argv.indexOf('--artifact') > -1) {
     if (!c[0].test(out)) { console.error('❌ 第 ' + (i + 1) + ' 條外殼裁切沒命中，wall.html 結構變了'); process.exit(1); }
     out = out.replace(c[0], c[1]);
   });
+
+  /* 公司 logo 內嵌成 data URI。發布端的 CSP 擋所有外部請求，而
+     `assets/logo-full.svg` 是相對路徑、在那邊根本不存在 ⇒ 不內嵌就是一張破圖。
+     production 的 wall.html 維持 <img src="assets/..."> 不動（跟其他頁一致、可快取）。 */
+  const LOGO = path.join(__dirname, '..', '..', 'assets', 'logo-full.svg');
+  if (!fs.existsSync(LOGO)) { console.error('❌ 找不到 logo：' + LOGO); process.exit(1); }
+  const dataUri = 'data:image/svg+xml;base64,' + fs.readFileSync(LOGO).toString('base64');
+  /* ⚠️ 一定要比對 `src="..."`，不能只比對檔名。CSS 註解裡也提到同一個路徑，
+     而 String.replace 只換第一個出現處——第一版就這樣把 base64 塞進註解、
+     img 的 src 原封不動，預覽版是一張破圖（2026-08-19 實測抓到）。 */
+  const IMG = /src="assets\/logo-full\.svg"/;
+  if (!IMG.test(out)) { console.error('❌ 找不到 logo 的 img src，header 結構變了'); process.exit(1); }
+  out = out.replace(IMG, 'src="' + dataUri + '"');
+  if (/src="assets\//.test(out)) { console.error('❌ 仍有指向 assets/ 的 src，發布後會是破圖'); process.exit(1); }
   // 主題第三態：原檔只處理了「系統偏好深色」，補上「檢視者手動選深色」
   const DARK_STAMP = `
   :root[data-theme="dark"] {
@@ -129,6 +143,8 @@ if (process.argv.indexOf('--artifact') > -1) {
     --bg: #141413; --done: #232321;
     --scrim: rgba(20,20,19,.86);
   }
+  /* logo 的濾鏡跟色票同進同出。只補濾鏡不補色票＝白 logo 疊白底、整個消失 */
+  :root[data-theme="dark"] .brand img { filter: brightness(0) invert(1); }
   #note { position: fixed; left: 14px; bottom: 12px; z-index: 3;
           font-size: 12px; color: var(--ink3); letter-spacing: .02em; }
 `;
