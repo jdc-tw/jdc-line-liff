@@ -205,6 +205,7 @@
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
+<script src="assets/board-cache.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 var EMAIL_DOMAIN='@jdc-corpn.com.tw';
@@ -239,18 +240,60 @@ function jsonp(action,params){
   return attempt().catch(function(){
     return new Promise(function(res){setTimeout(res,2000);}).then(attempt);
   }).catch(function(e){return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗'};});}
-// SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。待報到者姓名屬 PII，只在進入本頁後才快取、admin 不預取。
-function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
-function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 var TOKEN=getToken();
+var CACHE_READY=cacheBootstrap(TOKEN);   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 // 首載合併（2026-08-06）：4 支 /exec → 1 支 batch。/exec 每請求固定成本 2-4s、偶發 8-17s 長尾，
 // 多支並行佔執行位是「連線逾時」爆量排隊的火種。pick(a) 把整包切片給既有 render 函式；
 // batch 整包失敗時每個 key 都拿到 {ok:false,msg:…} → 各區塊走原本的錯誤路徑，行為與單支失敗相同。
 // 互動後的重抓（切活動、核定後刷新）仍走單支 jsonp——batch 只管首載這一發。
-var FIRST=jsonp('batch',{token:TOKEN,list:JSON.stringify([
-  {a:'getCheckinOptions'},{a:'getCheckinPending'},{a:'getHrPending'},{a:'getAnniversaries'}])});
+// 2026-08-19：SWR（sessionStorage）換成持久快取——原本關分頁即清，每次開頁都白等。
+// 首載四支各自一個名稱、各自過一次守門（persistBatchSlices）——不可存 batch 外層整包，
+// 外層 ok:true 會讓內層 {ok:false} 被夾帶存七天，見 assets/board-cache.js 的註解。
+var FIRST_ITEMS=[{a:'getCheckinOptions'},{a:'getCheckinPending'},
+                 {a:'getHrPending'},{a:'getAnniversaries'}];
+var FIRST=queueRead(function(){
+  return jsonp('batch',{token:TOKEN,list:JSON.stringify(FIRST_ITEMS)}).then(function(env){
+    return handleVerdict(TOKEN,env).then(function(v){
+      if(v!=='ok')return {ok:false,_verdict:v,msg:env.msg};
+      return persistBatchSlices(TOKEN,env,FIRST_ITEMS,nameOfSlice).then(function(){return env;});
+    });
+  });
+});
 function pick(a){return FIRST.then(function(r){
   return (r&&r.ok&&r.results&&r.results[a])||{ok:false,msg:(r&&r.msg)||'連線失敗'};});}
+// 離線標示：掛在 #who（tab-checkin 標題下的 meta 列）。board.html 沒有 id="meta"／id="sub"，
+// 五個分頁也沒有共用的頁首列；#who 是預設分頁裡同角色的元素——attend.html/hr-stats.html
+// 放「載入中…→資料來源說明」的地方，這裡放的是「核准人：xxx」。
+FIRST.then(function(env){
+  if(env&&env._verdict==='offline'){
+    return CACHE_READY.then(function(){
+      var c=cacheGet(N.checkinPending);
+      if(c)markOffline(c.savedAt);
+    });
+  }
+  if(env&&env.ok)markOffline(null);
+});
+// 第二發：把其他三個分頁的資料先抓回來，點進去就不用等。
+// 排在第一發之後（不是同時發）——首屏速度完全不受影響，而同頁最多一支 /exec 在飛。
+var SECOND_ITEMS=[{a:'getRosterList'},{a:'listHrNotices'},{a:'listOptions'}];
+var SECOND=FIRST.then(function(first){
+  if(!first||first.ok!==true)return null;   // 第一發撤銷或離線 → 不送第二發
+  return queueRead(function(){
+    return jsonp('batch',{token:TOKEN,list:JSON.stringify(SECOND_ITEMS)}).then(function(env){
+      if(cacheVerdict(env)!=='ok')return null;
+      return persistBatchSlices(TOKEN,env,SECOND_ITEMS,nameOfSlice).then(function(){return env;});
+    });
+  });
+});
+// pick2：切片必須存在且 slice.ok===true 才回傳，否則回 null。
+// 只檢查外層 ok 不夠——{ok:false} 的切片會被當成資料傳給 loader，loader 收到「有值」
+// 就直接 render，不會再查一次 ok，畫面會顯示怪東西且不報錯。
+function pick2(a){
+  return SECOND.then(function(r){
+    var slice=r&&r.results&&r.results[a];
+    return (slice&&slice.ok===true)?slice:null;
+  });
+}
 annivInit(function(){return pick('getAnniversaries');}, TOKEN);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
 function updateBadge(n){
   document.getElementById('tabbtn-checkin').textContent = n>0 ? '新人報到（'+n+'）' : '新人報到';
@@ -355,26 +398,43 @@ function westEff_(v){
   var m=String(v||'').match(/^(\d{3})\.(\d{2})\.(\d{2})$/);
   return m?(+m[1]+1911)+'/'+m[2]+'/'+m[3]:v;
 }
+function renderLog(r){
+  var box=document.getElementById('log-list');
+  if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  if(!r.rows.length){box.innerHTML='<div class="empty">還沒有任何異動紀錄</div>';return;}
+  box.innerHTML='<div class="done-list">'+r.rows.map(function(x){
+    var col=CAT_COLOR[x.cat]||'#666';
+    var move=x.cat==='資料修正' ? String(x.note||'')
+      : [x.fromUnit&&(x.fromUnit+(x.fromTitle?' '+x.fromTitle:'')), (x.toUnit||x.toTitle)&&((x.toUnit||'')+(x.toTitle?' '+x.toTitle:''))].filter(Boolean).join(' → ');
+    var mi=function(lbl,val){return val?'<span class="mi"><i>'+lbl+'</i><b>'+esc(val)+'</b></span>':'';};
+    var info=mi('生效',westEff_(x.eff))+mi('確認',x.who)+mi('套用',x.appliedAt);
+    var revive=x.status==='已駁回'?'<div><button type="button" class="linkbtn" style="color:#b26a00" onclick="reviveNotice('+x._row+',this)">↩ 恢復這筆（回到待確認）</button><div class="resend-msg"></div></div>':'';
+    return '<div class="done-item"><div class="done-head">'
+      +'<span class="done-name"><span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(x.cat)+'</span>'+esc(x.name)+'</span>'
+      +'<span class="done-date">'+esc(x.status)+'</span></div>'
+      +(move?'<div class="done-move">'+esc(move)+'</div>':'')
+      +(info?'<div class="done-meta">'+info+'</div>':'')
+      +'<div class="done-doc">'+esc(x.doc)+'</div>'+revive+'</div>';
+  }).join('')+'</div>';
+}
 function loadLog(){
   var box=document.getElementById('log-list');
-  box.innerHTML='<div class="empty">載入中…</div>';
-  jsonp('listHrNotices',{token:TOKEN}).then(function(r){
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    if(!r.rows.length){box.innerHTML='<div class="empty">還沒有任何異動紀錄</div>';return;}
-    box.innerHTML='<div class="done-list">'+r.rows.map(function(x){
-      var col=CAT_COLOR[x.cat]||'#666';
-      var move=x.cat==='資料修正' ? String(x.note||'')
-        : [x.fromUnit&&(x.fromUnit+(x.fromTitle?' '+x.fromTitle:'')), (x.toUnit||x.toTitle)&&((x.toUnit||'')+(x.toTitle?' '+x.toTitle:''))].filter(Boolean).join(' → ');
-      var mi=function(lbl,val){return val?'<span class="mi"><i>'+lbl+'</i><b>'+esc(val)+'</b></span>':'';};
-      var info=mi('生效',westEff_(x.eff))+mi('確認',x.who)+mi('套用',x.appliedAt);
-      var revive=x.status==='已駁回'?'<div><button type="button" class="linkbtn" style="color:#b26a00" onclick="reviveNotice('+x._row+',this)">↩ 恢復這筆（回到待確認）</button><div class="resend-msg"></div></div>':'';
-      return '<div class="done-item"><div class="done-head">'
-        +'<span class="done-name"><span style="font-size:12px;font-weight:700;color:#fff;background:'+col+';border-radius:10px;padding:1px 8px;margin-right:8px">'+esc(x.cat)+'</span>'+esc(x.name)+'</span>'
-        +'<span class="done-date">'+esc(x.status)+'</span></div>'
-        +(move?'<div class="done-move">'+esc(move)+'</div>':'')
-        +(info?'<div class="done-meta">'+info+'</div>':'')
-        +'<div class="done-doc">'+esc(x.doc)+'</div>'+revive+'</div>';
-    }).join('')+'</div>';
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.hrNotices);
+    if(cached)renderLog(cached.value);
+    else box.innerHTML='<div class="empty">載入中…</div>';
+  });
+  pick2('listHrNotices').then(function(r){
+    if(r){renderLog(r);return;}               // 第二發已備妥
+    return queueRead(function(){               // 沒有才自己打
+      return jsonp('listHrNotices',{token:TOKEN}).then(function(r2){
+        return cacheSave(TOKEN,N.hrNotices,r2).then(function(){
+          if(r2&&r2.ok)renderLog(r2);
+          else if(!cached)renderLog(r2);
+        });
+      });
+    });
   });
 }
 
@@ -555,18 +615,32 @@ function addTitleGo(){
 var optRows=[], optLoaded=false;
 var UNIT_GROUPS=['工地','總公司'];
 var TITLE_GROUPS_OPT=['工務／工程','機電','繪圖／規劃','行政／管理','其他'];
+function renderOptionsAdmin(r){
+  if(!r||!r.ok)return;
+  optRows=r.rows||[];optLoaded=true;
+  var units=optRows.filter(function(o){return o.type==='單位';});
+  var titles=optRows.filter(function(o){return o.type==='職稱';});
+  function opts(arr){return arr.map(function(o){
+    var mark=(o.status==='停用'?'（停用）':'');
+    return '<option value="'+esc(o.type+'|'+o.name)+'">'+esc(o.name)+mark+'</option>';}).join('');}
+  document.getElementById('eo-pick').innerHTML='<option value="" selected>── 請選擇 ──</option>'
+    +'<optgroup label="單位">'+opts(units)+'</optgroup><optgroup label="職稱">'+opts(titles)+'</optgroup>';
+  document.getElementById('eo-fields').style.display='none';
+}
 function loadOptionsAdmin(){
-  jsonp('listOptions',{token:TOKEN}).then(function(r){
-    if(!r||!r.ok)return;
-    optRows=r.rows||[];optLoaded=true;
-    var units=optRows.filter(function(o){return o.type==='單位';});
-    var titles=optRows.filter(function(o){return o.type==='職稱';});
-    function opts(arr){return arr.map(function(o){
-      var mark=(o.status==='停用'?'（停用）':'');
-      return '<option value="'+esc(o.type+'|'+o.name)+'">'+esc(o.name)+mark+'</option>';}).join('');}
-    document.getElementById('eo-pick').innerHTML='<option value="" selected>── 請選擇 ──</option>'
-      +'<optgroup label="單位">'+opts(units)+'</optgroup><optgroup label="職稱">'+opts(titles)+'</optgroup>';
-    document.getElementById('eo-fields').style.display='none';
+  CACHE_READY.then(function(){
+    var c=cacheGet(N.options);
+    if(c)renderOptionsAdmin(c.value);           // 秒顯
+  });
+  pick2('listOptions').then(function(r){
+    if(r){renderOptionsAdmin(r);return;}         // 第二發已備妥
+    return queueRead(function(){                 // 沒有才自己打
+      return jsonp('listOptions',{token:TOKEN}).then(function(r2){
+        return cacheSave(TOKEN,N.options,r2).then(function(){
+          renderOptionsAdmin(r2);
+        });
+      });
+    });
   });
 }
 function editOptionPick(){
@@ -628,18 +702,38 @@ function reviveNotice(row,btn){
 }
 
 // （名冊每列編輯已於 2026-07-15 拿掉：等真實需求再開，維持名冊真實性。後端 action 路由同步下架。）
+// ⚠️ 這支刻意叫 paintRoster 不叫 renderRoster——renderRoster(rows,openAll) 已是既有函式
+// （畫「一組 row 陣列」進 #r-list，filterRoster() 搜尋時也直接呼叫它）。若這支也取同名，
+// 兩個簽名不同（一個吃 API 回應物件、一個吃陣列）的函式會互相覆蓋，filterRoster 會壞掉。
+function paintRoster(r){
+  if(!r||!r.ok){document.getElementById('r-count').textContent='';document.getElementById('r-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  rosterRows=r.rows||[];
+  // 最近 20 筆更新/異動 → 標紅＋顯示更新日期（有 updatedMs 的列，時間新→舊取前 20）
+  rosterRows.forEach(function(o){o._recent=false;});
+  rosterRows.filter(function(o){return o.updatedMs>0;})
+    .sort(function(a,b){return b.updatedMs-a.updatedMs;})
+    .slice(0,20).forEach(function(o){o._recent=true;});
+  document.getElementById('r-count').innerHTML='在職 <b>'+r.activeCount+'</b> 人（名冊共 '+r.total+' 筆）';
+  renderRoster(rosterRows);
+}
 function loadRoster(){
-  document.getElementById('r-list').innerHTML='<div class="empty">載入中…</div>';
-  jsonp('getRosterList',{token:TOKEN}).then(function(r){
-    if(!r||!r.ok){document.getElementById('r-count').textContent='';document.getElementById('r-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    rosterRows=r.rows||[];
-    // 最近 20 筆更新/異動 → 標紅＋顯示更新日期（有 updatedMs 的列，時間新→舊取前 20）
-    rosterRows.forEach(function(o){o._recent=false;});
-    rosterRows.filter(function(o){return o.updatedMs>0;})
-      .sort(function(a,b){return b.updatedMs-a.updatedMs;})
-      .slice(0,20).forEach(function(o){o._recent=true;});
-    document.getElementById('r-count').innerHTML='在職 <b>'+r.activeCount+'</b> 人（名冊共 '+r.total+' 筆）';
-    renderRoster(rosterRows);
+  var box=document.getElementById('r-list');
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.rosterList);
+    if(cached)paintRoster(cached.value);         // 秒顯
+    else box.innerHTML='<div class="empty">載入中…</div>';
+  });
+  pick2('getRosterList').then(function(r){
+    if(r){paintRoster(r);return;}                 // 第二發已備妥
+    return queueRead(function(){                  // 沒有才自己打
+      return jsonp('getRosterList',{token:TOKEN}).then(function(r2){
+        return cacheSave(TOKEN,N.rosterList,r2).then(function(){
+          if(r2&&r2.ok)paintRoster(r2);
+          else if(!cached)paintRoster(r2);
+        });
+      });
+    });
   });
 }
 function rosterItemHtml(o){
@@ -671,13 +765,17 @@ function addDoneItem(o, prepend){
 }
 
 function load(){
-  var key='swr:board';
-  var cached=swrGet(key);
-  if(cached){renderLoad(cached);}
-  else{document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';}
+  var co=null, cp=null;
+  CACHE_READY.then(function(){
+    co=cacheGet(N.checkinOptions); cp=cacheGet(N.checkinPending);
+    if(co&&cp)renderLoad([co.value,cp.value]);            // 秒顯
+    else document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';
+  });
   // 兩份資料改由首載 batch 一次帶回（load() 只在開頁呼叫一次，直接吃切片即可）
+  // ⚠️ 這裡不呼叫 cacheSave——FIRST 裡的 persistBatchSlices 已經存過，呼叫端再存一次就繞過唯一入口。
   Promise.all([pick('getCheckinOptions'), pick('getCheckinPending')]).then(function(rs){
-    if(rs[1]&&rs[1].ok){swrSet(key,rs);renderLoad(rs);}else if(!cached){renderLoad(rs);}
+    if(rs[1]&&rs[1].ok)renderLoad(rs);
+    else if(!(co&&cp))renderLoad(rs);
   });
 }
 function renderLoad(rs){
@@ -694,6 +792,19 @@ function renderLoad(rs){
     updateBadge(r.rows.length);
     var done=r.done||[]; var list=document.getElementById('donelist'); list.innerHTML='';
     if(done.length){ document.getElementById('doneWrap').style.display=''; list.innerHTML=done.map(doneItemHtml).join(''); }
+}
+/** 離線標示：有 savedAt 就掛上去，傳 null 代表連上了、拿掉標示。
+ *  掛在 #who——board.html 沒有 id="meta"／id="sub"，五個分頁也沒有共用的頁首 meta 列；
+ *  #who 是 tab-checkin（預設分頁）標題下的那一行，跟 attend.html #meta、hr-stats.html #sub
+ *  是同一個角色（本來放「載入中…→核准人：xxx」）。 */
+function markOffline(savedAt){
+  var el=document.getElementById('who');
+  if(!el)return;
+  var tag=document.getElementById('offline-tag');
+  if(savedAt==null){if(tag)tag.parentNode.removeChild(tag);return;}
+  if(!tag){tag=document.createElement('span');tag.id='offline-tag';
+    tag.setAttribute('style','margin-left:8px;color:#b26a00;font-size:13px');el.appendChild(tag);}
+  tag.textContent=offlineLabel(savedAt);
 }
 rosterDlInit({ jsonp: jsonp, token: TOKEN, leaversId: 'r-dl-leavers',
   msg: function (t, ty) { var el = document.getElementById('r-dl-msg'); el.className = 'msg show msg-' + (ty || 'info'); el.textContent = t; } });
