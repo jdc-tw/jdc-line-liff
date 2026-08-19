@@ -54,6 +54,7 @@
 <div id="meta" class="meta">載入中…</div>
 <div id="content"><div class="empty">載入中…</div></div>
 <script src="assets/stats-view.js"></script>
+<script src="assets/board-cache.js"></script>
 <script>
 // 失效面（2026-07-31 補）：esc() 與 renderStatsHtml() 都住在 assets/stats-view.js。
 // 原本連「顯示錯誤訊息」那行也呼叫 esc()，所以那支一旦沒載進來，連錯誤訊息都會拋例外，
@@ -80,10 +81,6 @@ function jsonp(action,params,timeoutMs){
     .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
     .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
-// SWR：sessionStorage 秒顯上次結果、背景重抓校正
-function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
-function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-
 var CUR='';   // 目前顯示的活動ID
 // 記住上次看的那場，回訪時先用它的快取秒開（localStorage：跨分頁、關瀏覽器也留著）
 function lastAct(){try{return localStorage.getItem('attend:lastAct')||'';}catch(e){return '';}}
@@ -108,18 +105,29 @@ function load(actId){
     return;
   }
   CUR=actId;
-  var key='swr:attend:'+actId;
-  var cached=swrGet(key);
-  if(cached)paint(cached);
+  var t=q('t');
+  var cached=cacheGet(N.attend(actId));
+  if(cached)paint(cached.value);
   else{document.getElementById('meta').textContent='載入中…';
        document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
-  jsonp('getActivityStats',{token:q('t'),act:actId}).then(function(r){
-    if(r&&r.ok){swrSet(key,r);paint(r);}else if(!cached){paint(r);}
+  queueRead(function(){
+    return jsonp('getActivityStats',{token:t,act:actId}).then(function(r){
+      return handleVerdict(t,r).then(function(v){
+        if(v==='revoked')return;
+        if(v==='offline'){ if(cached)markOffline(cached.savedAt); return; }
+        return cacheSave(t,N.attend(actId),r).then(function(){
+          if(r&&r.ok){paint(r);markOffline(null);}else if(!cached)paint(r);
+        });
+      });
+    });
   });
 }
 
-// 進頁：兩支 GAS 同時發，不串接等待（GAS 每支固定 3 秒起跳，串接＝首屏 6 秒以上）。
-// 樂觀那支直接問「開放中那場」的統計——多數情況命中，畫面 3 秒就出來；
+// 2026-08-19：原本兩支同時發，不串接等待（GAS 每支固定 3 秒起跳，串接＝首屏 6 秒以上）。
+// 改成 batch 之後這段舊理由已被取代：batch 比並行更好，不是折衷——並行是兩個 GAS 執行位、
+// 一次往返；batch 是一個執行位、一次往返，接線更省。當初沒走 batch 只是因為 batch 機制
+// 2026-08-06 才加，比這段程式晚。
+// 樂觀那支（getActivityStats）直接問「開放中那場」的統計——多數情況命中，畫面很快就出來；
 // 只有在全部活動皆關閉（樂觀那支撲空）時，才退回用清單挑最新一場再問一次。
 (function init(){ try{
   if(typeof renderStatsHtml!=='function'){    // stats-view.js 沒載進來＝後面每條路都會拋，先講清楚
@@ -127,15 +135,48 @@ function load(actId){
     return;
   }
   var t=q('t'), urlAct=q('act');
-  var pList = jsonp('listActivities',{token:t});
-  var pFast = jsonp('getActivityStats',{token:t,act:urlAct||''});
+
+  var ITEMS = [{ a: 'listActivities' }, { a: 'getActivityStats', p: { act: urlAct || '' } }];
+  var FIRST = queueRead(function () {
+    return jsonp('batch', { token: t, list: JSON.stringify(ITEMS) }).then(function (env) {
+      return handleVerdict(t, env).then(function (v) {
+        if (v === 'revoked') return { ok: false, _verdict: v };
+        if (v === 'offline') return { ok: false, _verdict: v, msg: env.msg };
+        return persistBatchSlices(t, env, ITEMS, nameOfSlice).then(function () {
+          return env;
+        });
+      });
+    });
+  });
+  function pick(a) {
+    return FIRST.then(function (r) {
+      return (r && r.ok && r.results && r.results[a]) || { ok: false, msg: (r && r.msg) || '連線失敗' };
+    });
+  }
+  var pList = pick('listActivities');
+  var pFast = pick('getActivityStats');
 
   // 回訪秒開：先用上次看的那場的快取畫出來，背景再校正
   var seed = urlAct || lastAct();
-  if(seed){ var c=swrGet('swr:attend:'+seed); if(c)paint(c); }
+  var bootP = cacheBootstrap(t).then(function () {
+    if (!seed) return;
+    var c = cacheGet(N.attend(seed));
+    if (c) paint(c.value);
+  });
+
+  // 離線標示：批次請求連不連得上，跟著回訪那筆快取的時間戳走
+  FIRST.then(function (env) {
+    if (env && env._verdict === 'offline') {
+      return bootP.then(function () {
+        var c = seed ? cacheGet(N.attend(seed)) : null;
+        if (c) markOffline(c.savedAt);
+      });
+    }
+    if (env && env.ok) markOffline(null);
+  });
 
   pFast.then(function(r){
-    if(r&&r.ok){ swrSet('swr:attend:'+(r.activity.id||''),r); paint(r); }
+    if(r&&r.ok){ cacheSave(t, N.attend(r.activity.id||''), r); paint(r); }
   });
 
   pList.then(function(r){
@@ -161,6 +202,19 @@ function load(actId){
     });
   });
 }catch(e){ fatal('頁面載入失敗（'+((e&&e.message)||e)+'），請重新整理。'); } })();
+
+/** 離線標示：有 savedAt 就掛上去，傳 null 代表連上了、拿掉標示。
+ *  掛在 #meta（頁面標題下的 meta 列）——本頁本來就用 id="meta" 放這行
+ *  「載入中…→資料來源說明」的字，跟 hr-stats.html 的 #sub 是同一個角色。 */
+function markOffline(savedAt) {
+  var el = document.getElementById('meta');
+  if (!el) return;
+  var tag = document.getElementById('offline-tag');
+  if (savedAt == null) { if (tag) tag.parentNode.removeChild(tag); return; }
+  if (!tag) { tag = document.createElement('span'); tag.id = 'offline-tag';
+    tag.setAttribute('style', 'margin-left:8px;color:#b26a00;font-size:13px'); el.appendChild(tag); }
+  tag.textContent = offlineLabel(savedAt);
+}
 
 // 切回這個分頁就重抓一次（不做定時輪詢，省 GAS 配額）
 document.addEventListener('visibilitychange',function(){
