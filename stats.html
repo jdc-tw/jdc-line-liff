@@ -443,6 +443,7 @@
 <script src="assets/xlsx-post.js"></script>
 <script src="assets/stats-view.js"></script>
 <script src="assets/qr-badge.js"></script>
+<script src="assets/board-cache.js"></script>
 <script>
 // esc() 住在 assets/stats-view.js，本頁 40 幾處在用（含各種錯誤訊息的組字串）。
 // 那支若沒載進來，連「顯示錯誤」的路徑都會拋例外，畫面只會靜靜停住＝壞掉時沒有任何人看得見
@@ -450,6 +451,7 @@
 if(typeof esc!=='function'){window.esc=function(s){return (s==null?'':s).toString().replace(/</g,'&lt;');};}
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+var CACHE_READY=cacheBootstrap(q('t'));   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 
 /* ── 活動選擇器：橫向滑動的純文字 ─────────────────────────────────────────
    原生 <select> 留在 DOM 裡當值的載體（全頁十幾處讀 .value、寫 .value，
@@ -600,9 +602,6 @@ function jsonp(action,params,timeoutMs){
   var p=attempt();
   if(timeoutMs==null){p=p.catch(function(){return new Promise(function(res){setTimeout(res,2000);}).then(attempt);});}
   return p.catch(function(e){return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
-// SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
-function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
-function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /** 依「URL 編碼後長度」自適應切包（中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度）。 */
 function chunkByLen(rows,maxEnc){
   maxEnc=maxEnc||3000;
@@ -852,21 +851,28 @@ function togglePublish(){
 function loadSeating(){
   var id=actId();
   if(!id)return;
-  var key='seat_'+id;
-  var cached=swrGet(key);
-  if(cached){applySeating(cached);}                 // 秒顯
-  else{
-    document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
-    document.getElementById('seat-detail').innerHTML='';
-  }
-  jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r){
-    if(!r||!r.ok){
-      // 有舊資料就留著（畫面上已經是它），只有完全沒有時才顯示錯誤
-      if(!cached)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
-      return;
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.seating(id));
+    if(cached){applySeating(cached.value);}          // 秒顯
+    else{
+      document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
+      document.getElementById('seat-detail').innerHTML='';
     }
-    swrSet(key,r);
-    applySeating(r);
+  });
+  // pick2 抓的是 DEFAULT_ACT 那一場——只有選到同一場才能沿用，切到別場一律自己打。
+  var p=(id===DEFAULT_ACT)?pick2('getSeatingBoard'):Promise.resolve(null);
+  p.then(function(r){
+    if(r){applySeating(r);return;}                    // 第二發已備妥（且同一場）
+    return queueRead(function(){                       // 沒有才自己打
+      return jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r2){
+        return cacheSave(q('t'),N.seating(id),r2).then(function(){
+          if(r2&&r2.ok)applySeating(r2);
+          // 有舊資料就留著（畫面上已經是它），只有完全沒有時才顯示錯誤
+          else if(!cached)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r2&&r2.msg)||'載入失敗')+'</div>';
+        });
+      });
+    });
   });
 }
 function setSeatView(v){
@@ -1030,8 +1036,30 @@ function seatUnpublish(){
 // 年度＝名單身分（哪一批人），與發送日期無關。範本存在後端，明年打開預帶同一份。
 var SN=null;
 function snLoad(){
-  var y=document.getElementById('sn-year').value||'';
-  jsonp('getSeniorNotice',{token:q('t'),year:y}).then(function(r){
+  // ⚠️ 預設值必須是 String(currentTaipeiYear())，與第二發送出的 p.year 同一個字串——
+  // 否則快取名稱對不上、永遠不命中，且不會有任何錯誤訊息。
+  var y=document.getElementById('sn-year').value||String(currentTaipeiYear());
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.senior(y));
+    if(cached){renderSenior(cached.value);}           // 秒顯
+    else{document.getElementById('sn-people').innerHTML='<div class="empty">載入中…</div>';}
+  });
+  // pick2 抓的是「當前台北年度」——只有選到同一個年度才能沿用，切年度一律自己打。
+  var p=(y===String(currentTaipeiYear()))?pick2('getSeniorNotice'):Promise.resolve(null);
+  p.then(function(r){
+    if(r){renderSenior(r);return;}                     // 第二發已備妥（且同一年度）
+    return queueRead(function(){                        // 沒有才自己打
+      return jsonp('getSeniorNotice',{token:q('t'),year:y}).then(function(r2){
+        return cacheSave(q('t'),N.senior(y),r2).then(function(){
+          if(r2&&r2.ok)renderSenior(r2);
+          else if(!cached)document.getElementById('sn-people').innerHTML='<div class="empty">'+esc((r2&&r2.msg)||'載入失敗')+'</div>';
+        });
+      });
+    });
+  });
+}
+function renderSenior(r){
     var box=document.getElementById('sn-people');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     SN=r;
@@ -1079,7 +1107,6 @@ function snLoad(){
       }).join('');
     }
     snPickMsg();
-  });
 }
 /** 全選／全不選。發不出去的（未綁定、同名）是 disabled，本來就不該被拉進來。 */
 function snCheckAll(on){
@@ -1865,8 +1892,16 @@ function toggleRep(btn,id){
 
 // 首載合併（2026-08-06）：3 支 /exec → 1 支 batch（成因與手法見 board.html 同段註解）。
 // getActivityStats 空 act＝後端自選開放中活動，與原本 loadStats(q('act')) 語意等價。
-var FIRST=jsonp('batch',{token:q('t'),list:JSON.stringify([
-  {a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}}])});   // getAnniversaries 已移除：名單改由 getSeniorNotice 一併帶回，不必再抓一次
+// 2026-08-19：SWR（sessionStorage）換成持久快取——原本關分頁即清，每次開頁都白等。
+var FIRST_ITEMS=[{a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}}];   // getAnniversaries 已移除：名單改由 getSeniorNotice 一併帶回，不必再抓一次
+var FIRST=queueRead(function(){
+  return jsonp('batch',{token:q('t'),list:JSON.stringify(FIRST_ITEMS)}).then(function(env){
+    return handleVerdict(q('t'),env).then(function(v){
+      if(v!=='ok')return {ok:false,_verdict:v,msg:env.msg};
+      return persistBatchSlices(q('t'),env,FIRST_ITEMS,nameOfSlice).then(function(){return env;});
+    });
+  });
+});
 function pick(a){return FIRST.then(function(r){
   return (r&&r.ok&&r.results&&r.results[a])||{ok:false,msg:(r&&r.msg)||'連線失敗'};});}
 
@@ -1881,17 +1916,66 @@ pick('listActivities').then(function(r){
   renderActBar('act-picker','act-actbar');
 });
 
+// 第二發：把桌次／報到／員工三個分頁的資料先抓回來，點進去就不用等。
+// defaultAct 刻意與 loadTablesTab/loadCheckinTab 填下拉時用的 rows.slice().reverse() 同一個順序，
+// 所以預取不會替使用者「預選」任何東西——它抓的就是他等一下會看到的那場。
+// 預取不從 DOM 取值：那兩個下拉在預取當下都還沒填。
+var DEFAULT_ACT='';
+var SECOND_ITEMS=[];
+var SECOND=FIRST.then(function(first){
+  if(!first||first.ok!==true)return null;   // 第一發撤銷或離線 → 不送第二發
+  var la=first.results&&first.results.listActivities;
+  var rows=(la&&la.ok&&la.rows)?la.rows.slice().reverse():[];
+  DEFAULT_ACT=rows.length?rows[0].id:'';
+  var year=currentTaipeiYear();
+  SECOND_ITEMS=[{a:'getSeniorNotice',p:{year:String(year)}}];
+  if(DEFAULT_ACT){
+    SECOND_ITEMS.push({a:'getSeatingBoard',p:{actId:DEFAULT_ACT}});
+    SECOND_ITEMS.push({a:'listStaffStations',p:{actId:DEFAULT_ACT}});
+    SECOND_ITEMS.push({a:'previewPassBroadcast',p:{actId:DEFAULT_ACT,tpl:''}});
+  }
+  return queueRead(function(){
+    return jsonp('batch',{token:q('t'),list:JSON.stringify(SECOND_ITEMS)}).then(function(env){
+      if(cacheVerdict(env)!=='ok')return null;
+      return persistBatchSlices(q('t'),env,SECOND_ITEMS,nameOfSlice).then(function(){return env;});
+    });
+  });
+});
+var SECOND_DONE=false;
+SECOND.then(function(){SECOND_DONE=true;},function(){SECOND_DONE=true;});
+// pick2：切片必須存在且 slice.ok===true 才回傳，否則回 null——只檢查外層 ok 不夠，
+// {ok:false} 的切片會被當成資料傳給 loader，loader 收到「有值」就直接 render，不會再查一次 ok。
+function pick2(a){
+  return SECOND.then(function(r){
+    var slice=r&&r.results&&r.results[a];
+    return (slice&&slice.ok===true)?slice:null;
+  });
+}
+
 var statsFirst=true;
 function loadStats(act){
-  var key='swr:getActivityStats:'+(act||'');
-  var cached=swrGet(key);
-  if(cached){renderStats(cached);}
-  else{document.getElementById('meta').textContent='載入中…';document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
-  // 首發吃 batch 切片（act 已在 batch 的 p 帶上）；之後切場次重打單支
-  var src=statsFirst?pick('getActivityStats'):jsonp('getActivityStats',{token:q('t'),act:act||''});
-  statsFirst=false;
-  src.then(function(r){
-    if(r&&r.ok){swrSet(key,r);renderStats(r);}else if(!cached){renderStats(r);}
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.activityStats(act));
+    if(cached){renderStats(cached.value);}            // 秒顯
+    else{document.getElementById('meta').textContent='載入中…';document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
+  });
+  if(statsFirst){
+    statsFirst=false;
+    // 首發吃 batch 切片（act 已在 batch 的 p 帶上）；FIRST 裡的 persistBatchSlices 已經存過，
+    // 這裡不再呼叫 cacheSave——呼叫端再存一次就繞過唯一入口。
+    pick('getActivityStats').then(function(r){
+      if(r&&r.ok)renderStats(r);else if(!cached)renderStats(r);
+    });
+    return;
+  }
+  // 切場次重打單支
+  queueRead(function(){
+    return jsonp('getActivityStats',{token:q('t'),act:act||''}).then(function(r){
+      return cacheSave(q('t'),N.activityStats(act),r).then(function(){
+        if(r&&r.ok)renderStats(r);else if(!cached)renderStats(r);
+      });
+    });
   });
 }
 function renderStats(r){

@@ -351,3 +351,14 @@ test('offlineLabel：把時間戳講成人看得懂的一句話', () => {
   assert.ok(s.indexOf('8/19') >= 0);
   assert.ok(s.indexOf('09:05') >= 0);
 });
+
+test('currentTaipeiYear：裝置在西半球的跨年時刻，仍回台北的年度', () => {
+  // 2026-01-01 00:30 台北 = 2025-12-31 16:30 UTC
+  const t = Date.UTC(2025, 11, 31, 16, 30);
+  assert.equal(BC.currentTaipeiYear(t), 2026);
+});
+
+test('currentTaipeiYear：台北仍是去年時不得提前跳年', () => {
+  const t = Date.UTC(2025, 11, 31, 10, 0);   // 台北 2025-12-31 18:00
+  assert.equal(BC.currentTaipeiYear(t), 2025);
+});

@@ -299,6 +299,18 @@ function handleVerdict(token, resp) {
 
 function isRevoked() { return _revoked; }
 
+/**
+ * 台北時區的當前西元年。
+ * ⚠️ 不可用 new Date().getFullYear()——那跟著裝置時區走，跨年夜會與後端差一年。
+ * 後端 getSeniorNotice 對空 year 的預設就是 Asia/Taipei 的當年（Code.js:3782），
+ * 前端算出同一個數字送過去，回應完全相同、零行為變更。
+ */
+function currentTaipeiYear(nowMs) {
+  var d = (typeof nowMs === 'number') ? new Date(nowMs) : new Date();
+  return Number(new Intl.DateTimeFormat('en-CA',
+    { timeZone: 'Asia/Taipei', year: 'numeric' }).format(d));
+}
+
 /** 離線時附在 meta 列的一句話。時間取該筆快取的 savedAt。 */
 function offlineLabel(savedAt) {
   var d = new Date(savedAt);
@@ -335,6 +347,7 @@ if (typeof module !== 'undefined') module.exports = {
   handleVerdict: handleVerdict,
   isRevoked: isRevoked,
   offlineLabel: offlineLabel,
+  currentTaipeiYear: currentTaipeiYear,
   __setStoreForTest: __setStoreForTest,
   __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest
