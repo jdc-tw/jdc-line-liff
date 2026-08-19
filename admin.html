@@ -17,6 +17,8 @@
   .sub{font-size:13px;color:#888;margin-bottom:20px}
   a.card{display:block;background:#fff;border:1px solid #e3e5e8;border-radius:14px;padding:18px 20px;margin-bottom:12px;text-decoration:none;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.06)}
   a.card:active{background:#f0f1f3}
+  /* a.card 是 display:block，會蓋過 hidden 屬性 —— 沒有這一行，訊息紀錄那張藏不住 */
+  a.card[hidden]{display:none}
   .t{font-size:16px;font-weight:700}
   .d{font-size:13px;color:#888;margin-top:4px}
 </style>
@@ -37,15 +39,30 @@
     <div class="t">📈 人事資訊看板</div>
     <div class="d">年資／年齡分佈・單位結構・退休預警</div>
   </a>
+  <!-- 沒帶 mt 就不顯示：點了必定失敗的入口比不顯示更糟（同 board/stats 的作法） -->
+  <a class="card" id="go-messages" href="messages.html" hidden>
+    <div class="t">✉️ 訊息紀錄</div>
+    <div class="d">每一則 LINE 通知的發送紀錄・依批次摺疊</div>
+  </a>
 </div>
 <script src="assets/board-cache.js"></script>
 <script>
 // 純轉傳：本頁無資料、不打後端；token 帶去的看板自己驗
 var m=location.search.match(/[?&]t=([^&]+)/),t=m?m[1]:'';
+// mt＝hub 的 viewer token，與 t（line-platform）是兩套權限來源，不可互換。
+// 本頁是入口，順手把它轉傳下去：只要換這一個書籤，三個看板的「訊息紀錄 →」就都會出現。
+var mm=location.search.match(/[?&]mt=([^&]+)/),mt=mm?mm[1]:'';
 if(t){
-  document.getElementById('go-board').href='board.html?t='+t;
-  document.getElementById('go-stats').href='stats.html?t='+t;
+  var q='?t='+t+(mt?'&mt='+mt:'');
+  document.getElementById('go-board').href='board.html'+q;
+  document.getElementById('go-stats').href='stats.html'+q;
+  // hr-stats.html 還沒有訊息紀錄的 UI，帶 mt 過去也沒東西讀，所以不帶
   document.getElementById('go-hr').href='hr-stats.html?t='+t;
+}
+if(mt){
+  var ml=document.getElementById('go-messages');
+  ml.href='messages.html?t='+mt;   // 這一頁的後端是 hub，吃的是 mt
+  ml.hidden=false;
 }
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 // fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕
