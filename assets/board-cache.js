@@ -319,6 +319,23 @@ function offlineLabel(savedAt) {
     + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
 }
 
+/**
+ * 報到分頁要不要發請求、發哪幾支。純函式，才測得到——三條分支很容易寫反，
+ * 而寫反的後果（多送一支／用到存檔版範本）在畫面上都不會報錯。
+ *
+ * ⚠️ 第二發還在飛時一律回「等」，不可直接拿它的 preview 切片：那份是用 tpl=''
+ * 抓的存檔版，tpl 非空的呼叫者拿去用，畫面算的就跟他眼前輸入框裡的文字不同——
+ * 而這一支的下游是「137 則 LINE 要發什麼內容」。
+ */
+function planCheckinBundle(st) {
+  if (st.verdict === 'revoked' || st.verdict === 'offline') return { wait: false, send: [] };
+  if (st.secondPending) return { wait: true, send: null };
+  var send = [];
+  if (!st.stationsCached) send.push('listStaffStations');
+  if (!(st.tpl === '' && st.previewUsable)) send.push('previewPassBroadcast');
+  return { wait: false, send: send };
+}
+
 function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
 function __setCryptoForTest(c) { _subtle = c; _fpCache = {}; }
 function __resetForTest() {
@@ -348,6 +365,7 @@ if (typeof module !== 'undefined') module.exports = {
   isRevoked: isRevoked,
   offlineLabel: offlineLabel,
   currentTaipeiYear: currentTaipeiYear,
+  planCheckinBundle: planCheckinBundle,
   __setStoreForTest: __setStoreForTest,
   __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest

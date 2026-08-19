@@ -362,3 +362,35 @@ test('currentTaipeiYear：台北仍是去年時不得提前跳年', () => {
   const t = Date.UTC(2025, 11, 31, 10, 0);   // 台北 2025-12-31 18:00
   assert.equal(BC.currentTaipeiYear(t), 2025);
 });
+
+const P = (o) => BC.planCheckinBundle(o);
+
+test('planCheckinBundle：第二發還在飛 → 等它，不另送', () => {
+  assert.deepEqual(P({ secondPending: true, tpl: '', stationsCached: true, previewUsable: true, verdict: 'ok' }),
+    { wait: true, send: null });
+  // 不同活動也一樣要等，不得回「立刻送」
+  assert.deepEqual(P({ secondPending: true, tpl: '', stationsCached: false, previewUsable: false, verdict: 'ok' }),
+    { wait: true, send: null });
+});
+
+test('planCheckinBundle：tpl 空＋兩支都有 → 不發請求', () => {
+  assert.deepEqual(P({ secondPending: false, tpl: '', stationsCached: true, previewUsable: true, verdict: 'ok' }),
+    { wait: false, send: [] });
+});
+
+test('planCheckinBundle：tpl 非空 → preview 一律重查，stations 可沿用', () => {
+  assert.deepEqual(P({ secondPending: false, tpl: '改過的', stationsCached: true, previewUsable: true, verdict: 'ok' }),
+    { wait: false, send: ['previewPassBroadcast'] });
+});
+
+test('planCheckinBundle：tpl 非空＋兩支都沒有 → 一支 batch 帶兩支', () => {
+  assert.deepEqual(P({ secondPending: false, tpl: 'x', stationsCached: false, previewUsable: false, verdict: 'ok' }),
+    { wait: false, send: ['listStaffStations', 'previewPassBroadcast'] });
+});
+
+test('planCheckinBundle：撤銷或離線 → 什麼都不送', () => {
+  assert.deepEqual(P({ secondPending: false, tpl: '', stationsCached: false, previewUsable: false, verdict: 'revoked' }),
+    { wait: false, send: [] });
+  assert.deepEqual(P({ secondPending: false, tpl: '', stationsCached: false, previewUsable: false, verdict: 'offline' }),
+    { wait: false, send: [] });
+});
