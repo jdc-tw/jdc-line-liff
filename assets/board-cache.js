@@ -214,6 +214,29 @@ function cacheClearAll() {
 /** 標記已撤銷：記憶體清空、之後 cacheGet 恆 null、cacheSave 變空操作。 */
 function cacheRevoke() { _revoked = true; _mem = {}; }
 
+/**
+ * batch 回應的唯一存檔路徑。
+ *
+ * 為何不讓呼叫端自己取切片存：cacheSave 的守門只看它拿到的那個物件的 ok，
+ * 外層整包丟進去就會過關，裡面的 {ok:false} 被夾帶著存七天。把拆包收在這裡，
+ * 呼叫端拿不到犯這個錯的機會。
+ *
+ * 參數從 requestItems（送出的 list）拿，不從回應——後端 buildBatchResults 只回
+ * 「action → 回傳值」，不帶回 actId/year/tpl。
+ */
+function persistBatchSlices(token, envelope, requestItems, nameOf) {
+  if (!envelope || envelope.ok !== true || !envelope.results) return Promise.resolve();
+  var byAction = {};
+  (requestItems || []).forEach(function (it) { if (it && it.a) byAction[it.a] = it.p || {}; });
+  var jobs = [];
+  Object.keys(envelope.results).forEach(function (a) {
+    var slice = envelope.results[a];
+    var name = nameOf(a, slice, byAction[a] || {});
+    if (name) jobs.push(cacheSave(token, name, slice));
+  });
+  return Promise.all(jobs).then(function () { });
+}
+
 function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
 function __setCryptoForTest(c) { _subtle = c; _fpCache = {}; }
 function __resetForTest() {
@@ -236,6 +259,7 @@ if (typeof module !== 'undefined') module.exports = {
   cacheClear: cacheClear,
   cacheClearAll: cacheClearAll,
   cacheRevoke: cacheRevoke,
+  persistBatchSlices: persistBatchSlices,
   __setStoreForTest: __setStoreForTest,
   __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest

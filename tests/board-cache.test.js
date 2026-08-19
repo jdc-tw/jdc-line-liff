@@ -193,3 +193,78 @@ test('WebCrypto 消失不得讓既有快取變成拋錯', async () => {
   assert.equal(st.length, 1, '解不開不代表要刪——沒有 subtle 時不該動磁碟');
   BC.__resetForTest();
 });
+
+test('persistBatchSlices：逐支存，失敗切片不存', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  const env = { ok: true, results: {
+    getRosterList: { ok: true, rows: [1] },
+    listOptions:   { ok: false, msg: '此連結非您的權限範圍。' }
+  } };
+  await BC.persistBatchSlices('tok-A', env, [{ a: 'getRosterList' }, { a: 'listOptions' }], BC.nameOfSlice);
+
+  const map = await BC.cacheBootstrap('tok-A');
+  assert.ok(map.getRosterList, '成功那支要存');
+  assert.equal(map.listOptions, undefined, '失敗那支不得存');
+  BC.__resetForTest();
+});
+
+test('persistBatchSlices：外層 ok:false 完全不寫，且不覆蓋既有成功快取', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheSave('tok-A', 'getRosterList', { ok: true, rows: ['old'] });
+  await BC.persistBatchSlices('tok-A',
+    { ok: false, msg: '連線失敗' },
+    [{ a: 'getRosterList' }], BC.nameOfSlice);
+
+  const map = await BC.cacheBootstrap('tok-A');
+  assert.deepEqual(map.getRosterList.value.rows, ['old']);
+  BC.__resetForTest();
+});
+
+test('persistBatchSlices：params 取自 requestItems，不是回應', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  const seen = [];
+  const spy = function (a, slice, params) { seen.push([a, params]); return BC.nameOfSlice(a, slice, params); };
+  const env = { ok: true, results: {
+    getSeatingBoard: { ok: true, actId: 'FROM-RESPONSE' },
+    previewPassBroadcast: { ok: true }
+  } };
+  await BC.persistBatchSlices('tok-A', env, [
+    { a: 'getSeatingBoard', p: { actId: 'midyear2026' } },
+    { a: 'previewPassBroadcast', p: { actId: 'midyear2026', tpl: '' } }
+  ], spy);
+
+  assert.deepEqual(seen.find((x) => x[0] === 'getSeatingBoard')[1], { actId: 'midyear2026' });
+  const map = await BC.cacheBootstrap('tok-A');
+  assert.ok(map['getSeatingBoard:midyear2026'], '名稱要用請求的 actId');
+  assert.equal(map['getSeatingBoard:FROM-RESPONSE'], undefined);
+  assert.equal(Object.keys(map).length, 1, 'preview 恆不落地');
+  BC.__resetForTest();
+});
+
+test('persistBatchSlices：requestItems 缺該支 → 傳 {} 不拋錯', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.persistBatchSlices('tok-A',
+    { ok: true, results: { getRosterList: { ok: true, rows: [] } } },
+    [], BC.nameOfSlice);
+  const map = await BC.cacheBootstrap('tok-A');
+  assert.ok(map.getRosterList);
+  BC.__resetForTest();
+});
+
+test('persistBatchSlices：results 空或缺漏 → 不拋錯、不寫入', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.persistBatchSlices('tok-A', { ok: true, results: {} }, [], BC.nameOfSlice);
+  await BC.persistBatchSlices('tok-A', { ok: true }, [], BC.nameOfSlice);
+  await BC.persistBatchSlices('tok-A', null, [], BC.nameOfSlice);
+  assert.equal(st.length, 0);
+  BC.__resetForTest();
+});
+
+test('persistBatchSlices 回的 Promise 要等所有加密寫入落地才 resolve', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.persistBatchSlices('tok-A',
+    { ok: true, results: { getRosterList: { ok: true, rows: [1] }, listOptions: { ok: true, rows: [2] } } },
+    [{ a: 'getRosterList' }, { a: 'listOptions' }], BC.nameOfSlice);
+  assert.equal(st.length, 2, 'resolve 當下兩筆都必須已經在磁碟上');
+  BC.__resetForTest();
+});
