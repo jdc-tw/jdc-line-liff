@@ -88,11 +88,152 @@ function nameOfSlice(action, slice, params) {
   return null;   // 不認得就不存
 }
 
+// ── I/O 層 ────────────────────────────────────────────────────────────────
+// 外部依賴（localStorage / WebCrypto）走這兩個變數，測試才換得掉。
+// 沒有 store（隱私模式）或沒有 subtle（非 secure context）時，整個模組
+// 退化成「永遠沒有快取」——頁面回到現行行為，不會壞，只是不快。
+var _store = (typeof localStorage !== 'undefined') ? localStorage : null;
+var _subtle = (typeof crypto !== 'undefined' && crypto.subtle) ? crypto.subtle : null;
+var _mem = {};        // bootstrap 解出來的記憶體副本
+var _revoked = false;
+var _fpCache = {};    // token → 指紋，避免同一頁重複算 SHA-256
+
+function _hex(buf) {
+  var out = '', v = new Uint8Array(buf), i;
+  for (i = 0; i < v.length; i++) out += ('0' + v[i].toString(16)).slice(-2);
+  return out;
+}
+
+/** token 的指紋：SHA-256 前 12 個 hex。用來隔離不同人的快取。 */
+function cacheFingerprint(token) {
+  if (_fpCache[token]) return Promise.resolve(_fpCache[token]);
+  if (!_subtle) return Promise.resolve('');
+  var bytes = new TextEncoder().encode(String(token));
+  return _subtle.digest('SHA-256', bytes).then(function (d) {
+    var fp = _hex(d).slice(0, 12);
+    _fpCache[token] = fp;
+    return fp;
+  });
+}
+
+function _keyOf(token) {
+  var bytes = new TextEncoder().encode(String(token));
+  return _subtle.digest('SHA-256', bytes).then(function (d) {
+    return _subtle.importKey('raw', d, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  });
+}
+
+function _prefix(fp) { return 'jdcBoard:' + BOARD_CACHE_VERSION + ':' + fp + ':'; }
+
+function _keysWithPrefix(pre) {
+  var out = [], i;
+  if (!_store) return out;
+  for (i = 0; i < _store.length; i++) {
+    var k = _store.key(i);
+    if (k && k.indexOf(pre) === 0) out.push(k);
+  }
+  return out;
+}
+
+/**
+ * 加密後寫入。obj.ok !== true 一律不寫，也不覆蓋既有的成功快取——
+ * 存一個 {ok:false} 七天，等於讓下次開頁「秒顯一個錯誤畫面」，比慢還糟。
+ * 回 Promise，且必須在加密真正落地之後才 resolve（佇列的「輪到自己時重讀快取」靠它）。
+ */
+function cacheSave(token, name, obj) {
+  if (_revoked || !_store || !_subtle) return Promise.resolve();
+  if (!obj || obj.ok !== true) return Promise.resolve();
+  var payload = JSON.stringify({ value: obj, savedAt: Date.now() });
+  var iv = crypto.getRandomValues(new Uint8Array(12));
+  return Promise.all([cacheFingerprint(token), _keyOf(token)]).then(function (r) {
+    return _subtle.encrypt({ name: 'AES-GCM', iv: iv }, r[1], new TextEncoder().encode(payload))
+      .then(function (ct) {
+        var packed = _hex(iv) + '.' + _hex(ct);
+        try { _store.setItem(_prefix(r[0]) + name, packed); } catch (e) { /* 滿額或被停用：略過 */ }
+      });
+  }).catch(function () { /* 加密失敗不影響畫面 */ });
+}
+
+/**
+ * 開頁時一次把該指紋的全部快取解密成記憶體 map。
+ * 解不開／缺時間戳／過期的，邊解邊刪，不留無法使用的殘骸。
+ * nowMs 只給測試用（Node 沒辦法把系統時鐘往前撥）。
+ */
+function cacheBootstrap(token, nowMs) {
+  _mem = {};
+  if (!_store || !_subtle) return Promise.resolve(_mem);
+  var now = (typeof nowMs === 'number') ? nowMs : Date.now();
+  return Promise.all([cacheFingerprint(token), _keyOf(token)]).then(function (r) {
+    var pre = _prefix(r[0]), key = r[1];
+    var jobs = _keysWithPrefix(pre).map(function (k) {
+      var name = k.slice(pre.length);
+      var packed = String(_store.getItem(k) || '');
+      var dot = packed.indexOf('.');
+      if (dot < 0) { _store.removeItem(k); return Promise.resolve(); }
+      var iv = _unhex(packed.slice(0, dot));
+      var ct = _unhex(packed.slice(dot + 1));
+      return _subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ct).then(function (pt) {
+        var rec = JSON.parse(new TextDecoder().decode(pt));
+        if (cacheExpired(rec && rec.savedAt, now)) { _store.removeItem(k); return; }
+        _mem[name] = { value: rec.value, savedAt: rec.savedAt };
+      }).catch(function () { _store.removeItem(k); });
+    });
+    return Promise.all(jobs);
+  }).then(function () { return _mem; })
+    .catch(function () { return _mem; });
+}
+
+function _unhex(s) {
+  var out = new Uint8Array(s.length / 2), i;
+  for (i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+  return out;
+}
+
+/** 從 bootstrap 的結果同步取用。已撤銷時一律回 null。 */
+function cacheGet(name) {
+  if (_revoked) return null;
+  return _mem[name] || null;
+}
+
+/** 只清當前指紋。撤銷用這支，不用 cacheClearAll——別人的 token 的快取不該被牽連。 */
+function cacheClear(token) {
+  if (!_store) return Promise.resolve();
+  return cacheFingerprint(token).then(function (fp) {
+    _keysWithPrefix(_prefix(fp)).forEach(function (k) { _store.removeItem(k); });
+    _mem = {};
+  });
+}
+
+/** 清所有 jdcBoard: 鍵。只給人工清理用，撤銷路徑不要呼叫它。 */
+function cacheClearAll() {
+  if (!_store) return;
+  _keysWithPrefix('jdcBoard:').forEach(function (k) { _store.removeItem(k); });
+  _mem = {};
+}
+
+/** 標記已撤銷：記憶體清空、之後 cacheGet 恆 null、cacheSave 變空操作。 */
+function cacheRevoke() { _revoked = true; _mem = {}; }
+
+function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
+function __resetForTest() {
+  _store = (typeof localStorage !== 'undefined') ? localStorage : null;
+  _mem = {}; _revoked = false; _fpCache = {};
+}
+
 if (typeof module !== 'undefined') module.exports = {
   BOARD_CACHE_VERSION: BOARD_CACHE_VERSION,
   CACHE_TTL_MS: CACHE_TTL_MS,
   cacheExpired: cacheExpired,
   cacheVerdict: cacheVerdict,
   N: N,
-  nameOfSlice: nameOfSlice
+  nameOfSlice: nameOfSlice,
+  cacheFingerprint: cacheFingerprint,
+  cacheBootstrap: cacheBootstrap,
+  cacheGet: cacheGet,
+  cacheSave: cacheSave,
+  cacheClear: cacheClear,
+  cacheClearAll: cacheClearAll,
+  cacheRevoke: cacheRevoke,
+  __setStoreForTest: __setStoreForTest,
+  __resetForTest: __resetForTest
 };
