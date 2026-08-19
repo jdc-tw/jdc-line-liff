@@ -78,12 +78,7 @@ function nameOfSlice(action, slice, params) {
     case 'getCheckinOptions':    return N.checkinOptions;
     case 'getCheckinPending':    return N.checkinPending;
     case 'getHrPending':         return N.hrPending;
-    // 恆不落地（2026-08-20）：它帶同仁姓名，而**沒有任何地方從快取讀它回來**——
-    // 唯一的消費點是 assets/anniv.js，那支是 board／stats 共用的小工具，
-    // 為一張裝飾性卡片把兩頁的快取狀態管理塞進共用檔不划算。
-    // 存了七天卻零好處＝純粹的個資曝險，所以不存。要改成秒顯的話，
-    // 得先讓 anniv.js 收得下「先畫快取、再用網路覆蓋」這條流程。
-    case 'getAnniversaries':     return null;
+    case 'getAnniversaries':     return N.anniversaries;
     case 'getRosterList':        return N.rosterList;
     case 'listHrNotices':        return N.hrNotices;
     case 'listOptions':          return N.options;
