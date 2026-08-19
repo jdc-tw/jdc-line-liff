@@ -107,6 +107,27 @@ test('cacheSave：ok!==true 不寫入，且不覆蓋既有的成功快取', asyn
   BC.__resetForTest();
 });
 
+test('cacheSave 之後，同一個 session 內 cacheGet 就讀得到新值（不必重新 bootstrap）', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheBootstrap('tok-A');                 // 先 bootstrap，此時是空的
+  assert.equal(BC.cacheGet('listOptions'), null);
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'fresh' });
+  const got = BC.cacheGet('listOptions');
+  assert.ok(got, 'save 之後應該立刻讀得到');
+  assert.equal(got.value.v, 'fresh');
+  assert.equal(typeof got.savedAt, 'number');
+  BC.__resetForTest();
+});
+
+test('撤銷之後 cacheSave 不得把值塞進記憶體', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheBootstrap('tok-A');
+  BC.cacheRevoke();
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'x' });
+  assert.equal(BC.cacheGet('listOptions'), null);
+  BC.__resetForTest();
+});
+
 test('不同 token 的快取互不干擾，cacheClear 只清當前指紋', async () => {
   const st = fakeStore(); BC.__setStoreForTest(st);
   await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'A' });

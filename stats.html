@@ -1247,13 +1247,19 @@ function loadCheckinBundle(actId,tpl){
   });
 }
 // 桌次分頁（#ti-act）與掃描站新增/換發/刪除也會呼叫這支，維持原樣單支打。
+// 2026-08-19 修：原本只重抓不存快取，站別新增/換發/刪除後（stAdd/stRegen/stDel 都呼叫這支）
+// N.stations(actId) 的持久快取仍是異動前的舊值，最長 7 天內都可能秒顯到舊站別清單。
+// 存回快取這一支就好——不必在三個異動點各加一次 cacheSave（那種要人記得的寫法已經害過幾次）。
 function stLoad(){
-  jsonp('listStaffStations',{token:q('t'),actId:ckActId()}).then(function(r){
-    var box=document.getElementById('st-list');
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    renderStations(r.rows);
-    // 站別變動了，座位表那包裡的 stations 也過期——清掉快取免得下次進來看到舊的
-    // 站別變了不影響座位表快取（stations 已不隨 getSeatingBoard 回傳）
+  var id=ckActId();
+  return queueRead(function(){                 // 全站「讀取不並行」規則，改前是裸 jsonp
+    return jsonp('listStaffStations',{token:q('t'),actId:id}).then(function(r){
+      var box=document.getElementById('st-list');
+      if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+      renderStations(r.rows);
+      // 座位表快取不受影響：stations 已不隨 getSeatingBoard 回傳，兩包互不牽連。
+      return cacheSave(q('t'),N.stations(id),r);
+    });
   });
 }
 function renderStations(rows){

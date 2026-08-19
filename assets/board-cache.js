@@ -139,17 +139,25 @@ function _keysWithPrefix(pre) {
  * 加密後寫入。obj.ok !== true 一律不寫，也不覆蓋既有的成功快取——
  * 存一個 {ok:false} 七天，等於讓下次開頁「秒顯一個錯誤畫面」，比慢還糟。
  * 回 Promise，且必須在加密真正落地之後才 resolve（佇列的「輪到自己時重讀快取」靠它）。
+ *
+ * ⚠️ 2026-08-19 修：原本只寫磁碟、不寫 _mem——同一個頁面生命週期內存進去的值，
+ * cacheGet 讀到的仍是存檔前的舊值（cacheGet 只讀 _mem，_mem 只有 cacheBootstrap 會填）。
+ * 實測：手動 cacheSave 後呼叫 load()，畫面停在「載入中…」不會秒顯。
+ * savedAt 用同一個 payload 裡的時間戳，不另外呼叫 Date.now()——兩次呼叫會差幾毫秒，
+ * 磁碟與記憶體對不起來，日後查問題會混亂。
  */
 function cacheSave(token, name, obj) {
   if (_revoked || !_store || !_subtle) return Promise.resolve();
   if (!obj || obj.ok !== true) return Promise.resolve();
-  var payload = JSON.stringify({ value: obj, savedAt: Date.now() });
+  var savedAt = Date.now();
+  var payload = JSON.stringify({ value: obj, savedAt: savedAt });
   var iv = crypto.getRandomValues(new Uint8Array(12));
   return Promise.all([cacheFingerprint(token), _keyOf(token)]).then(function (r) {
     return _subtle.encrypt({ name: 'AES-GCM', iv: iv }, r[1], new TextEncoder().encode(payload))
       .then(function (ct) {
         var packed = _hex(iv) + '.' + _hex(ct);
         try { _store.setItem(_prefix(r[0]) + name, packed); } catch (e) { /* 滿額或被停用：略過 */ }
+        _mem[name] = { value: obj, savedAt: savedAt };
       });
   }).catch(function () { /* 加密失敗不影響畫面 */ });
 }
