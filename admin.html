@@ -23,6 +23,11 @@
   .d{font-size:13px;color:#888;margin-top:4px}
   /* 沒帶 mt 時的說明（不可點）：整張消失會讓人以為「改的沒生效」，看不出是缺參數 */
   div.note{background:#fbfbfc;border:1px dashed #d5d8dc;border-radius:14px;padding:16px 20px;margin-bottom:12px}
+  /* ⚠️ 這行**目前是冗餘的**（2026-08-20 突變實測：拿掉它，說明卡照樣藏得住）。
+     原理：`[hidden]{display:none}` 來自瀏覽器內建樣式，只會被**作者寫的 display 宣告**蓋掉。
+     div.note 沒有宣告 display ⇒ 內建樣式本來就生效。
+     留著是為了「日後有人給 div.note 加上 display:flex/grid」的那一刻——那時 hidden 會立刻失效。
+     對照上面的 a.card[hidden]：那個是**真的在擋**（a.card 有 display:block），突變測試會抓到。 */
   div.note[hidden]{display:none}
   div.note .t{color:#999}
   code{background:#eceef0;padding:1px 5px;border-radius:4px;font-size:12px}
