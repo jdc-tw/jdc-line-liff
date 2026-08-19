@@ -57,9 +57,8 @@
     <div class="d">每一則 LINE 通知的發送紀錄・依批次摺疊</div>
   </a>
   <div class="note" id="msg-note" hidden>
-    <div class="t">✉️ 訊息紀錄（這條網址少了參數）</div>
-    <div class="d">要在網址最後加上 <code>&amp;mt=…</code> 才進得去。<br>
-      桌面上的 <code>jdc-boards-with-message-log.html</code> 第一條就是完整網址。</div>
+    <div class="t" id="msg-note-t">✉️ 訊息紀錄</div>
+    <div class="d" id="msg-note-d">正在確認權限…</div>
   </div>
   <div class="ver" id="ver">v2026-08-20a</div>
 </div>
@@ -77,14 +76,16 @@ if(t){
   // hr-stats.html 還沒有訊息紀錄的 UI，帶 mt 過去也沒東西讀，所以不帶
   document.getElementById('go-hr').href='hr-stats.html?t='+t;
 }
-// 帶了 mt 就給可點的卡；沒帶就給說明卡。
-// 兩者擇一顯示，**絕不兩張都藏**——整張消失時看不出是「改沒生效」還是「網址少參數」，
-// 2026-08-20 就是卡在這一格：使用者連說兩次「我沒看到」，而兩種原因長得一模一樣。
-if(mt){
-  var ml=document.getElementById('go-messages');
-  ml.href='messages.html?t='+mt;   // 這一頁的後端是 hub，吃的是 mt
-  ml.hidden=false;
-}else{
+// 訊息紀錄入口。三條路，**任何一條都要留下可見的東西**——
+// 整張消失時看不出是「改沒生效」還是「權限不足」，2026-08-20 就卡在這一格。
+//   1. 網址帶了 mt → 直接用（沿用舊行為，也方便臨時用別人的身分驗）
+//   2. 沒帶 mt 但有 t → 跟後端換一顆（舊書籤直接生效，不必要求任何人改網址）
+//   3. 連 t 都沒有 → 說明卡
+var ml=document.getElementById('go-messages');
+function showMsgLog(tok){ ml.href='messages.html?t='+encodeURIComponent(tok); ml.hidden=false; }
+function showNote(title,desc){
+  document.getElementById('msg-note-t').textContent=title;
+  document.getElementById('msg-note-d').textContent=desc;
   document.getElementById('msg-note').hidden=false;
 }
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -100,6 +101,37 @@ function jsonp(action,params,timeoutMs){
     .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
     .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
+// 訊息紀錄入口。三條路，**任何一條都要留下可見的東西**——
+// 整張消失時看不出是「改沒生效」還是「權限不足」，2026-08-20 就卡在這一格。
+//   1. 網址帶了 mt → 直接用（沿用舊行為，也方便臨時拿別人的身分驗）
+//   2. 沒帶 mt 但有 t → 跟後端換一顆（舊書籤直接生效，不必要求任何人改網址）
+//   3. 連 t 都沒有 → 說明卡
+//
+// ⚠️ 這段**必須放在 `var GAS_URL` 賦值之後**。原本寫在檔案上半部，
+//    `function jsonp` 會 hoist 所以叫得到，但 `var GAS_URL` hoist 的只有宣告、不是值
+//    ⇒ 呼叫當下 GAS_URL 是 undefined，fetch 打到相對路徑 `/undefined?action=…` 拿 404，
+//    畫面顯示「連線失敗」。語法檢查與單元測試都看不到這種順序錯誤。
+//
+// ⚠️ 走 queueRead 不直接 jsonp：本頁下面的預取也用它，兩支並行違反「讀取不並行」
+//    （見下一段註解）。排在預取之前是刻意的——這支決定畫面上看不看得到入口，優先。
+if(mt){
+  showMsgLog(mt);                       // 這一頁的後端是 hub，吃的是 mt
+}else if(t){
+  showNote('✉️ 訊息紀錄','正在確認權限…');   // 先顯示，別讓人盯著空白等 API
+  queueRead(function(){
+    return jsonp('getMsgLogToken',{token:t}).then(function(r){
+      if(r&&r.ok&&r.token){
+        document.getElementById('msg-note').hidden=true;
+        showMsgLog(r.token);
+      }else{
+        showNote('✉️ 訊息紀錄（目前開不了）',(r&&r.msg)||'無法取得檢視權限，請稍後重試。');
+      }
+    });
+  });
+}else{
+  showNote('✉️ 訊息紀錄（這條網址少了 token）','網址要帶 ?t=… 才進得去。');
+}
+
 // 預取種子（2026-07-25 建，2026-08-19 改寫）：停在本頁時背景先抓，點進去即秒顯。
 // 原本兩支 seed 並行、且直接寫明文 sessionStorage——快取搬到加密 localStorage 之後
 // 那些鍵不再有人讀（死碼），而兩支並行也違反「讀取不並行」。改成單一 batch。
