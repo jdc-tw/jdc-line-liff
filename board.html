@@ -721,22 +721,40 @@ function saveOptionGo(){
 }
 var hrFirst=true;
 function loadHr(){
+  var cached=null;
+  // 秒顯（2026-08-20）：這一支本來只寫進快取、沒有任何地方讀回來——姓名在磁碟上躺七天卻零好處。
+  // 補上讀取端之後，重開頁時人事異動分頁跟其他分頁一樣先畫舊的、網路回來再覆蓋。
+  // 只在首發做：核定／駁回／轉移之後的刷新一律看網路，不能回舊快照。
+  if(hrFirst){
+    CACHE_READY.then(function(){
+      cached=cacheGet(N.hrPending);
+      if(cached)paintHr(cached.value);
+    });
+  }
   // 首發吃 batch 切片；之後的刷新（核定/駁回/轉移後）必須重打，不能回舊快照
   var src=hrFirst?pick('getHrPending'):jsonp('getHrPending',{token:TOKEN});
   hrFirst=false;
   src.then(function(r){
-    var box=document.getElementById('hr-pending');
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    hrData={units:r.units||[],namesByUnit:r.namesByUnit||{},titles:r.titles||[]};
-    document.getElementById('bt-old').innerHTML='<option value="">── 請選擇 ──</option>'
-      +hrData.units.map(function(u){return '<option>'+esc(u)+'</option>';}).join('');
-    var actionable=r.rows.filter(function(o){return String(o['狀態']).trim()!=='待生效';}).length;
-    updateHrBadge(actionable);
-    box.innerHTML='';
-    if(!r.rows.length){box.innerHTML='<div class="empty">目前沒有待確認的人事異動 🎉</div>';return;}
-    r.rows.forEach(function(o){box.appendChild(renderHrRow(o));});
-    logLoaded=false;   // 異動紀錄可能已變，下次切過去重抓
+    if(r&&r.ok){
+      paintHr(r);
+      logLoaded=false;   // 異動紀錄可能已變，下次切過去重抓
+    }
+    // 失敗時只有「畫面上還沒有東西」才把錯誤蓋上去——否則會把剛秒顯的內容抹掉
+    else if(!cached)paintHr(r);
   });
+}
+// 只負責畫。成功與失敗兩種輸入都收，快取與網路兩條路才能共用同一份繪製邏輯。
+function paintHr(r){
+  var box=document.getElementById('hr-pending');
+  if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  hrData={units:r.units||[],namesByUnit:r.namesByUnit||{},titles:r.titles||[]};
+  document.getElementById('bt-old').innerHTML='<option value="">── 請選擇 ──</option>'
+    +hrData.units.map(function(u){return '<option>'+esc(u)+'</option>';}).join('');
+  var actionable=r.rows.filter(function(o){return String(o['狀態']).trim()!=='待生效';}).length;
+  updateHrBadge(actionable);
+  box.innerHTML='';
+  if(!r.rows.length){box.innerHTML='<div class="empty">目前沒有待確認的人事異動 🎉</div>';return;}
+  r.rows.forEach(function(o){box.appendChild(renderHrRow(o));});
 }
 
 function reviveNotice(row,btn){

@@ -46,6 +46,17 @@ test('nameOfSlice：無參數的 action 用自己的名字', () => {
   assert.equal(BC.nameOfSlice('getHrStats', { ok: true }, {}), 'getHrStats');
 });
 
+test('nameOfSlice：只有 previewPassBroadcast 恆不落地，其餘一律落地', () => {
+  // previewPassBroadcast：輸入含使用者尚未儲存的輸入框內容，快取正確性成本高於收益（設計 3.3.3）
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '' }), null);
+  // 對照：同一發 batch 裡的其他支都要落地，證明上面那個 null 不是「全部都 null」。
+  // ⚠️ getAnniversaries 2026-08-20 一度改成不落地（沒人讀＝白存），
+  // 後來拍板改成「補讀取端讓它也秒顯」，所以它必須留在落地清單裡。
+  assert.equal(BC.nameOfSlice('getAnniversaries', { ok: true }, {}), 'getAnniversaries');
+  assert.equal(BC.nameOfSlice('getHrPending', { ok: true }, {}), 'getHrPending');
+  assert.equal(BC.nameOfSlice('getCheckinPending', { ok: true }, {}), 'getCheckinPending');
+});
+
 test('nameOfSlice：名稱一律由「送出的參數」算，不從回應反推', () => {
   const slice = { ok: true, activity: { id: 'WRONG' } };
   assert.equal(BC.nameOfSlice('getSeatingBoard', slice, { actId: 'midyear2026' }),

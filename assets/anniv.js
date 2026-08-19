@@ -3,7 +3,25 @@
 // 預設名單空＝整塊不顯示（board 員工名冊分頁內嵌用）；opts.emptyText 有給＝空名單也顯示該訊息（stats 獨立分頁用）。
 function annivInit(jsonpFn, token, opts) {
   var emptyText = opts && opts.emptyText;
+  var painted = false;
+  // 秒顯（2026-08-20）：這一支本來只寫進快取、沒有任何地方讀回來——姓名在磁碟躺七天卻零好處。
+  // 補上讀取端之後，重開頁時這張卡跟名冊列表同時出現，不會晚一步才「長出來」。
+  // typeof 防護：本檔在 board.html 的 <script> 順序中排在 board-cache.js **之前**，
+  // 而且將來若有頁面單獨引用它、沒有快取模組，直接取用會 ReferenceError 整段掛掉。
+  if (typeof CACHE_READY !== 'undefined' && typeof cacheGet === 'function' && typeof N !== 'undefined') {
+    CACHE_READY.then(function () {
+      var c = cacheGet(N.anniversaries);
+      if (c) { annivPaint_(c.value, emptyText); painted = true; }
+    });
+  }
   jsonpFn('getAnniversaries', { token: token }).then(function (r) {
+    // 失敗時只有「畫面上還沒有東西」才蓋上去，否則會把剛秒顯的內容抹掉
+    if ((r && r.ok) || !painted) annivPaint_(r, emptyText);
+  });
+}
+// 只負責畫。成功與失敗兩種輸入都收，快取與網路兩條路才能共用同一份繪製邏輯。
+function annivPaint_(r, emptyText) {
+  {
     var box = document.getElementById('anniv-box');
     if (!box) return;
     var rows = (r && r.ok && r.rows) || [];
@@ -42,6 +60,6 @@ function annivInit(jsonpFn, token, opts) {
               }).join('');
         }).join('');
     box.style.display = '';
-  });
+  }
 }
 function annivEsc_(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
