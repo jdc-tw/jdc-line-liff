@@ -82,6 +82,7 @@ function jsonp(action,params,timeoutMs){
     .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
 var CUR='';   // 目前顯示的活動ID
+var CACHE_READY=cacheBootstrap(q('t'));   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 // 記住上次看的那場，回訪時先用它的快取秒開（localStorage：跨分頁、關瀏覽器也留著）
 function lastAct(){try{return localStorage.getItem('attend:lastAct')||'';}catch(e){return '';}}
 function rememberAct(id){try{if(id)localStorage.setItem('attend:lastAct',id);}catch(e){}}
@@ -106,17 +107,23 @@ function load(actId){
   }
   CUR=actId;
   var t=q('t');
-  var cached=cacheGet(N.attend(actId));
-  if(cached)paint(cached.value);
-  else{document.getElementById('meta').textContent='載入中…';
-       document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
+  // 同步先佔位：CACHE_READY 是非同步的（哪怕只晚一個 microtask），不佔位就會有一瞬間空白。
+  document.getElementById('meta').textContent='載入中…';
+  document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';
+  var cachedP=CACHE_READY.then(function(){
+    var cached=cacheGet(N.attend(actId));
+    if(cached)paint(cached.value);   // 命中就把佔位換成秒開內容
+    return cached;
+  });
   queueRead(function(){
     return jsonp('getActivityStats',{token:t,act:actId}).then(function(r){
-      return handleVerdict(t,r).then(function(v){
-        if(v==='revoked')return;
-        if(v==='offline'){ if(cached)markOffline(cached.savedAt); return; }
-        return cacheSave(t,N.attend(actId),r).then(function(){
-          if(r&&r.ok){paint(r);markOffline(null);}else if(!cached)paint(r);
+      return cachedP.then(function(cached){
+        return handleVerdict(t,r).then(function(v){
+          if(v==='revoked')return;
+          if(v==='offline'){ if(cached)markOffline(cached.savedAt); return; }
+          return cacheSave(t,N.attend(actId),r).then(function(){
+            if(r&&r.ok){paint(r);markOffline(null);}else if(!cached)paint(r);
+          });
         });
       });
     });
@@ -158,7 +165,7 @@ function load(actId){
 
   // 回訪秒開：先用上次看的那場的快取畫出來，背景再校正
   var seed = urlAct || lastAct();
-  var bootP = cacheBootstrap(t).then(function () {
+  var bootP = CACHE_READY.then(function () {
     if (!seed) return;
     var c = cacheGet(N.attend(seed));
     if (c) paint(c.value);
