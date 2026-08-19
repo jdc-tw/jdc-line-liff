@@ -70,6 +70,21 @@
 <script>
 // 版本標記放最前面：後面任何一段出錯，這行都已經跑完，
 // 才問得出「你載到的到底是哪一份檔案」——那是快取問題與程式問題的分水嶺。
+//
+// ⚠️ **它只反映本頁 HTML，不含 `assets/*.js`。** 這是刻意的留白，標在這裡是因為
+//    不標的話它會反過來騙人：瀏覽器可能 HTML 拿新的、assets 從記憶體快取拿舊的，
+//    這時版本標記照樣顯示新時間，看的人就不再懷疑 assets 了。
+//    （yu-agent-a5 於 2026-08-20 實測踩到：改了 board-cache.js，開頁判定「修法無效」，
+//      追下去才發現執行中的是舊的那份。零徵兆。）
+//
+//    為什麼不順手補上 assets：`fetch(src,{cache:'no-store'})` 拿到的是**伺服器上**的
+//    Last-Modified，而問題出在**瀏覽器記憶體裡執行中的那份**——補了只會多一道假的保證。
+//    真要驗，唯一可靠的是檢查執行中函式的原始碼特徵，例如
+//    `/case 'getAnniversaries':\s*return null/.test(nameOfSlice.toString())`，
+//    但那要為每支 asset 各寫一條，不通用。
+//
+//    ⇒ 這一格歸「下一個要擴充版本標記的人」決定；在那之前，看到這裡的時間**只能**
+//      推論 HTML 的新舊，不能推論 assets。
 try{ document.getElementById('ver').textContent='版本 '+document.lastModified; }catch(e){}
 
 // 純轉傳：本頁無資料、不打後端；token 帶去的看板自己驗
