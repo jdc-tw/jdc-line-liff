@@ -38,6 +38,7 @@
     <div class="d">年資／年齡分佈・單位結構・退休預警</div>
   </a>
 </div>
+<script src="assets/board-cache.js"></script>
 <script>
 // 純轉傳：本頁無資料、不打後端；token 帶去的看板自己驗
 var m=location.search.match(/[?&]t=([^&]+)/),t=m?m[1]:'';
@@ -46,19 +47,31 @@ if(t){
   document.getElementById('go-stats').href='stats.html?t='+t;
   document.getElementById('go-hr').href='hr-stats.html?t='+t;
 }
-// 預取種子（2026-07-25）：停在本頁時背景先抓兩個聚合看板寫進 sessionStorage，點進去即秒顯（同分頁導頁保留）。
-// GAS /exec 每發 2-4s 固定往返、暖容器/快取都削不掉，唯有預先抓好、把等待丟在你看選單這幾秒。
-// 只做 hr-stats／活動出席統計（非 PII）；board 帶待報到者姓名，不預取，由其自身 SWR 於進入後才快取。
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+// fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕
+function jsonp(action,params,timeoutMs){
+  var qs=Object.keys(params||{}).filter(function(k){return params[k]!=='';}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
+  // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
+  // 讓整段 init 同步當掉 → 畫面永遠停在「載入中」且不顯示任何錯誤（2026-07-31 查本頁時發現）。
+  // 改用 Promise.race 計時：舊瀏覽器一樣有逾時，代價只是底層請求不會被真的取消（低頻看板無影響）。
+  var timer, timeout=new Promise(function(_,rej){timer=setTimeout(function(){var e=new Error('timeout');e.name='AbortError';rej(e);},timeoutMs||15000);});
+  return Promise.race([timeout, fetch(GAS_URL+'?action='+encodeURIComponent(action)+qs+'&callback=cb',{credentials:'omit',redirect:'follow'})
+    .then(function(r){return r.text();})
+    .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
+    .then(function(v){clearTimeout(timer);return v;})
+    .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
+// 預取種子（2026-07-25 建，2026-08-19 改寫）：停在本頁時背景先抓，點進去即秒顯。
+// 原本兩支 seed 並行、且直接寫明文 sessionStorage——快取搬到加密 localStorage 之後
+// 那些鍵不再有人讀（死碼），而兩支並行也違反「讀取不並行」。改成單一 batch。
+// 仍刻意不預取 board.html：它帶待報到者姓名。
 if(t){
-  var GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
-  var seed=function(action,key){
-    fetch(GAS+'?action='+encodeURIComponent(action)+'&token='+encodeURIComponent(t)+'&callback=cb',{credentials:'omit',redirect:'follow'})
-      .then(function(r){return r.text();})
-      .then(function(x){var a=x.indexOf('('),b=x.lastIndexOf(')');if(a<0||b<0)return;var o=JSON.parse(x.slice(a+1,b));if(o&&o.ok){try{sessionStorage.setItem(key,JSON.stringify(o));}catch(e){}}})
-      .catch(function(){});
-  };
-  seed('getHrStats','swr:getHrStats');
-  seed('getActivityStats','swr:getActivityStats:');   // 對齊 stats.html 預設 act='' 的 key
+  var SEED_ITEMS=[{a:'getHrStats'},{a:'getActivityStats',p:{act:''}}];
+  queueRead(function(){
+    return jsonp('batch',{token:t,list:JSON.stringify(SEED_ITEMS)}).then(function(env){
+      if(cacheVerdict(env)!=='ok')return;
+      return persistBatchSlices(t,env,SEED_ITEMS,nameOfSlice);
+    });
+  });
 }
 // iOS「加到主畫面」standalone 模式：<a> 導頁會彈出帶網址列的內嵌 Safari，
 // 改用 JS 導頁就留在 App 視窗內（桌機瀏覽器行為不變）
