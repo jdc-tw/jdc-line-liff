@@ -54,6 +54,14 @@
   }
   .brand { text-align: center; margin: 0 0 16px; }
   .brand img { width: 100%; max-width: 210px; height: auto; }
+  /* 未送出警語：放在頁首固定區，不可塞進會被 innerHTML='' 清空的資料容器 */
+  .alert-bar { display: none; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px;
+               background: #fdecec; border: 1px solid #f5b5b5; color: #b00;
+               font-size: 14px; font-weight: 600; line-height: 1.6; }
+  .toplinks { text-align: right; margin: 0 0 10px; }
+  .toplinks a { font-size: 13.5px; color: #06c755; text-decoration: none; font-weight: 600; }
+  .toplinks a:hover { text-decoration: underline; }
+  .toplinks a[hidden] { display: none; }
   h1 { font-size: 19px; font-weight: 600; margin: 0 0 10px; color: var(--ink); letter-spacing: .01em; }
   h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ink); letter-spacing: .01em; }
   .meta { font-size: 13px; color: var(--ink3); margin-bottom: 18px; }
@@ -226,6 +234,8 @@
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<div id="alertBar" class="alert-bar"></div>
+<div class="toplinks"><a id="msgLogLink" target="_blank" rel="noopener" hidden>訊息紀錄 →</a></div>
 <div class="tabs">
   <!-- 標籤一律兩字：分頁列可用寬 358px，五個鈕才塞得下一列（四字×5 會換行成兩列） -->
   <button id="tabbtn-stats" class="on" onclick="showTab('stats')">統計</button>
@@ -1122,9 +1132,14 @@ function snPickMsg(){
   document.getElementById('sn-tpl').value=SN.templates[i]||'';
   renderPhs('sn','sn-phs','sn-tpl');
   paintMirror('sn-tpl','sn-mirror','sn');
-  var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
-  document.getElementById('sn-sent').textContent=rec
-    ? '已於 '+rec.at+' 發給 '+rec.count+' 人：'+(rec.names||[]).join('、') : '';
+  // 三態（2026-08-19，SENIOR_LOG_PROP 退役後改由 hub 判定）：
+  // 'unknown' 絕不可顯示成「未發送」——那會引誘承辦人重發，而 LINE 收不回來。
+  var st=(SN.status&&SN.status[i])||'unknown';
+  var el=document.getElementById('sn-sent');
+  el.textContent = st==='sent'    ? '這則已經發送過。收件名單請開「訊息紀錄」查看。'
+                 : st==='unknown' ? '⚠️ 無法確認這則發送過沒有——訊息平台沒有回應。發送前請先開「訊息紀錄」確認。'
+                 : '';
+  el.style.color = st==='unknown' ? '#b00' : '';
   setMsg('sn-msg','','ok');
 }
 function snTplChanged(){
@@ -1172,11 +1187,14 @@ function snSend(){
   var uids=[].slice.call(document.querySelectorAll('.sn-ck:checked')).map(function(c){return c.dataset.uid;});
   if(!uids.length){setMsg('sn-msg','沒有勾選任何收件人','err');return;}
   var title=document.getElementById('sn-idx').selectedOptions[0].textContent;
-  var k=SN.year+'|'+i, rec=SN.sent&&SN.sent[k];
-  // 三則又跨兩個日曆年，重複發最容易發生；把「已經發過」寫進確認框而不是只放在小字
+  var st=(SN.status&&SN.status[i])||'unknown';
+  // 三則又跨兩個日曆年，重複發最容易發生；把狀態寫進確認框而不是只放在小字。
+  // 'unknown' 要講得比 'sent' 更重——不知道有沒有發過，比知道發過更該停下來查。
+  var warn = st==='sent'    ? '⚠️ 這則已經發送過一次。\n\n'
+           : st==='unknown' ? '⚠️ 無法確認這則發送過沒有——訊息平台沒有回應。\n請先開「訊息紀錄」確認，不要憑印象決定。\n\n'
+           : '';
   if(!confirm('把「'+title+'」發給 '+uids.length+' 位 '+SN.year+' 年度的資深同仁？\n\n'
-      +(rec?'這則已於 '+rec.at+' 發送過一次。\n\n':'')
-      +'LINE 訊息送出後收不回來。'))return;
+      +warn+'LINE 訊息送出後收不回來。'))return;
   document.getElementById('sn-send').disabled=true;
   setMsg('sn-msg','發送中…','ok');
   jsonp('sendSeniorNotice',{token:q('t'),year:SN.year,idx:i,
@@ -1975,6 +1993,24 @@ function pick(a){return FIRST.then(function(r){
 // 離線得另外記；沒有這個，離線時 bundle 仍會續送請求（見 handleVerdict 的三種 verdict）。
 var LAST_VERDICT='ok';
 FIRST.then(function(env){LAST_VERDICT=(env&&env._verdict)||'ok';});
+
+// ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
+// 連結用 ?mt= 帶 hub 的 viewer token，與看板自己的 ?t= 分開：
+// 一顆給 line-platform、一顆給 hub，權限來源不同，不可共用。
+// 沒帶 mt 就不顯示連結——顯示一個點了必定失敗的連結比不顯示更糟。
+(function(){
+  var mt=new URLSearchParams(location.search).get('mt')||'';
+  var a=document.getElementById('msgLogLink');
+  if(mt){ a.href='messages.html?t='+encodeURIComponent(mt); a.hidden=false; }
+})();
+
+jsonp('getUndelivered',{token:q('t')}).then(function(r){
+  if(r&&r.ok&&r.pending>0){
+    var bar=document.getElementById('alertBar');
+    bar.textContent='🔴 有 '+r.pending+' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
+    bar.style.display='block';
+  }
+});
 
 // 活動切換下拉（歷史場次也能回看統計）
 pick('listActivities').then(function(r){
