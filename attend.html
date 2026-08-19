@@ -120,7 +120,10 @@ function load(actId){
       return cachedP.then(function(cached){
         return handleVerdict(t,r).then(function(v){
           if(v==='revoked')return;
-          if(v==='offline'){ if(cached)markOffline(cached.savedAt); return; }
+          // 離線：有快取就掛「離線·資料停在…」；⚠️ 完全沒快取時一定要把錯誤訊息畫出來，
+          // 否則畫面停在 load() 同步佔位的「載入中…」，永遠不會變、也不會有任何錯誤提示。
+          // 寫法對齊 hr-stats.html 同位置（else if(!painted)renderHr(r)）。
+          if(v==='offline'){ if(cached)markOffline(cached.savedAt); else paint(r); return; }
           return cacheSave(t,N.attend(actId),r).then(function(){
             if(r&&r.ok){paint(r);markOffline(null);}else if(!cached)paint(r);
           });

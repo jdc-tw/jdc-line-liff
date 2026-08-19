@@ -281,7 +281,10 @@ function revokedOverlay() {
   if (document.getElementById('jdc-revoked')) return;
   var ov = document.createElement('div');
   ov.id = 'jdc-revoked';
-  ov.setAttribute('style', 'position:fixed;inset:0;z-index:99999;background:#fff;'
+  // ⚠️ 不可只寫 `inset:0`——那是 Safari 14.1+ 才有的簡寫，舊 iOS 整條直接被丟棄，
+  // 四個位移全部退回 auto → 覆蓋層縮成一個小白框，底下已經畫滿的 153 人姓名照樣看得見，
+  // 而且零錯誤訊息。四個長寫屬性全站可用，先寫 inset 當現代瀏覽器的簡寫、再逐一覆寫。
+  ov.setAttribute('style', 'position:fixed;inset:0;top:0;right:0;bottom:0;left:0;z-index:99999;background:#fff;'
     + 'display:flex;align-items:center;justify-content:center;padding:24px;'
     + "font-family:-apple-system,'PingFang TC','Microsoft JhengHei',sans-serif");
   ov.innerHTML = '<div style="max-width:460px;text-align:center">'
@@ -315,8 +318,18 @@ function isRevoked() { return _revoked; }
  */
 function currentTaipeiYear(nowMs) {
   var d = (typeof nowMs === 'number') ? new Date(nowMs) : new Date();
-  return Number(new Intl.DateTimeFormat('en-CA',
-    { timeZone: 'Asia/Taipei', year: 'numeric' }).format(d));
+  // ⚠️ 一定要包 try/catch。舊 Safari／精簡版 ICU 的 Intl 對非 UTC 的 IANA timeZone 會丟
+  // RangeError，而這支的呼叫端都在**同步的頂層路徑**上：stats.html 的 SECOND 組 batch 參數
+  // 時呼叫它（拋出 → SECOND reject → 桌次／報到／員工三個分頁永遠停在「載入中…」），
+  // snLoad 那條更是直接同步拋。與 2026-07-31 `AbortController` 在 iOS 12.1 炸掉整頁同型：
+  // 新 API 在舊裝置上不是「功能降級」，是整段初始化當掉且畫面不顯示任何錯誤。
+  // 退路取裝置時區的年——跨年夜可能與後端差一年，但那遠好過整頁不能用。
+  try {
+    return Number(new Intl.DateTimeFormat('en-CA',
+      { timeZone: 'Asia/Taipei', year: 'numeric' }).format(d));
+  } catch (e) {
+    return d.getFullYear();
+  }
 }
 
 /** 離線時附在 meta 列的一句話。時間取該筆快取的 savedAt。 */
@@ -342,6 +355,33 @@ function planCheckinBundle(st) {
   if (!st.stationsCached) send.push('listStaffStations');
   if (!(st.tpl === '' && st.previewUsable)) send.push('previewPassBroadcast');
   return { wait: false, send: send };
+}
+
+/**
+ * 「第二發（SECOND）的某個切片只能被消費一次」的判斷。回 true＝這次可以用切片，
+ * 回 false＝已經用過，呼叫端必須自己重打。
+ *
+ * 為何存在（2026-08-19）：SECOND 是一個 Promise、只 resolve 一次，所以 pick2(a) 每次
+ * 呼叫都回同一份「開頁當下」的快照。凡是**寫入之後的重載**都會被這份舊快照攔截：
+ *   stats  刪資深通知範本 → snLoad()      索引位移，之後存到／發出錯的那一則
+ *   stats  發 LINE       → snLoad()      發送紀錄不更新 →「已於 X 發送過」的警示不出現
+ *                                          → 重複發送，收不回來
+ *   stats  發佈桌次／移動座位 → loadSeating() 使用者看到剛做的操作當場退回去
+ *   board  新增單位／職稱／改選項 → loadOptionsAdmin()  新選項不出現
+ *   board  恢復已駁回異動 → loadLog()     仍顯示「已駁回」
+ * 全部零錯誤訊息。第一發那條線本來就做了一次性旗標（board.html hrFirst、
+ * stats.html statsFirst，註解寫「之後的刷新必須重打，不能回舊快照」），第二發漏了。
+ *
+ * 抽成純函式是為了測得到——pick2 活在頁面的 inline script 裡，測不到。
+ * 用 hasOwnProperty 不用 usedMap[action] 直接判真假：action 若撞到 'constructor'
+ * 這類原型上的名字，直接取值會拿到函式而永遠判成「已用過」。
+ */
+function takeOnce(usedMap, action) {
+  if (!usedMap || typeof usedMap !== 'object') return false;   // 沒有帳本就一律當作不可沿用（保守）
+  if (!action) return false;
+  if (Object.prototype.hasOwnProperty.call(usedMap, action)) return false;
+  usedMap[action] = true;
+  return true;
 }
 
 function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
@@ -374,6 +414,7 @@ if (typeof module !== 'undefined') module.exports = {
   offlineLabel: offlineLabel,
   currentTaipeiYear: currentTaipeiYear,
   planCheckinBundle: planCheckinBundle,
+  takeOnce: takeOnce,
   __setStoreForTest: __setStoreForTest,
   __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest

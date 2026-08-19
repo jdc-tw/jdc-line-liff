@@ -1198,10 +1198,10 @@ function snSend(){
 var _previewSlice=null;      // 第二發抓到的 preview，只活在本次開頁的記憶體
 var _previewActId='';
 var _previewUsed=false;      // 存過範本／改過預約之後標成 true，逼下次 bundle 重新查
-SECOND.then(function(env){
-  var s=env&&env.ok&&env.results&&env.results.previewPassBroadcast;
-  if(s&&s.ok){_previewSlice=s;_previewActId=DEFAULT_ACT;}
-});
+// ⚠️ 收下 SECOND 的 previewPassBroadcast 那段 `SECOND.then(...)` 不在這裡，在檔尾 SECOND 賦值之後。
+// 原本寫在這一行（宣告之前），var SECOND 被 hoist 但賦值還沒發生 → `undefined.then` 直接 TypeError，
+// 整段 inline script 從這裡以下全部不執行、頁面永遠停在載入中且 console 只有一行紅字。
+// 頂層敘述只能用「已經賦值」的變數；函式宣告可以往前引用，var 的值不行。
 function bcTpl(){var el=document.getElementById('bc-tpl');return el?(el.value||''):'';}
 function loadCheckinBundle(actId,tpl){
   if(!actId)return Promise.resolve();
@@ -2014,10 +2014,23 @@ var SECOND=FIRST.then(function(first){
 });
 var SECOND_DONE=false;
 SECOND.then(function(){SECOND_DONE=true;},function(){SECOND_DONE=true;});
+// 報到分頁的 preview 切片（宣告在上面 _previewSlice 那一段，收貨動作必須排在 SECOND 賦值之後）。
+SECOND.then(function(env){
+  var s=env&&env.ok&&env.results&&env.results.previewPassBroadcast;
+  if(s&&s.ok){_previewSlice=s;_previewActId=DEFAULT_ACT;}
+});
 // pick2：切片必須存在且 slice.ok===true 才回傳，否則回 null——只檢查外層 ok 不夠，
 // {ok:false} 的切片會被當成資料傳給 loader，loader 收到「有值」就直接 render，不會再查一次 ok。
+//
+// ⚠️ 一次性消費（takeOnce）：SECOND 只 resolve 一次，同一個 action 問第二次拿到的還是那份
+// 開頁當下的快照。刪範本→snLoad、發 LINE→snLoad、發佈桌次／移動座位→loadSeating 都是
+// 「寫入後重載」，被舊快照攔截的話使用者會看到剛做的操作當場退回去，且全程零錯誤訊息
+// （發送紀錄不更新更會讓「這則已於 X 發送過」的警示不出現 → 重複發送、收不回來）。
+// 第一發那條線本來就有 statsFirst 這個旗標，這裡把同一個語義補給第二發。
+var _second_used={};
 function pick2(a){
   return SECOND.then(function(r){
+    if(!takeOnce(_second_used,a))return null;   // 已經消費過 → 呼叫端自己重打
     var slice=r&&r.results&&r.results[a];
     return (slice&&slice.ok===true)?slice:null;
   });

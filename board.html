@@ -288,8 +288,16 @@ var SECOND=FIRST.then(function(first){
 // pick2：切片必須存在且 slice.ok===true 才回傳，否則回 null。
 // 只檢查外層 ok 不夠——{ok:false} 的切片會被當成資料傳給 loader，loader 收到「有值」
 // 就直接 render，不會再查一次 ok，畫面會顯示怪東西且不報錯。
+//
+// ⚠️ 一次性消費（takeOnce）：SECOND 只 resolve 一次，同一個 action 問第二次拿到的還是那份
+// 開頁當下的快照。新增單位／職稱→loadOptionsAdmin、恢復已駁回異動→loadLog 都是
+// 「寫入後重載」，被舊快照攔截的話新選項不會出現、已恢復的那筆仍顯示「已駁回」，
+// 全程零錯誤訊息。第一發那條線本來就有 hrFirst 這個旗標（見 loadHr），這裡把同一個
+// 語義補給第二發。
+var _second_used={};
 function pick2(a){
   return SECOND.then(function(r){
+    if(!takeOnce(_second_used,a))return null;   // 已經消費過 → 呼叫端自己重打
     var slice=r&&r.results&&r.results[a];
     return (slice&&slice.ok===true)?slice:null;
   });

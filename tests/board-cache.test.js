@@ -415,3 +415,77 @@ test('planCheckinBundle：撤銷或離線 → 什麼都不送', () => {
   assert.deepEqual(P({ secondPending: false, tpl: '', stationsCached: false, previewUsable: false, verdict: 'offline' }),
     { wait: false, send: [] });
 });
+
+// ── takeOnce：第二發的切片只能被消費一次 ─────────────────────────────────────
+// 為何要測（2026-08-19 外部審查）：SECOND 只 resolve 一次，pick2(a) 每次都回同一份
+// 開頁快照。所有「寫入後的重載」（刪範本→snLoad、發 LINE→snLoad、發佈桌次→loadSeating、
+// 新增單位→loadOptionsAdmin、恢復駁回→loadLog）都被舊快照攔截，且零錯誤訊息。
+// pick2 活在頁面的 inline script 裡測不到，所以判斷抽成這支純函式。
+const T = BC.takeOnce;
+
+test('takeOnce：同一個 action 只有第一次回 true，之後恆 false', () => {
+  const used = {};
+  assert.equal(T(used, 'getRosterList'), true);    // 第一次：可沿用第二發的切片
+  assert.equal(T(used, 'getRosterList'), false);   // 寫入後重載：必須自己重打
+  assert.equal(T(used, 'getRosterList'), false);   // 第三次以後仍然 false
+});
+
+test('takeOnce：不同 action 各自算一次，不互相消費', () => {
+  const used = {};
+  assert.equal(T(used, 'listOptions'), true);
+  assert.equal(T(used, 'listHrNotices'), true);    // 被上一支消費掉就錯了
+  assert.equal(T(used, 'listOptions'), false);
+  assert.equal(T(used, 'listHrNotices'), false);
+  // 兩頁各有自己的帳本，互不影響
+  const other = {};
+  assert.equal(T(other, 'listOptions'), true);
+});
+
+test('takeOnce：壞輸入一律回 false（保守：回 false 只是多打一支，回 true 會發出錯的 LINE）', () => {
+  assert.equal(T(null, 'getSeatingBoard'), false);
+  assert.equal(T(undefined, 'getSeatingBoard'), false);
+  assert.equal(T({}, ''), false);
+  assert.equal(T({}, undefined), false);
+  // 原型上的名字不可被誤判成「已用過」——直接取值會拿到 Object.prototype.constructor
+  assert.equal(T({}, 'constructor'), true);
+  assert.equal(T({}, 'toString'), true);
+});
+
+// ── 舊 iOS Safari 的兩個零錯誤訊息陷阱 ──────────────────────────────────────
+test('currentTaipeiYear：Intl 對 IANA 時區丟 RangeError 時要退回裝置年，不得往外拋', () => {
+  // 為何（2026-08-19 外部審查）：舊 Safari／精簡版 ICU 對非 UTC 的 timeZone 會丟 RangeError。
+  // 這支的呼叫端在同步的頂層路徑上（stats.html 組第二發的 batch 參數、snLoad），
+  // 拋出去 → SECOND reject → 桌次／報到／員工三個分頁永遠停在「載入中…」。
+  // 與 2026-07-31 AbortController 在 iOS 12.1 炸掉整頁同型。
+  const real = Intl.DateTimeFormat;
+  Intl.DateTimeFormat = function () { throw new RangeError('Invalid time zone specified: Asia/Taipei'); };
+  try {
+    const y = BC.currentTaipeiYear(Date.UTC(2026, 7, 19, 12));
+    assert.equal(y, new Date(Date.UTC(2026, 7, 19, 12)).getFullYear());
+  } finally {
+    Intl.DateTimeFormat = real;
+  }
+  // 還原後行為不變（確認上面的 stub 真的有被拆掉，不是測試互相污染）
+  assert.equal(BC.currentTaipeiYear(Date.UTC(2026, 0, 1, 0)), 2026);
+});
+
+test('revokedOverlay：四個位移要長寫，不可只靠 inset（Safari 14.1 以前不認得）', () => {
+  // 只寫 inset:0 → 舊 iOS 整條宣告被丟棄 → 四個位移退回 auto → 覆蓋層縮成小白框，
+  // 底下已經畫滿的 153 人姓名照樣看得見，且零錯誤訊息。
+  let styleStr = '';
+  const el = { id: '', innerHTML: '', setAttribute(k, v) { if (k === 'style') styleStr = v; } };
+  global.document = {
+    getElementById() { return null; },
+    createElement() { return el; },
+    body: { appendChild() {} },
+  };
+  try {
+    BC.revokedOverlay();
+    ['top:0', 'right:0', 'bottom:0', 'left:0'].forEach((p) => {
+      assert.ok(styleStr.indexOf(p) >= 0, '覆蓋層樣式缺 ' + p + '：' + styleStr);
+    });
+    assert.ok(styleStr.indexOf('position:fixed') >= 0);
+  } finally {
+    delete global.document;
+  }
+});
