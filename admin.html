@@ -60,10 +60,18 @@
     <div class="t" id="msg-note-t">✉️ 訊息紀錄</div>
     <div class="d" id="msg-note-d">正在確認權限…</div>
   </div>
-  <div class="ver" id="ver">v2026-08-20a</div>
+  <!-- 版本標記由 JS 填 document.lastModified —— 手打的固定字串沒有用：
+       2026-08-20 我寫死 v2026-08-20a，之後連改三版都忘了動它，
+       使用者拿快取的舊檔時它照樣顯示同一個字串，等於分辨不出新舊。
+       document.lastModified 反映的是**這一份實際載到的檔案**的時間，不必維護。 -->
+  <div class="ver" id="ver"></div>
 </div>
 <script src="assets/board-cache.js"></script>
 <script>
+// 版本標記放最前面：後面任何一段出錯，這行都已經跑完，
+// 才問得出「你載到的到底是哪一份檔案」——那是快取問題與程式問題的分水嶺。
+try{ document.getElementById('ver').textContent='版本 '+document.lastModified; }catch(e){}
+
 // 純轉傳：本頁無資料、不打後端；token 帶去的看板自己驗
 var m=location.search.match(/[?&]t=([^&]+)/),t=m?m[1]:'';
 // mt＝hub 的 viewer token，與 t（line-platform）是兩套權限來源，不可互換。
