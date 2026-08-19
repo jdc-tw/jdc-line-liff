@@ -46,6 +46,17 @@ test('nameOfSlice：無參數的 action 用自己的名字', () => {
   assert.equal(BC.nameOfSlice('getHrStats', { ok: true }, {}), 'getHrStats');
 });
 
+test('nameOfSlice：恆不落地的兩支回 null——沒有讀取端的東西不准寫進磁碟', () => {
+  // previewPassBroadcast：輸入含使用者尚未儲存的輸入框內容，快取正確性成本高於收益（設計 3.3.3）
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '' }), null);
+  // getAnniversaries：2026-08-20 改。它帶同仁姓名，而唯一消費點 assets/anniv.js 是
+  // board／stats 共用的小工具，沒有任何地方 cacheGet 它回來——存了七天卻零好處＝純個資曝險。
+  assert.equal(BC.nameOfSlice('getAnniversaries', { ok: true }, {}), null);
+  // 對照：同一發 batch 裡的其他支仍然要落地，證明上面兩個 null 不是「全部都 null」
+  assert.equal(BC.nameOfSlice('getHrPending', { ok: true }, {}), 'getHrPending');
+  assert.equal(BC.nameOfSlice('getCheckinPending', { ok: true }, {}), 'getCheckinPending');
+});
+
 test('nameOfSlice：名稱一律由「送出的參數」算，不從回應反推', () => {
   const slice = { ok: true, activity: { id: 'WRONG' } };
   assert.equal(BC.nameOfSlice('getSeatingBoard', slice, { actId: 'midyear2026' }),
