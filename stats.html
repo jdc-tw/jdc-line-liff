@@ -1995,22 +1995,31 @@ var LAST_VERDICT='ok';
 FIRST.then(function(env){LAST_VERDICT=(env&&env._verdict)||'ok';});
 
 // ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
+// ⚠️ 暫停對承辦人露出（2026-08-20 使用者指示）：功能完整保留，只是不接上。
+//    要上線就把下面這個常數改成 true，不必動其他任何地方。
+//    ⚠️ 這個開關**不管**上面資深通知的三態顯示（snPickMsg／snSend 的 SN.status）
+//       ——那是安全機制，斷了會讓小字永遠空白（後端已不回舊的 SN.sent），故意不放進來。
+var MSG_LOG_UI_ON = false;
+
 // 連結用 ?mt= 帶 hub 的 viewer token，與看板自己的 ?t= 分開：
 // 一顆給 line-platform、一顆給 hub，權限來源不同，不可共用。
 // 沒帶 mt 就不顯示連結——顯示一個點了必定失敗的連結比不顯示更糟。
 (function(){
+  if(!MSG_LOG_UI_ON) return;
   var mt=new URLSearchParams(location.search).get('mt')||'';
   var a=document.getElementById('msgLogLink');
   if(mt){ a.href='messages.html?t='+encodeURIComponent(mt); a.hidden=false; }
 })();
 
-jsonp('getUndelivered',{token:q('t')}).then(function(r){
-  if(r&&r.ok&&r.pending>0){
-    var bar=document.getElementById('alertBar');
-    bar.textContent='🔴 有 '+r.pending+' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
-    bar.style.display='block';
-  }
-});
+if(MSG_LOG_UI_ON){
+  jsonp('getUndelivered',{token:q('t')}).then(function(r){
+    if(r&&r.ok&&r.pending>0){
+      var bar=document.getElementById('alertBar');
+      bar.textContent='🔴 有 '+r.pending+' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
+      bar.style.display='block';
+    }
+  });
+}
 
 // 活動切換下拉（歷史場次也能回看統計）
 pick('listActivities').then(function(r){

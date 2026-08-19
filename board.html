@@ -254,10 +254,17 @@ var TOKEN=getToken();
 var CACHE_READY=cacheBootstrap(TOKEN);   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 
 // ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
+// ⚠️ 暫停對承辦人露出（2026-08-20 使用者指示）：功能完整保留，只是不接上。
+//    要上線就把下面這個常數改成 true，不必動其他任何地方。
+//    ⚠️ 這個開關**不管** stats.html 的資深通知三態顯示——那是安全機制，
+//       斷了會讓小字永遠空白（後端已不回舊的 SN.sent），故意不放進來。
+var MSG_LOG_UI_ON = false;
+
 // 連結用 ?mt= 帶 hub 的 viewer token，與看板自己的 ?t= 分開：
 // 一顆給 line-platform、一顆給 hub，權限來源不同，不可共用。
 // 沒帶 mt 就不顯示連結——顯示一個點了必定失敗的連結比不顯示更糟。
 (function () {
+  if (!MSG_LOG_UI_ON) return;
   var mt = new URLSearchParams(location.search).get('mt') || '';
   var a = document.getElementById('msgLogLink');
   if (mt) {                       // messages.html 與本頁同站台，用相對路徑
@@ -266,13 +273,15 @@ var CACHE_READY=cacheBootstrap(TOKEN);   // 開頁時解密該指紋的全部持
   }
 })();
 
-jsonp('getUndelivered', { token: TOKEN }).then(function (r) {
-  if (r && r.ok && r.pending > 0) {
-    var bar = document.getElementById('alertBar');
-    bar.textContent = '🔴 有 ' + r.pending + ' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
-    bar.style.display = 'block';
-  }
-});
+if (MSG_LOG_UI_ON) {
+  jsonp('getUndelivered', { token: TOKEN }).then(function (r) {
+    if (r && r.ok && r.pending > 0) {
+      var bar = document.getElementById('alertBar');
+      bar.textContent = '🔴 有 ' + r.pending + ' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
+      bar.style.display = 'block';
+    }
+  });
+}
 
 // 首載合併（2026-08-06）：4 支 /exec → 1 支 batch。/exec 每請求固定成本 2-4s、偶發 8-17s 長尾，
 // 多支並行佔執行位是「連線逾時」爆量排隊的火種。pick(a) 把整包切片給既有 render 函式；

@@ -21,6 +21,13 @@
   a.card[hidden]{display:none}
   .t{font-size:16px;font-weight:700}
   .d{font-size:13px;color:#888;margin-top:4px}
+  /* 沒帶 mt 時的說明（不可點）：整張消失會讓人以為「改的沒生效」，看不出是缺參數 */
+  div.note{background:#fbfbfc;border:1px dashed #d5d8dc;border-radius:14px;padding:16px 20px;margin-bottom:12px}
+  div.note[hidden]{display:none}
+  div.note .t{color:#999}
+  code{background:#eceef0;padding:1px 5px;border-radius:4px;font-size:12px}
+  /* 版本標記：用來分辨「載到新版但缺參數」與「瀏覽器拿到快取的舊版」 */
+  .ver{margin-top:14px;text-align:center;font-size:11px;color:#c0c4c8;letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -39,11 +46,17 @@
     <div class="t">📈 人事資訊看板</div>
     <div class="d">年資／年齡分佈・單位結構・退休預警</div>
   </a>
-  <!-- 沒帶 mt 就不顯示：點了必定失敗的入口比不顯示更糟（同 board/stats 的作法） -->
+  <!-- 帶了 mt 顯示這張（可點）；沒帶則顯示下面那張說明，不會整個不見 -->
   <a class="card" id="go-messages" href="messages.html" hidden>
     <div class="t">✉️ 訊息紀錄</div>
     <div class="d">每一則 LINE 通知的發送紀錄・依批次摺疊</div>
   </a>
+  <div class="note" id="msg-note" hidden>
+    <div class="t">✉️ 訊息紀錄（這條網址少了參數）</div>
+    <div class="d">要在網址最後加上 <code>&amp;mt=…</code> 才進得去。<br>
+      桌面上的 <code>jdc-boards-with-message-log.html</code> 第一條就是完整網址。</div>
+  </div>
+  <div class="ver" id="ver">v2026-08-20a</div>
 </div>
 <script src="assets/board-cache.js"></script>
 <script>
@@ -59,10 +72,15 @@ if(t){
   // hr-stats.html 還沒有訊息紀錄的 UI，帶 mt 過去也沒東西讀，所以不帶
   document.getElementById('go-hr').href='hr-stats.html?t='+t;
 }
+// 帶了 mt 就給可點的卡；沒帶就給說明卡。
+// 兩者擇一顯示，**絕不兩張都藏**——整張消失時看不出是「改沒生效」還是「網址少參數」，
+// 2026-08-20 就是卡在這一格：使用者連說兩次「我沒看到」，而兩種原因長得一模一樣。
 if(mt){
   var ml=document.getElementById('go-messages');
   ml.href='messages.html?t='+mt;   // 這一頁的後端是 hub，吃的是 mt
   ml.hidden=false;
+}else{
+  document.getElementById('msg-note').hidden=false;
 }
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 // fetch 匿名(credentials:'omit')：JSONP script 會帶瀏覽器 Google session，帳號狀態半殘的電腦被 Google 拒絕
