@@ -374,7 +374,7 @@
      自己一個活動下拉（#ck-act），不共用桌次頁的——那頁沒打開時它是隱藏的，
      等於讓人在看不見的地方決定「137 則 LINE 要發給哪一場」。 -->
 <div id="tab-checkin" style="display:none">
-  <select id="ck-act" style="display:none" onchange="stLoad();bcPreview()"></select>
+  <select id="ck-act" style="display:none" onchange="loadCheckinBundle(ckActId(),bcTpl())"></select>
   <div class="actbar" id="ck-actbar"></div>
 
   <!-- 掃描站管理（2026-08-16）：活動主辦自助開站，不必手改 Script Property。
@@ -453,6 +453,7 @@
 <script src="assets/xlsx-post.js"></script>
 <script src="assets/stats-view.js"></script>
 <script src="assets/qr-badge.js"></script>
+<script src="assets/board-cache.js"></script>
 <script>
 // esc() 住在 assets/stats-view.js，本頁 40 幾處在用（含各種錯誤訊息的組字串）。
 // 那支若沒載進來，連「顯示錯誤」的路徑都會拋例外，畫面只會靜靜停住＝壞掉時沒有任何人看得見
@@ -460,6 +461,7 @@
 if(typeof esc!=='function'){window.esc=function(s){return (s==null?'':s).toString().replace(/</g,'&lt;');};}
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+var CACHE_READY=cacheBootstrap(q('t'));   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 
 /* ── 活動選擇器：橫向滑動的純文字 ─────────────────────────────────────────
    原生 <select> 留在 DOM 裡當值的載體（全頁十幾處讀 .value、寫 .value，
@@ -610,9 +612,6 @@ function jsonp(action,params,timeoutMs){
   var p=attempt();
   if(timeoutMs==null){p=p.catch(function(){return new Promise(function(res){setTimeout(res,2000);}).then(attempt);});}
   return p.catch(function(e){return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
-// SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。
-function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
-function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 /** 依「URL 編碼後長度」自適應切包（中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度）。 */
 function chunkByLen(rows,maxEnc){
   maxEnc=maxEnc||3000;
@@ -805,7 +804,7 @@ function loadCheckinTab(){
     sel.innerHTML=r.rows.slice().reverse().map(function(a){
       return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';}).join('');
     renderActBar('ck-act','ck-actbar');
-    stLoad(); bcPreview();   // 兩支並行；通知卡不再藏在「預覽」按鈕後面
+    loadCheckinBundle(ckActId(),bcTpl());   // 單一入口：命中快取時看不出這裡曾經是兩支並行
   });
 }
 
@@ -862,21 +861,28 @@ function togglePublish(){
 function loadSeating(){
   var id=actId();
   if(!id)return;
-  var key='seat_'+id;
-  var cached=swrGet(key);
-  if(cached){applySeating(cached);}                 // 秒顯
-  else{
-    document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
-    document.getElementById('seat-detail').innerHTML='';
-  }
-  jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r){
-    if(!r||!r.ok){
-      // 有舊資料就留著（畫面上已經是它），只有完全沒有時才顯示錯誤
-      if(!cached)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
-      return;
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.seating(id));
+    if(cached){applySeating(cached.value);}          // 秒顯
+    else{
+      document.getElementById('seat-board').innerHTML='<div class="empty">載入中…</div>';
+      document.getElementById('seat-detail').innerHTML='';
     }
-    swrSet(key,r);
-    applySeating(r);
+  });
+  // pick2 抓的是 DEFAULT_ACT 那一場——只有選到同一場才能沿用，切到別場一律自己打。
+  var p=(id===DEFAULT_ACT)?pick2('getSeatingBoard'):Promise.resolve(null);
+  p.then(function(r){
+    if(r){applySeating(r);return;}                    // 第二發已備妥（且同一場）
+    return queueRead(function(){                       // 沒有才自己打
+      return jsonp('getSeatingBoard',{token:q('t'),actId:id}).then(function(r2){
+        return cacheSave(q('t'),N.seating(id),r2).then(function(){
+          if(r2&&r2.ok)applySeating(r2);
+          // 有舊資料就留著（畫面上已經是它），只有完全沒有時才顯示錯誤
+          else if(!cached)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r2&&r2.msg)||'載入失敗')+'</div>';
+        });
+      });
+    });
   });
 }
 function setSeatView(v){
@@ -1040,8 +1046,30 @@ function seatUnpublish(){
 // 年度＝名單身分（哪一批人），與發送日期無關。範本存在後端，明年打開預帶同一份。
 var SN=null;
 function snLoad(){
-  var y=document.getElementById('sn-year').value||'';
-  jsonp('getSeniorNotice',{token:q('t'),year:y}).then(function(r){
+  // ⚠️ 預設值必須是 String(currentTaipeiYear())，與第二發送出的 p.year 同一個字串——
+  // 否則快取名稱對不上、永遠不命中，且不會有任何錯誤訊息。
+  var y=document.getElementById('sn-year').value||String(currentTaipeiYear());
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.senior(y));
+    if(cached){renderSenior(cached.value);}           // 秒顯
+    else{document.getElementById('sn-people').innerHTML='<div class="empty">載入中…</div>';}
+  });
+  // pick2 抓的是「當前台北年度」——只有選到同一個年度才能沿用，切年度一律自己打。
+  var p=(y===String(currentTaipeiYear()))?pick2('getSeniorNotice'):Promise.resolve(null);
+  p.then(function(r){
+    if(r){renderSenior(r);return;}                     // 第二發已備妥（且同一年度）
+    return queueRead(function(){                        // 沒有才自己打
+      return jsonp('getSeniorNotice',{token:q('t'),year:y}).then(function(r2){
+        return cacheSave(q('t'),N.senior(y),r2).then(function(){
+          if(r2&&r2.ok)renderSenior(r2);
+          else if(!cached)document.getElementById('sn-people').innerHTML='<div class="empty">'+esc((r2&&r2.msg)||'載入失敗')+'</div>';
+        });
+      });
+    });
+  });
+}
+function renderSenior(r){
     var box=document.getElementById('sn-people');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     SN=r;
@@ -1089,7 +1117,6 @@ function snLoad(){
       }).join('');
     }
     snPickMsg();
-  });
 }
 /** 全選／全不選。發不出去的（未綁定、同名）是 disabled，本來就不該被拉進來。 */
 function snCheckAll(on){
@@ -1183,13 +1210,74 @@ function snSend(){
 
 // ── 掃描站管理：列出／新增／換 token／刪除 ────────────────────────────────
 // 報到分頁開啟時與增刪站別後都走這支（站別已不隨 getSeatingBoard 回傳——分頁拆開後那條併車失效）。
+// 報到分頁唯一的取數入口（2026-08-19）：原本 stLoad()+bcPreview() 是兩支並行
+// （註解自己寫著），預取命中時看不出來、切活動或第二發未回時才現形。
+// tpl 是輸入框當下的內容，呼叫端一律要傳——不從 DOM 取值，才測得到（見 planCheckinBundle）。
+var _previewSlice=null;      // 第二發抓到的 preview，只活在本次開頁的記憶體
+var _previewActId='';
+var _previewUsed=false;      // 存過範本／改過預約之後標成 true，逼下次 bundle 重新查
+// ⚠️ 收下 SECOND 的 previewPassBroadcast 那段 `SECOND.then(...)` 不在這裡，在檔尾 SECOND 賦值之後。
+// 原本寫在這一行（宣告之前），var SECOND 被 hoist 但賦值還沒發生 → `undefined.then` 直接 TypeError，
+// 整段 inline script 從這裡以下全部不執行、頁面永遠停在載入中且 console 只有一行紅字。
+// 頂層敘述只能用「已經賦值」的變數；函式宣告可以往前引用，var 的值不行。
+function bcTpl(){var el=document.getElementById('bc-tpl');return el?(el.value||''):'';}
+function loadCheckinBundle(actId,tpl){
+  if(!actId)return Promise.resolve();
+  // ⚠️ cacheGet 必須在 CACHE_READY.then() 之內——它 resolve 前一律回 null 且不報錯，
+  // 提早呼叫會讓秒顯靜默失效（不報錯，只是每次都多打一支）。
+  return CACHE_READY.then(function(){
+    var stationsC=cacheGet(N.stations(actId));
+    var previewUsable=!!(_previewSlice&&_previewActId===actId&&!_previewUsed);
+    var plan=planCheckinBundle({
+      secondPending:!SECOND_DONE, tpl:tpl,
+      stationsCached:!!stationsC, previewUsable:previewUsable,
+      verdict:isRevoked()?'revoked':LAST_VERDICT
+    });
+
+    if(stationsC)renderStations(stationsC.value.rows);
+    if(previewUsable&&tpl==='')renderPreview(_previewSlice);
+
+    if(plan.wait)return SECOND.then(function(){return loadCheckinBundle(actId,tpl);});
+    if(!plan.send.length)return;
+
+    var items=plan.send.map(function(a){
+      return a==='previewPassBroadcast'
+        ? {a:a,p:{actId:actId,tpl:tpl}}
+        : {a:a,p:{actId:actId}};
+    });
+    var wantsPreview=plan.send.indexOf('previewPassBroadcast')>=0;
+    return queueRead(function(){
+      return jsonp('batch',{token:q('t'),list:JSON.stringify(items)}).then(function(env){
+        if(cacheVerdict(env)!=='ok'){
+          // 只有明確要了 preview 的呼叫（如「套用並預覽」按鈕）才需要講失敗——
+          // 自動路徑（開分頁／切活動）沿用舊資料靜靜重試即可，不必嚇人。
+          if(wantsPreview)setMsg('bc-msg',(env&&env.msg)||'查詢失敗','err');
+          return;
+        }
+        return persistBatchSlices(q('t'),env,items,nameOfSlice).then(function(){
+          var st=env.results.listStaffStations, pv=env.results.previewPassBroadcast;
+          if(st&&st.ok)renderStations(st.rows);
+          if(pv&&pv.ok)renderPreview(pv);   // fallback 抓的：直接給 renderer、用完即丟，不落地（previewPassBroadcast 恆不落地）
+          else if(pv)setMsg('bc-msg',pv.msg||'查詢失敗','err');
+        });
+      });
+    });
+  });
+}
+// 桌次分頁（#ti-act）與掃描站新增/換發/刪除也會呼叫這支，維持原樣單支打。
+// 2026-08-19 修：原本只重抓不存快取，站別新增/換發/刪除後（stAdd/stRegen/stDel 都呼叫這支）
+// N.stations(actId) 的持久快取仍是異動前的舊值，最長 7 天內都可能秒顯到舊站別清單。
+// 存回快取這一支就好——不必在三個異動點各加一次 cacheSave（那種要人記得的寫法已經害過幾次）。
 function stLoad(){
-  jsonp('listStaffStations',{token:q('t'),actId:ckActId()}).then(function(r){
-    var box=document.getElementById('st-list');
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    renderStations(r.rows);
-    // 站別變動了，座位表那包裡的 stations 也過期——清掉快取免得下次進來看到舊的
-    // 站別變了不影響座位表快取（stations 已不隨 getSeatingBoard 回傳）
+  var id=ckActId();
+  return queueRead(function(){                 // 全站「讀取不並行」規則，改前是裸 jsonp
+    return jsonp('listStaffStations',{token:q('t'),actId:id}).then(function(r){
+      var box=document.getElementById('st-list');
+      if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+      renderStations(r.rows);
+      // 座位表快取不受影響：stations 已不隨 getSeatingBoard 回傳，兩包互不牽連。
+      return cacheSave(q('t'),N.stations(id),r);
+    });
   });
 }
 function renderStations(rows){
@@ -1320,6 +1408,7 @@ function bcSchedule(){
     if(!confirm('取消 '+BC_SCHED.date+' 的預約發送？'))return;
     jsonp('cancelPassSchedule',{token:q('t'),actId:ckActId()}).then(function(r){
       if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'取消失敗','err');return;}
+      _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
       setMsg('bc-msg','已取消預約。','ok');bcPreview();
     });
     return;
@@ -1332,6 +1421,7 @@ function bcSchedule(){
   jsonp('schedulePassBroadcast',{token:q('t'),actId:ckActId(),date:d,
     tpl:document.getElementById('bc-tpl').value||''}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'預約失敗','err');return;}
+    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     setMsg('bc-msg','已預約 '+d+' 自動發送。','ok');bcPreview();
   });
 }
@@ -1339,42 +1429,44 @@ function bcSchedule(){
 function bcSaveTpl(){
   jsonp('savePassTemplate',{token:q('t'),tpl:document.getElementById('bc-tpl').value}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'儲存失敗','err');return;}
+    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     setMsg('bc-msg','已儲存，下次打開就是這一份。','ok');
   });
 }
+/** previewPassBroadcast 回應畫成畫面。呼叫端可能是快取秒顯，也可能是網路回來——兩邊共用。 */
+function renderPreview(r){
+  var tplEl=document.getElementById('bc-tpl');
+  BC=r;
+  BC_DEFAULT_TPL=r.defaultTemplate||r.template;   // 出廠預設由伺服器給，不是「目前這份」
+  if(!tplEl.value)tplEl.value=r.template;
+  document.getElementById('bc-edit').style.display='block';
+  renderPhs('bc','bc-phs','bc-tpl');
+  paintMirror('bc-tpl','bc-mirror','bc');
+  // 預覽只講「非預期」的事（2026-08-16 使用者：參加幾人發幾則、沒有人收不到，都是廢話）。
+  // 全部人都收得到＝正常，正常不必佔版面；有人收不到才要跳出來。
+  var W='margin:4px 0;font-size:13px;line-height:1.6;color:';
+  var warn='';
+  if(!r.published)warn+='<p style="'+W+'var(--bad)">桌次尚未發布，先在座位表按「發佈桌次」。</p>';
+  if(r.hasDate===false)warn+='<p style="'+W+'var(--bad);font-weight:600">這場活動沒有填活動日期，'
+    +'同仁當天無法報到——請先到「活動」分頁補上。</p>';
+  if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
+  if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
+    +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
+  document.getElementById('bc-preview').innerHTML=warn
+    +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
+    +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
+    +esc(r.sample)+'</pre>';
+  document.getElementById('bc-preview').style.display='block';
+  bcRenderSched(r);
+  // 少了 {連結} 不再鎖死按鈕（2026-08-16 使用者要求改成警示＋確認）：
+  // 鎖住按鈕不講原因，只會讓人以為系統壞了。改成讓他看到警語、自己決定。
+  document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.hasDate!==false);
+  bcFillOne(r.people||[]);
+  setMsg('bc-msg','','ok');
+}
 function bcPreview(){
   setMsg('bc-msg','查詢中…','ok');
-  var tplEl=document.getElementById('bc-tpl');
-  jsonp('previewPassBroadcast',{token:q('t'),actId:ckActId(),tpl:tplEl.value||''}).then(function(r){
-    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'查詢失敗','err');return;}
-    BC=r;
-    BC_DEFAULT_TPL=r.defaultTemplate||r.template;   // 出廠預設由伺服器給，不是「目前這份」
-    if(!tplEl.value)tplEl.value=r.template;
-    document.getElementById('bc-edit').style.display='block';
-    renderPhs('bc','bc-phs','bc-tpl');
-    paintMirror('bc-tpl','bc-mirror','bc');
-    // 預覽只講「非預期」的事（2026-08-16 使用者：參加幾人發幾則、沒有人收不到，都是廢話）。
-    // 全部人都收得到＝正常，正常不必佔版面；有人收不到才要跳出來。
-    var W='margin:4px 0;font-size:13px;line-height:1.6;color:';
-    var warn='';
-    if(!r.published)warn+='<p style="'+W+'var(--bad)">桌次尚未發布，先在座位表按「發佈桌次」。</p>';
-    if(r.hasDate===false)warn+='<p style="'+W+'var(--bad);font-weight:600">這場活動沒有填活動日期，'
-      +'同仁當天無法報到——請先到「活動」分頁補上。</p>';
-    if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
-    if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
-      +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
-    document.getElementById('bc-preview').innerHTML=warn
-      +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
-      +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
-      +esc(r.sample)+'</pre>';
-    document.getElementById('bc-preview').style.display='block';
-    bcRenderSched(r);
-    // 少了 {連結} 不再鎖死按鈕（2026-08-16 使用者要求改成警示＋確認）：
-    // 鎖住按鈕不講原因，只會讓人以為系統壞了。改成讓他看到警語、自己決定。
-    document.getElementById('bc-send').disabled=!(r.published&&r.willSend>0&&r.hasDate!==false);
-    bcFillOne(r.people||[]);
-    setMsg('bc-msg','','ok');
-  });
+  loadCheckinBundle(ckActId(),bcTpl());
 }
 // 補發：兩段式（先單位、再人）。137 個名字擠一個下拉在手機上挑不動——
 // 2026-08-16 使用者指定的形態，不是把單位寫進選項文字而已。
@@ -1408,6 +1500,7 @@ function bcSendOne(){
     tpl:document.getElementById('bc-tpl').value||'',
     userIds:JSON.stringify([sel.value])},60000).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'補發失敗','err');return;}
+    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     if(r.failed){setMsg('bc-msg','補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、'),'err');return;}
     setMsg('bc-msg','已補發給 '+who,'ok');
   });
@@ -1426,6 +1519,7 @@ function bcSend(){
   jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),tpl:document.getElementById('bc-tpl').value||'',
     force:noUrl?'1':''},120000).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
+    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
     var t='已送出 '+r.sent+' 則';
@@ -1883,10 +1977,22 @@ function toggleRep(btn,id){
 
 // 首載合併（2026-08-06）：3 支 /exec → 1 支 batch（成因與手法見 board.html 同段註解）。
 // getActivityStats 空 act＝後端自選開放中活動，與原本 loadStats(q('act')) 語意等價。
-var FIRST=jsonp('batch',{token:q('t'),list:JSON.stringify([
-  {a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}}])});   // getAnniversaries 已移除：名單改由 getSeniorNotice 一併帶回，不必再抓一次
+// 2026-08-19：SWR（sessionStorage）換成持久快取——原本關分頁即清，每次開頁都白等。
+var FIRST_ITEMS=[{a:'listActivities'},{a:'getActivityStats',p:{act:q('act')||''}}];   // getAnniversaries 已移除：名單改由 getSeniorNotice 一併帶回，不必再抓一次
+var FIRST=queueRead(function(){
+  return jsonp('batch',{token:q('t'),list:JSON.stringify(FIRST_ITEMS)}).then(function(env){
+    return handleVerdict(q('t'),env).then(function(v){
+      if(v!=='ok')return {ok:false,_verdict:v,msg:env.msg};
+      return persistBatchSlices(q('t'),env,FIRST_ITEMS,nameOfSlice).then(function(){return env;});
+    });
+  });
+});
 function pick(a){return FIRST.then(function(r){
   return (r&&r.ok&&r.results&&r.results[a])||{ok:false,msg:(r&&r.msg)||'連線失敗'};});}
+// 報到分頁的 planCheckinBundle 要知道「離線」不只「撤銷」——isRevoked() 只追蹤撤銷，
+// 離線得另外記；沒有這個，離線時 bundle 仍會續送請求（見 handleVerdict 的三種 verdict）。
+var LAST_VERDICT='ok';
+FIRST.then(function(env){LAST_VERDICT=(env&&env._verdict)||'ok';});
 
 // ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
 // 連結用 ?mt= 帶 hub 的 viewer token，與看板自己的 ?t= 分開：
@@ -1917,17 +2023,79 @@ pick('listActivities').then(function(r){
   renderActBar('act-picker','act-actbar');
 });
 
+// 第二發：把桌次／報到／員工三個分頁的資料先抓回來，點進去就不用等。
+// defaultAct 刻意與 loadTablesTab/loadCheckinTab 填下拉時用的 rows.slice().reverse() 同一個順序，
+// 所以預取不會替使用者「預選」任何東西——它抓的就是他等一下會看到的那場。
+// 預取不從 DOM 取值：那兩個下拉在預取當下都還沒填。
+var DEFAULT_ACT='';
+var SECOND_ITEMS=[];
+var SECOND=FIRST.then(function(first){
+  if(!first||first.ok!==true)return null;   // 第一發撤銷或離線 → 不送第二發
+  var la=first.results&&first.results.listActivities;
+  var rows=(la&&la.ok&&la.rows)?la.rows.slice().reverse():[];
+  DEFAULT_ACT=rows.length?rows[0].id:'';
+  var year=currentTaipeiYear();
+  SECOND_ITEMS=[{a:'getSeniorNotice',p:{year:String(year)}}];
+  if(DEFAULT_ACT){
+    SECOND_ITEMS.push({a:'getSeatingBoard',p:{actId:DEFAULT_ACT}});
+    SECOND_ITEMS.push({a:'listStaffStations',p:{actId:DEFAULT_ACT}});
+    SECOND_ITEMS.push({a:'previewPassBroadcast',p:{actId:DEFAULT_ACT,tpl:''}});
+  }
+  return queueRead(function(){
+    return jsonp('batch',{token:q('t'),list:JSON.stringify(SECOND_ITEMS)}).then(function(env){
+      if(cacheVerdict(env)!=='ok')return null;
+      return persistBatchSlices(q('t'),env,SECOND_ITEMS,nameOfSlice).then(function(){return env;});
+    });
+  });
+});
+var SECOND_DONE=false;
+SECOND.then(function(){SECOND_DONE=true;},function(){SECOND_DONE=true;});
+// 報到分頁的 preview 切片（宣告在上面 _previewSlice 那一段，收貨動作必須排在 SECOND 賦值之後）。
+SECOND.then(function(env){
+  var s=env&&env.ok&&env.results&&env.results.previewPassBroadcast;
+  if(s&&s.ok){_previewSlice=s;_previewActId=DEFAULT_ACT;}
+});
+// pick2：切片必須存在且 slice.ok===true 才回傳，否則回 null——只檢查外層 ok 不夠，
+// {ok:false} 的切片會被當成資料傳給 loader，loader 收到「有值」就直接 render，不會再查一次 ok。
+//
+// ⚠️ 一次性消費（takeOnce）：SECOND 只 resolve 一次，同一個 action 問第二次拿到的還是那份
+// 開頁當下的快照。刪範本→snLoad、發 LINE→snLoad、發佈桌次／移動座位→loadSeating 都是
+// 「寫入後重載」，被舊快照攔截的話使用者會看到剛做的操作當場退回去，且全程零錯誤訊息
+// （發送紀錄不更新更會讓「這則已於 X 發送過」的警示不出現 → 重複發送、收不回來）。
+// 第一發那條線本來就有 statsFirst 這個旗標，這裡把同一個語義補給第二發。
+var _second_used={};
+function pick2(a){
+  return SECOND.then(function(r){
+    if(!takeOnce(_second_used,a))return null;   // 已經消費過 → 呼叫端自己重打
+    var slice=r&&r.results&&r.results[a];
+    return (slice&&slice.ok===true)?slice:null;
+  });
+}
+
 var statsFirst=true;
 function loadStats(act){
-  var key='swr:getActivityStats:'+(act||'');
-  var cached=swrGet(key);
-  if(cached){renderStats(cached);}
-  else{document.getElementById('meta').textContent='載入中…';document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
-  // 首發吃 batch 切片（act 已在 batch 的 p 帶上）；之後切場次重打單支
-  var src=statsFirst?pick('getActivityStats'):jsonp('getActivityStats',{token:q('t'),act:act||''});
-  statsFirst=false;
-  src.then(function(r){
-    if(r&&r.ok){swrSet(key,r);renderStats(r);}else if(!cached){renderStats(r);}
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.activityStats(act));
+    if(cached){renderStats(cached.value);}            // 秒顯
+    else{document.getElementById('meta').textContent='載入中…';document.getElementById('content').innerHTML='<div class="empty">載入中…</div>';}
+  });
+  if(statsFirst){
+    statsFirst=false;
+    // 首發吃 batch 切片（act 已在 batch 的 p 帶上）；FIRST 裡的 persistBatchSlices 已經存過，
+    // 這裡不再呼叫 cacheSave——呼叫端再存一次就繞過唯一入口。
+    pick('getActivityStats').then(function(r){
+      if(r&&r.ok)renderStats(r);else if(!cached)renderStats(r);
+    });
+    return;
+  }
+  // 切場次重打單支
+  queueRead(function(){
+    return jsonp('getActivityStats',{token:q('t'),act:act||''}).then(function(r){
+      return cacheSave(q('t'),N.activityStats(act),r).then(function(){
+        if(r&&r.ok)renderStats(r);else if(!cached)renderStats(r);
+      });
+    });
   });
 }
 function renderStats(r){

@@ -1,0 +1,24 @@
+name: 前端單元測試
+
+# 為什麼有這支（2026-08-19）：本 repo 原本只有 syntax-check.yml，tests/ 底下的
+# 測試沒有任何 workflow 會跑。看板快取那批改動寫進數十條測試，沒有閘門等於它們
+# 擋不住任何東西——推 main 即 Pages 發布，改壞了沒人會知道。
+
+on:
+  push:
+    branches: [main]
+    paths: ['**.html', 'assets/**.js', 'tests/**.js', '.github/workflows/test.yml']
+  pull_request:
+    paths: ['**.html', 'assets/**.js', 'tests/**.js']
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      # ⚠️ 必須用萬用字元 tests/*.test.js。寫成目錄形式 `node --test tests/`
+      # 在新版 Node 會噴 Cannot find module。
+      - run: node --test tests/*.test.js
