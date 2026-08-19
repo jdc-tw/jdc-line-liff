@@ -1,5 +1,6 @@
 const { test } = require('node:test'); const assert = require('node:assert');
 const BC = require('../assets/board-cache.js');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test('cacheExpired：剛好 7 天不算過期，多一毫秒才算', () => {
   const t0 = 1000000;
@@ -267,4 +268,42 @@ test('persistBatchSlices 回的 Promise 要等所有加密寫入落地才 resolv
     [{ a: 'getRosterList' }, { a: 'listOptions' }], BC.nameOfSlice);
   assert.equal(st.length, 2, 'resolve 當下兩筆都必須已經在磁碟上');
   BC.__resetForTest();
+});
+
+test('queueRead：任一時刻只有一個任務在跑', async () => {
+  let running = 0, maxRunning = 0;
+  const task = async () => {
+    running++; maxRunning = Math.max(maxRunning, running);
+    await sleep(10);
+    running--;
+  };
+  await Promise.all([BC.queueRead(task), BC.queueRead(task), BC.queueRead(task)]);
+  assert.equal(maxRunning, 1, '同時最多一個');
+});
+
+test('queueRead：前一個 reject，後面的仍會跑', async () => {
+  let ran = false;
+  const bad = BC.queueRead(() => Promise.reject(new Error('boom')));
+  await bad.catch(() => {});
+  await BC.queueRead(async () => { ran = true; });
+  assert.equal(ran, true);
+});
+
+test('queueRead：任務要等持久化落地才 resolve，下一支才讀得到新值', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  let seen = null;
+  await BC.queueRead(async () => {
+    await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'new' });
+  });
+  await BC.queueRead(async () => {
+    const map = await BC.cacheBootstrap('tok-A');
+    seen = map.listOptions && map.listOptions.value.v;
+  });
+  assert.equal(seen, 'new', '前一支寫進去的，後一支必須看得到');
+  BC.__resetForTest();
+});
+
+test('queueRead 回傳值就是 fn 的回傳值', async () => {
+  const v = await BC.queueRead(() => Promise.resolve(42));
+  assert.equal(v, 42);
 });

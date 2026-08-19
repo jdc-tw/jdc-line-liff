@@ -237,6 +237,27 @@ function persistBatchSlices(token, envelope, requestItems, nameOf) {
   return Promise.all(jobs).then(function () { });
 }
 
+/**
+ * 讀取請求的序列佇列——同頁最多一支 /exec 在飛。
+ *
+ * 為何需要（2026-08-19）：「不並行」原本是一條要人記得的規則，而現況有三處
+ * 違反（admin.html 兩支 seed、attend.html 兩支、stats.html 報到分頁的
+ * stLoad()+bcPreview()）——每一處都是後來的人不記得規則。改成用了就成立的機制。
+ *
+ * ⚠️ 呼叫約定：fn 回的 Promise 必須在「網路回應 → 拆包 → 全部加密寫入完成」
+ * 之後才 resolve。提早 resolve 的話，下一支排隊任務會讀到還沒落地的舊狀態、
+ * 重複發送同一個請求。
+ *
+ * 只管讀取。寫入（jsonpW）刻意不排隊——那是使用者按了按鈕在等的動作，
+ * 排在背景讀取後面會讓他覺得按鈕壞了。
+ */
+var GAS_TAIL = Promise.resolve();
+function queueRead(fn) {
+  var p = GAS_TAIL.then(fn, fn);      // 前一支成敗都往下走，不讓失敗卡住整條
+  GAS_TAIL = p.catch(function () { });  // 尾巴永遠 resolved，避免 unhandled rejection
+  return p;
+}
+
 function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
 function __setCryptoForTest(c) { _subtle = c; _fpCache = {}; }
 function __resetForTest() {
@@ -260,6 +281,7 @@ if (typeof module !== 'undefined') module.exports = {
   cacheClearAll: cacheClearAll,
   cacheRevoke: cacheRevoke,
   persistBatchSlices: persistBatchSlices,
+  queueRead: queueRead,
   __setStoreForTest: __setStoreForTest,
   __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest
