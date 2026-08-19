@@ -172,3 +172,24 @@ test('沒有 store（隱私模式）→ 整個模組退化成「永遠沒有快�
   assert.deepEqual(map, {});
   BC.__resetForTest();
 });
+
+test('沒有 WebCrypto（非 secure context）→ 整個模組退化成「永遠沒有快取」', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  BC.__setCryptoForTest(null);
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'x' });
+  assert.equal(st.length, 0, '沒有 subtle 就不該寫入任何東西');
+  const map = await BC.cacheBootstrap('tok-A');
+  assert.deepEqual(map, {}, 'bootstrap 要回空 map，不得拋錯');
+  BC.__resetForTest();
+});
+
+test('WebCrypto 消失不得讓既有快取變成拋錯', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'x' });   // 先用真 crypto 寫一筆
+  assert.equal(st.length, 1);
+  BC.__setCryptoForTest(null);                                        // 再讓 crypto 消失
+  const map = await BC.cacheBootstrap('tok-A');                       // 不得拋錯
+  assert.deepEqual(map, {});
+  assert.equal(st.length, 1, '解不開不代表要刪——沒有 subtle 時不該動磁碟');
+  BC.__resetForTest();
+});

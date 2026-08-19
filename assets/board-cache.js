@@ -215,8 +215,10 @@ function cacheClearAll() {
 function cacheRevoke() { _revoked = true; _mem = {}; }
 
 function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
+function __setCryptoForTest(c) { _subtle = c; _fpCache = {}; }
 function __resetForTest() {
   _store = (typeof localStorage !== 'undefined') ? localStorage : null;
+  _subtle = (typeof crypto !== 'undefined' && crypto.subtle) ? crypto.subtle : null;
   _mem = {}; _revoked = false; _fpCache = {};
 }
 
@@ -235,5 +237,6 @@ if (typeof module !== 'undefined') module.exports = {
   cacheClearAll: cacheClearAll,
   cacheRevoke: cacheRevoke,
   __setStoreForTest: __setStoreForTest,
+  __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest
 };
