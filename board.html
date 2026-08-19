@@ -11,6 +11,14 @@
 <style>
   .brand { text-align: center; margin: 0 0 14px; }
   .brand img { width: 100%; max-width: 240px; height: auto; }
+  /* 未送出警語：放在頁首固定區，不可塞進會被 innerHTML='' 清空的資料容器 */
+  .alert-bar { display: none; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px;
+               background: #fdecec; border: 1px solid #f5b5b5; color: #b00;
+               font-size: 14px; font-weight: 600; line-height: 1.6; }
+  .toplinks { text-align: right; margin: 0 0 10px; }
+  .toplinks a { font-size: 13.5px; color: #06c755; text-decoration: none; font-weight: 600; }
+  .toplinks a:hover { text-decoration: underline; }
+  .toplinks a[hidden] { display: none; }
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
@@ -116,6 +124,8 @@
   }
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+<div id="alertBar" class="alert-bar"></div>
+<div class="toplinks"><a id="msgLogLink" target="_blank" rel="noopener" hidden>訊息紀錄 →</a></div>
 <div class="tabs">
   <button id="tabbtn-checkin" class="on" onclick="showTab('checkin')">新人報到</button>
   <button id="tabbtn-hr" onclick="showTab('hr')">人事異動</button>
@@ -243,6 +253,27 @@ function jsonp(action,params){
 function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
 function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 var TOKEN=getToken();
+
+// ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
+// 連結用 ?mt= 帶 hub 的 viewer token，與看板自己的 ?t= 分開：
+// 一顆給 line-platform、一顆給 hub，權限來源不同，不可共用。
+// 沒帶 mt 就不顯示連結——顯示一個點了必定失敗的連結比不顯示更糟。
+(function () {
+  var mt = new URLSearchParams(location.search).get('mt') || '';
+  var a = document.getElementById('msgLogLink');
+  if (mt) {                       // messages.html 與本頁同站台，用相對路徑
+    a.href = 'messages.html?t=' + encodeURIComponent(mt);
+    a.hidden = false;
+  }
+})();
+
+jsonp('getUndelivered', { token: TOKEN }).then(function (r) {
+  if (r && r.ok && r.pending > 0) {
+    var bar = document.getElementById('alertBar');
+    bar.textContent = '🔴 有 ' + r.pending + ' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
+    bar.style.display = 'block';
+  }
+});
 // 首載合併（2026-08-06）：4 支 /exec → 1 支 batch。/exec 每請求固定成本 2-4s、偶發 8-17s 長尾，
 // 多支並行佔執行位是「連線逾時」爆量排隊的火種。pick(a) 把整包切片給既有 render 函式；
 // batch 整包失敗時每個 key 都拿到 {ok:false,msg:…} → 各區塊走原本的錯誤路徑，行為與單支失敗相同。
