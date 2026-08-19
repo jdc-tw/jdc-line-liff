@@ -258,6 +258,55 @@ function queueRead(fn) {
   return p;
 }
 
+/**
+ * 撤銷時蓋上全頁覆蓋層。
+ *
+ * 放這裡不放 deny-no-role.js：那支只被 board/stats/hr-stats 載入，attend.html 沒有它。
+ * 四頁都會載入本模組，放這裡才涵蓋得完整。
+ *
+ * ⚠️ 不延遲。deny-no-role 的 2.5 秒延遲是為了處理「附屬 action 被擋、主功能其實有權」；
+ * 權威驗證請求被拒沒有這個歧義，要立即遮蔽——底下的畫面上有 153 人的姓名與意見。
+ * 用覆蓋層不改寫 document.body：並行中的 .then 仍會操作 DOM，抽掉 body 會讓它們拿到 null。
+ */
+function revokedOverlay() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('jdc-revoked')) return;
+  var ov = document.createElement('div');
+  ov.id = 'jdc-revoked';
+  ov.setAttribute('style', 'position:fixed;inset:0;z-index:99999;background:#fff;'
+    + 'display:flex;align-items:center;justify-content:center;padding:24px;'
+    + "font-family:-apple-system,'PingFang TC','Microsoft JhengHei',sans-serif");
+  ov.innerHTML = '<div style="max-width:460px;text-align:center">'
+    + '<div style="font-size:20px;font-weight:700;margin-bottom:12px;color:#ac1535">連結已失效</div>'
+    + '<div style="color:#666;font-size:15px;line-height:1.8">這條看板連結已經停用。<br>'
+    + '請聯絡系統維護者取得新的連結。</div></div>';
+  document.body.appendChild(ov);
+}
+
+/**
+ * 權威驗證請求回來之後的統一處置。撤銷時做完五件事：
+ * 清持久快取 → 清記憶體 → （呼叫端負責丟棄第二發並停送 fallback）→ 蓋覆蓋層 → 停止寫入。
+ */
+function handleVerdict(token, resp) {
+  var v = cacheVerdict(resp);
+  if (v !== 'revoked') return Promise.resolve(v);
+  return cacheClear(token).then(function () {
+    cacheRevoke();
+    revokedOverlay();
+    return 'revoked';
+  });
+}
+
+function isRevoked() { return _revoked; }
+
+/** 離線時附在 meta 列的一句話。時間取該筆快取的 savedAt。 */
+function offlineLabel(savedAt) {
+  var d = new Date(savedAt);
+  var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  return '離線·資料停在 ' + (d.getMonth() + 1) + '/' + d.getDate()
+    + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+
 function __setStoreForTest(s) { _store = s; _mem = {}; _revoked = false; _fpCache = {}; }
 function __setCryptoForTest(c) { _subtle = c; _fpCache = {}; }
 function __resetForTest() {
@@ -282,6 +331,10 @@ if (typeof module !== 'undefined') module.exports = {
   cacheRevoke: cacheRevoke,
   persistBatchSlices: persistBatchSlices,
   queueRead: queueRead,
+  revokedOverlay: revokedOverlay,
+  handleVerdict: handleVerdict,
+  isRevoked: isRevoked,
+  offlineLabel: offlineLabel,
   __setStoreForTest: __setStoreForTest,
   __setCryptoForTest: __setCryptoForTest,
   __resetForTest: __resetForTest

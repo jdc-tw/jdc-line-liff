@@ -307,3 +307,47 @@ test('queueRead 回傳值就是 fn 的回傳值', async () => {
   const v = await BC.queueRead(() => Promise.resolve(42));
   assert.equal(v, 42);
 });
+
+test('handleVerdict：撤銷 → 清持久快取、清記憶體、之後 cacheGet 恆 null', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'x' });
+  await BC.cacheBootstrap('tok-A');
+  assert.ok(BC.cacheGet('listOptions'));
+
+  const v = await BC.handleVerdict('tok-A', { ok: false, msg: '無權限或連結已失效。' });
+  assert.equal(v, 'revoked');
+  assert.equal(st.length, 0, '磁碟要清空');
+  assert.equal(BC.cacheGet('listOptions'), null, '記憶體也要清');
+  assert.equal(BC.isRevoked(), true);
+  BC.__resetForTest();
+});
+
+test('handleVerdict：離線 → 保留快取，不標撤銷', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'x' });
+  await BC.cacheBootstrap('tok-A');
+
+  const v = await BC.handleVerdict('tok-A', { ok: false, msg: '連線逾時，請重新整理。' });
+  assert.equal(v, 'offline');
+  assert.ok(BC.cacheGet('listOptions'), '離線時快取必須留著');
+  assert.equal(BC.isRevoked(), false);
+  BC.__resetForTest();
+});
+
+test('handleVerdict：角色不符 → 什麼都不做（2026-07-30 事故的迴歸測試）', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheSave('tok-A', 'listOptions', { ok: true, v: 'x' });
+  await BC.cacheBootstrap('tok-A');
+
+  const v = await BC.handleVerdict('tok-A', { ok: false, msg: '此連結非您的權限範圍。' });
+  assert.equal(v, 'ok');
+  assert.ok(BC.cacheGet('listOptions'), '角色不符不得清快取');
+  BC.__resetForTest();
+});
+
+test('offlineLabel：把時間戳講成人看得懂的一句話', () => {
+  const s = BC.offlineLabel(new Date(2026, 7, 19, 9, 5).getTime());
+  assert.ok(s.indexOf('離線') >= 0);
+  assert.ok(s.indexOf('8/19') >= 0);
+  assert.ok(s.indexOf('09:05') >= 0);
+});
