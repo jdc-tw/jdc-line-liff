@@ -56,6 +56,7 @@
 <div class="sub" id="sub">載入中…</div>
 <div id="main"></div>
 <script src="assets/deny-no-role.js"></script>
+<script src="assets/board-cache.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
@@ -71,9 +72,6 @@ function jsonp(action,params){
     .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return denyNoRole(JSON.parse(t.slice(a+1,b)));})])
     .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時，請重新整理。':'連線失敗'};});}
-// SWR：sessionStorage 秒顯上次結果、背景重抓校正（同分頁導頁保留、關分頁即清）。GAS /exec 每發 2-4s 固定往返（快取/暖容器都削不掉），靠此遮掉等待。
-function swrGet(k){try{var c=sessionStorage.getItem(k);return c?JSON.parse(c):null;}catch(e){return null;}}
-function swrSet(k,v){try{sessionStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 // 色票（dataviz 驗證過：#3d8f63/#b9863f 全項通過；序列段=同色深淺、非彩虹）
@@ -253,20 +251,45 @@ function renderHr(r){
   html+='</div>';
   main.innerHTML=html;
 }
-(function(){
-  var k='swr:getHrStats', c=swrGet(k), painted=false;
-  if(c){renderHr(c);painted=true;}                               // 重訪：sessionStorage(含名)秒顯
-  else{                                                          // 首訪：靜態聚合(無名)先秒顯圖表(~0.4s·Pages CDN)，退休名單顯示🔒
-    fetch('hr-stats-pub.json?v='+Date.now(),{cache:'no-store'})
-      .then(function(r){return r.json();})
-      .then(function(p){if(p&&p.ok&&!painted){renderHr(p);painted=true;}})
-      .catch(function(){});
-  }
-  jsonp('getHrStats',{token:q('t')}).then(function(r){           // 即時(含名·token gated)校正並填退休名單
-    if(r&&r.ok){swrSet(k,r);renderHr(r);}
-    else if(!painted){renderHr(r);}
+(function () {
+  var TOKEN = q('t');
+  var painted = false;
+  cacheBootstrap(TOKEN).then(function () {
+    var c = cacheGet(N.hrStats);
+    if (c) { renderHr(c.value); painted = true; markOffline(null); }   // 重訪：秒顯
+    else {                                                              // 首訪：靜態聚合先畫圖表
+      fetch('hr-stats-pub.json?v=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (p) { if (p && p.ok && !painted) { renderHr(p); painted = true; } })
+        .catch(function () { });
+    }
+    return queueRead(function () {
+      return jsonp('getHrStats', { token: TOKEN }).then(function (r) {
+        return handleVerdict(TOKEN, r).then(function (v) {
+          if (v === 'revoked') return;                       // 覆蓋層已蓋上
+          if (v === 'offline') { if (c) markOffline(c.savedAt); else if (!painted) renderHr(r); return; }
+          return cacheSave(TOKEN, N.hrStats, r).then(function () {
+            if (r && r.ok) { renderHr(r); markOffline(null); }
+            else if (!painted) renderHr(r);
+          });
+        });
+      });
+    });
   });
 })();
+
+/** 離線標示：有 savedAt 就掛上去，傳 null 代表連上了、拿掉標示。
+ *  掛在 #sub（頁面標題下的 meta 列）——本頁沒有 id="meta"，#sub 是同一個角色：
+ *  attend.html/checkin.html/stats.html 都用 id="meta" 放這行「載入中…→資料來源說明」的字。 */
+function markOffline(savedAt) {
+  var el = document.getElementById('sub');
+  if (!el) return;
+  var tag = document.getElementById('offline-tag');
+  if (savedAt == null) { if (tag) tag.parentNode.removeChild(tag); return; }
+  if (!tag) { tag = document.createElement('span'); tag.id = 'offline-tag';
+    tag.setAttribute('style', 'margin-left:8px;color:#b26a00;font-size:13px'); el.appendChild(tag); }
+  tag.textContent = offlineLabel(savedAt);
+}
 </script>
 </body>
 </html>
