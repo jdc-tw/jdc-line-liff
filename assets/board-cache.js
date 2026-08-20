@@ -246,6 +246,42 @@ function persistBatchSlices(token, envelope, requestItems, nameOf) {
 }
 
 /**
+ * 「使用者動過的區塊，背景重繪不准蓋掉」。
+ *
+ * 為何存在（2026-08-20，誤發事故當天）：SWR 的形態是「先畫快取、網路回來再畫一次」。
+ * 對名冊、統計數字這種唯讀區塊沒問題；**對含有輸入欄位的區塊，第二次繪製會靜默抹掉
+ * 使用者已經表達的意圖**。當天 stats.html 的資深通知就是這樣——使用者取消勾選 18 人，
+ * 約 2 秒後網路回來重繪、19 人全部勾回去，他按送出，19 位同仁各收到不該收的訊息。
+ *
+ * board.html 有兩處同樣形狀且更安靜：
+ *   #pending    新人報到核准卡——姓名／生日／公司信箱／員工編號四個欄位，
+ *               人事正在補打時被抹掉 → 錯的資料寫進名冊，**沒有任何提示**
+ *   #hr-pending 人事異動——生效日（核定）
+ *
+ * 為什麼不用「資料相同就不重繪」的雜湊比對：那只在資料沒變時有效，
+ * 而真正出事的時刻正是資料變了（所以才要重繪）。那是緩解，不是修好，
+ * 而且會讓下一個人以為這裡已經安全（見 memory feedback_overlapping_guards_untested）。
+ *
+ * 用法：容器掛一次 watchDirty(id)，背景重繪前問 isDirty(id)；
+ * 使用者主動觸發的重載（核准後刷新）呼叫 clearDirty(id) 再畫。
+ *
+ * 監聽用捕獲階段掛在容器上，子元素被 innerHTML 換掉也不必重掛。
+ */
+var _dirty = {};
+function watchDirty(id) {
+  if (typeof document === 'undefined') return;
+  var el = document.getElementById(id);
+  if (!el || el.__jdcDirtyBound) return;
+  el.__jdcDirtyBound = true;
+  var mark = function () { _dirty[id] = true; };
+  el.addEventListener('input', mark, true);
+  el.addEventListener('change', mark, true);
+}
+function isDirty(id) { return !!_dirty[id]; }
+function clearDirty(id) { delete _dirty[id]; }
+function __resetDirtyForTest() { _dirty = {}; }
+
+/**
  * 讀取請求的序列佇列——同頁最多一支 /exec 在飛。
  *
  * 為何需要（2026-08-19）：「不並行」原本是一條要人記得的規則，而現況有三處
@@ -408,6 +444,10 @@ if (typeof module !== 'undefined') module.exports = {
   cacheRevoke: cacheRevoke,
   persistBatchSlices: persistBatchSlices,
   queueRead: queueRead,
+  watchDirty: watchDirty,
+  isDirty: isDirty,
+  clearDirty: clearDirty,
+  __resetDirtyForTest: __resetDirtyForTest,
   revokedOverlay: revokedOverlay,
   handleVerdict: handleVerdict,
   isRevoked: isRevoked,
