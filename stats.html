@@ -1070,6 +1070,27 @@ function snLoad(){
   });
 }
 function renderSenior(r){
+    // ⚠️ 重繪前先記下使用者已經勾好的人（2026-08-20 事故修正）。
+    //
+    // 為什麼需要：snLoad() 會繪製**兩次**——快取先秒顯一次，網路回來再一次。
+    // 原本每次重建都把所有人寫死成 checked，所以使用者取消 18 個之後，
+    // 約 2 秒後第二段繪製把 19 個全部勾回去，畫面上沒有任何提示。
+    // 2026-08-20 因此誤發 4 批、19 位資深同仁各收到 4 則，LINE 收不回來。
+    //
+    // 這個 keepChecked 同時做兩件事：
+    //   ① 保住使用者已表達的選擇（治重繪覆寫）
+    //   ② 首次繪製時它是空的 ⇒ 預設變成「全不勾」（治誤觸範圍）
+    // 代價不對稱：漏勾只是少發一則、補發即可；多勾是真人收到收不回的訊息。
+    // 佳岑要全發，上面本來就有「全選」鈕——按下去是明確的意圖，預設全勾不是。
+    //
+    // ⚠️ 刻意留白：「兩段繪製」這個形狀**留著**（2026-08-20 使用者拍板保留秒顯，
+    //    只修漏洞）。所以下一個人在這張卡加任何新的輸入元素（輸入框、下拉、勾選）時，
+    //    **必須自己處理重繪保留**，否則同一種錯會再來一次。
+    //    要不要改成「這塊不吃快取」歸使用者決定，他已經在 2026-08-20 選過一次保留。
+    var keepChecked={};
+    [].slice.call(document.querySelectorAll('.sn-ck:checked')).forEach(function(c){
+      keepChecked[c.dataset.uid]=true;
+    });
     var box=document.getElementById('sn-people');
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
     SN=r;
@@ -1108,7 +1129,7 @@ function renderSenior(r){
                     :p.status==='ambiguous'?'名冊有同名，請人工確認':'';
             return '<label class="tag-row" style="'+(bad?'opacity:.5;':'')+'font-weight:400">'
               +'<input type="checkbox" class="sn-ck" data-uid="'+esc(p.userId)+'" '
-              +(bad?'disabled':'checked')+' style="width:auto;margin:0">'
+              +(bad?'disabled':(keepChecked[p.userId]?'checked':''))+' style="width:auto;margin:0">'
               +'<span class="nm-lg">'+esc(p.name)+'</span>'
               +'<span class="tag">'+esc(p.unit)+'</span>'
               +(note?'<span class="tag r">'+esc(note)+'</span>':'')
@@ -1204,6 +1225,10 @@ function snSend(){
     var t='已送出 '+r.sent+' 則';
     if(r.failed)t+='；失敗 '+r.failed+' 則：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');
     setMsg('sn-msg',t,r.failed?'err':'ok');
+    // 送出成功後主動清掉勾選。重繪現在會**保留**勾選（見 renderSenior），
+    // 不清的話剛送出去的那批人會一直勾著，再按一次就是重發同一批給同一群人。
+    // 這是主動動作，與「被動重繪保留」不衝突；順序也必須在 snLoad() 之前。
+    [].slice.call(document.querySelectorAll('.sn-ck')).forEach(function(c){c.checked=false;});
     snLoad();   // 重載以更新發送紀錄
   });
 }
