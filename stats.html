@@ -1222,7 +1222,11 @@ function snSend(){
     tpl:document.getElementById('sn-tpl').value,userIds:JSON.stringify(uids)},120000).then(function(r){
     document.getElementById('sn-send').disabled=false;
     if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'發送失敗','err');return;}
-    var t='已送出 '+r.sent+' 則';
+    // r.sent 含被冪等網擋下的那幾則（它們回 ok:true，因為對方確實收到過）。
+    // 畫面必須報「這一次真的送了幾則」，否則操作者以為補送成功而其實沒送。
+    var skip=r.skipped||0, t='已送出 '+(r.sent-skip)+' 則';
+    if(skip)t+='；另有 '+skip+' 則（'+(r.skippedNames||[]).join('、')
+      +'）在 60 秒內已經收過一模一樣的內容，這次沒有再送。要重送請等一分鐘。';
     if(r.failed)t+='；失敗 '+r.failed+' 則：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');
     setMsg('sn-msg',t,r.failed?'err':'ok');
     // 送出成功後主動清掉勾選。重繪現在會**保留**勾選（見 renderSenior），
@@ -1534,6 +1538,10 @@ function bcSendOne(){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'補發失敗','err');return;}
     _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     if(r.failed){setMsg('bc-msg','補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、'),'err');return;}
+    // 這一格最要緊：按補發的理由通常正是「他說沒收到」。這次真的沒送卻回
+    // 「已補發」，等於告訴他做了一件沒做的事。
+    if(r.skipped){setMsg('bc-msg','這次沒有送——'+who+' 在 60 秒內已經收過一模一樣的內容。'
+      +'如果他真的沒收到，等一分鐘後再按一次。','err');return;}
     setMsg('bc-msg','已補發給 '+who,'ok');
   });
 }
@@ -1554,7 +1562,9 @@ function bcSend(){
     _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
-    var t='已送出 '+r.sent+' 則';
+    // 同 snSend：r.sent 含被冪等網擋下的，要扣掉才是這一次真的送出的數量。
+    var skip=r.skipped||0, t='已送出 '+(r.sent-skip)+' 則';
+    if(skip)t+='；另有 '+skip+' 則在 60 秒內已經收過一模一樣的內容，這次沒有再送';
     if(r.failed){t+='；失敗 '+r.failed+' 則：'
       +r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');}
     setMsg('bc-msg',t,r.failed?'err':'ok');
