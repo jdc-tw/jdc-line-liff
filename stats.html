@@ -435,7 +435,7 @@
       <div class="scope">
         <select id="bc-one-unit" onchange="bcFillPeople()" style="flex:1;font-size:13.5px;padding:8px 10px"></select>
         <select id="bc-one-sel" style="flex:1;font-size:13.5px;padding:8px 10px"></select>
-        <button class="btn" onclick="bcSendOne()">補發</button></div>
+        <button class="btn" id="bc-one-send" onclick="bcSendOne()">補發</button></div>
     </div>
   </div>
 
@@ -1520,10 +1520,17 @@ function bcSendOne(){
   if(!sel.value){setMsg('bc-msg','請先選一位同仁','err');return;}
   var who=sel.selectedOptions[0].textContent;
   if(!confirm('補發一則給「'+who+'」？\n\nLINE 訊息送出後收不回來。'))return;
+  // ⚠️ 送出中鎖住按鈕（2026-08-20 補）。本頁三個發送入口只有這支沒鎖：
+  //    snSend 有、bcSend 有、bcSendOne 沒有。GAS 要 2–4 秒才回，
+  //    而唯一的回饋是下面那行小字、按鈕外觀完全不變——手機上點了沒反應就會再點，
+  //    每點一次就真的補發一則。2026-08-20 有一位同仁因此收到 4 則報到連結。
+  var btn=document.getElementById('bc-one-send');
+  btn.disabled=true;
   setMsg('bc-msg','補發中…','ok');
   jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),
     tpl:document.getElementById('bc-tpl').value||'',
     userIds:JSON.stringify([sel.value])},60000).then(function(r){
+    btn.disabled=false;   // 放在 then 開頭，涵蓋下面每一條 return 分支
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'補發失敗','err');return;}
     _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     if(r.failed){setMsg('bc-msg','補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、'),'err');return;}
