@@ -500,3 +500,57 @@ test('revokedOverlay：四個位移要長寫，不可只靠 inset（Safari 14.1 
     delete global.document;
   }
 });
+
+// ── 髒旗標：使用者動過的區塊，背景重繪不准蓋掉（2026-08-20 誤發事故後補）──────
+// 在 vm 裡給一個假 document 真的跑一次事件流程——只測 isDirty/clearDirty 的純語意
+// 會漏掉「監聽有沒有真的掛上」，而那正是這支唯一會壞的地方。
+const vm = require('node:vm');
+const fs = require('node:fs');
+const path = require('node:path');
+function loadWithFakeDom() {
+  const listeners = {};
+  const el = {
+    __jdcDirtyBound: false,
+    addEventListener(type, fn, capture) { (listeners[type] = listeners[type] || []).push({ fn, capture }); },
+  };
+  const ctx = {
+    console, Promise, Date, Math, JSON, Object, Array, String, Number, isFinite,
+    document: { getElementById(id) { return id === 'box' ? el : null; } },
+  };
+  vm.createContext(ctx);
+  const src = fs.readFileSync(path.join(__dirname, '..', 'assets', 'board-cache.js'), 'utf8')
+    .replace(/if \(typeof module[\s\S]*$/, '');
+  vm.runInContext(src, ctx, { filename: 'board-cache.js' });
+  return { ctx, el, listeners };
+}
+
+test('watchDirty：把 input／change 掛在容器上，且用捕獲階段（子元素被換掉也不必重掛）', () => {
+  const { ctx, el, listeners } = loadWithFakeDom();
+  assert.equal(ctx.isDirty('box'), false, '起始不該是髒的');
+  ctx.watchDirty('box');
+  assert.deepEqual(Object.keys(listeners).sort(), ['change', 'input']);
+  assert.ok(listeners.input.every((l) => l.capture === true), '必須用捕獲階段');
+  assert.equal(el.__jdcDirtyBound, true);
+});
+
+test('watchDirty：同一個容器掛兩次不會重複綁', () => {
+  const { ctx, listeners } = loadWithFakeDom();
+  ctx.watchDirty('box'); ctx.watchDirty('box'); ctx.watchDirty('box');
+  assert.equal(listeners.input.length, 1, '重複呼叫應該只綁一次');
+});
+
+test('watchDirty：使用者一動就變髒，clearDirty 才清掉', () => {
+  const { ctx, listeners } = loadWithFakeDom();
+  ctx.watchDirty('box');
+  assert.equal(ctx.isDirty('box'), false);
+  listeners.input[0].fn();                       // 模擬使用者打字
+  assert.equal(ctx.isDirty('box'), true, '打字之後必須是髒的');
+  ctx.clearDirty('box');
+  assert.equal(ctx.isDirty('box'), false, 'clearDirty 之後必須乾淨');
+});
+
+test('watchDirty：容器不存在時安靜略過，不得拋錯', () => {
+  const { ctx } = loadWithFakeDom();
+  assert.doesNotThrow(() => ctx.watchDirty('不存在的id'));
+  assert.equal(ctx.isDirty('不存在的id'), false);
+});

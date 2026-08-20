@@ -734,19 +734,26 @@ function loadHr(){
   if(hrFirst){
     CACHE_READY.then(function(){
       cached=cacheGet(N.hrPending);
-      if(cached)paintHr(cached.value);
+      if(cached){paintHr(cached.value);watchDirty('hr-pending');}
     });
+  }else{
+    // 核定／駁回／轉移之後的刷新是**使用者主動觸發**的，本來就該看到新的——
+    // 清掉髒標記，不要被上一輪的編輯狀態擋住。
+    clearDirty('hr-pending');
   }
   // 首發吃 batch 切片；之後的刷新（核定/駁回/轉移後）必須重打，不能回舊快照
   var src=hrFirst?pick('getHrPending'):jsonp('getHrPending',{token:TOKEN});
   hrFirst=false;
   src.then(function(r){
     if(r&&r.ok){
+      logLoaded=false;   // 異動紀錄可能已變，下次切過去重抓（與畫不畫無關，一律要設）
+      // ⚠️ 同 load()：這格有「生效日（核定）」可編輯，重繪會抹掉使用者改到一半的日期。
+      if(isDirty('hr-pending')){hintStale('hr-pending');return;}
       paintHr(r);
-      logLoaded=false;   // 異動紀錄可能已變，下次切過去重抓
     }
     // 失敗時只有「畫面上還沒有東西」才把錯誤蓋上去——否則會把剛秒顯的內容抹掉
     else if(!cached)paintHr(r);
+    watchDirty('hr-pending');
   });
 }
 // 只負責畫。成功與失敗兩種輸入都收，快取與網路兩條路才能共用同一份繪製邏輯。
@@ -837,18 +844,41 @@ function addDoneItem(o, prepend){
   list.insertAdjacentHTML(prepend?'afterbegin':'beforeend', doneItemHtml(o));
 }
 
+/**
+ * 「你在編輯，所以畫面沒更新」的提示列（2026-08-20）。
+ * 沒有這一行的話，背景資料變了而畫面不動，使用者會以為自己看到的是最新的。
+ * 不重繪是為了保護他打到一半的字；但不告訴他就變成另一種騙人。
+ */
+function hintStale(id){
+  var box=document.getElementById(id); if(!box||!box.parentNode) return;
+  var tag=document.getElementById(id+'-stale');
+  if(!tag){
+    tag=document.createElement('div');
+    tag.id=id+'-stale';
+    tag.setAttribute('style','margin:0 0 10px;padding:8px 12px;border-radius:8px;'
+      +'background:#fff8e1;border:1px solid #ffe082;color:#8a6d00;font-size:14px;line-height:1.6');
+    box.parentNode.insertBefore(tag,box);
+  }
+  tag.textContent='⚠️ 伺服器上有較新的資料，但你正在下面編輯，畫面先不更新以免蓋掉你打的字。送出後或重新整理即可看到最新版。';
+}
+
 function load(){
   var co=null, cp=null;
   CACHE_READY.then(function(){
     co=cacheGet(N.checkinOptions); cp=cacheGet(N.checkinPending);
-    if(co&&cp)renderLoad([co.value,cp.value]);            // 秒顯
+    if(co&&cp){renderLoad([co.value,cp.value]);watchDirty('pending');}   // 秒顯
     else document.getElementById('pending').innerHTML='<div class="empty">載入中…</div>';
   });
   // 兩份資料改由首載 batch 一次帶回（load() 只在開頁呼叫一次，直接吃切片即可）
   // ⚠️ 這裡不呼叫 cacheSave——FIRST 裡的 persistBatchSlices 已經存過，呼叫端再存一次就繞過唯一入口。
   Promise.all([pick('getCheckinOptions'), pick('getCheckinPending')]).then(function(rs){
+    // ⚠️ 這裡是 SWR 的第二次繪製。這幾張卡上有四個可編輯欄位（姓名／生日／公司信箱／員編），
+    // 人事正在補打時直接重繪會**靜默抹掉她打的字**，欄位回到後端舊值，她按核准就寫錯資料進名冊。
+    // 2026-08-20 stats.html 的資深通知就是同一形狀出事的（19 人誤發），只是那邊是吵的、這邊是安靜的。
+    if(isDirty('pending')){hintStale('pending');return;}
     if(rs[1]&&rs[1].ok)renderLoad(rs);
     else if(!(co&&cp))renderLoad(rs);
+    watchDirty('pending');
   });
 }
 function renderLoad(rs){
