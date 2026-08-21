@@ -452,7 +452,8 @@
 <script src="assets/seating.js"></script>
 <script src="assets/xlsx-post.js"></script>
 <script src="assets/stats-view.js"></script>
-<script src="assets/qr-badge.js"></script>
+<script src="assets/send-modal.js"></script>
+  <script src="assets/qr-badge.js"></script>
 <script src="assets/board-cache.js"></script>
 <script>
 // esc() 住在 assets/stats-view.js，本頁 40 幾處在用（含各種錯誤訊息的組字串）。
@@ -1202,51 +1203,6 @@ function snDelTpl(){
     snLoad();
   });
 }
-// ── 傳送狀態視窗（2026-08-21）─────────────────────────────────────────
-// 為何：使用者實測後指出「狀態說明的文字位置很不明顯」。當天 17:29 那一次
-// 三次呼叫、兩次被冪等網攔下——**看不到回饋就會再按一次**，那正是誤發的形狀。
-// 所以「傳送中」用擋住整個畫面的視窗，讓底下的按鈕**按不到**：
-// 防呆靠版面擋住，不靠使用者的自制力，也不只靠 disabled（disabled 沒有視覺重量）。
-//
-// ⚠️ busy 視窗沒有關閉鍵、點背景也不關。唯一的出口是請求回來。
-//    jsonp() 最後一段 catch 會把任何失敗轉成 {ok:false}，所以 .then 一定會執行，
-//    視窗不會永遠關不掉——這一點是這個設計能成立的前提，改 jsonp 時要一起想。
-var _SENDMODAL=null;
-function sendModalClose(){
-  if(_SENDMODAL&&_SENDMODAL.parentNode)_SENDMODAL.parentNode.removeChild(_SENDMODAL);
-  _SENDMODAL=null;
-}
-function sendModal(state,text){
-  sendModalClose();
-  var ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;'
-    +'display:flex;align-items:center;justify-content:center;padding:20px';
-  var card=document.createElement('div');
-  card.style.cssText='background:#fff;border-radius:4px;padding:22px 20px;'
-    +'max-width:320px;width:100%;text-align:center';
-  var msg=document.createElement('div');
-  msg.style.cssText='font-size:15.5px;line-height:1.55;white-space:pre-line;color:'
-    +(state==='err'?'var(--bad)':'var(--ink)');
-  msg.textContent=text;                       // 一律 textContent，不塞 HTML
-  card.appendChild(msg);
-  if(state==='busy'){
-    var sub=document.createElement('div');
-    sub.style.cssText='margin-top:12px;font-size:13px;color:var(--ink3)';
-    sub.textContent='請不要關閉頁面';
-    card.appendChild(sub);
-  }else{
-    var b=document.createElement('button');
-    b.className='btn btn-pri2';b.textContent='知道了';
-    b.style.cssText='margin-top:16px;width:100%';
-    b.onclick=sendModalClose;
-    card.appendChild(b);
-    ov.onclick=function(e){if(e.target===ov)sendModalClose();};
-  }
-  ov.appendChild(card);document.body.appendChild(ov);
-  _SENDMODAL=ov;
-  if(state!=='busy')card.querySelector('button').focus();
-}
-
 // ── 呼叫 nonce（診斷儀器，2026-08-21）──────────────────────────────────
 // 為何：2026-08-20 誤發事故，使用者說只按了一次，後端卻被呼叫三次，成因至今未定案。
 // GAS 執行紀錄取不到，而且就算取得到也答不出這題——它分不出「瀏覽器送了三次」
