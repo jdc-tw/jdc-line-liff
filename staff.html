@@ -128,9 +128,16 @@
   #foot .n{font-weight:700;color:var(--mut);font-variant-numeric:tabular-nums}
   #foot .warn{color:var(--wa-fg)}
   /* 連結名稱不可從中間斷行——實機截圖看到「重新載入名／單」，讀起來像壞掉。 */
-  #diag a{white-space:nowrap}
-  #foot a{color:var(--mut)}
-  #foot a#wipe{color:#b08080}
+  #diag button{white-space:nowrap}
+  /* 這兩個原本是 <a href="#">，2026-08-21 改成 <button>。
+     為何：href="#" 只靠 preventDefault 擋著，處理函式若在那之前拋錯，網址就會多一個 `#`。
+     在 iOS 的獨立 App 模式下，**hash 變動會當場重設相機權限並中斷串流**
+     （WebKit bug 215884，狀態 RESOLVED/CONFIGURATION CHANGED，2024–2025 留言顯示仍在）。
+     現場那一下的代價是掃描站當場失效，而收益只是「長得像連結」——不值得。 */
+  #foot button{background:none;border:0;padding:0;font:inherit;color:var(--mut);
+               text-decoration:underline;cursor:pointer}
+  #foot button#wipe{color:#b08080}
+  #foot button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 </style></head><body>
 <div id="top">
   <div id="bar">
@@ -160,8 +167,8 @@
     <div id="qbadge">待送 0 筆</div>
     <div id="diag">
       <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
-      ｜<a href="#" id="reload" title="跟伺服器重新抓一次參加者名單。有人臨時補回覆、或桌次重新發佈後用">重新載入名單</a>
-      ｜<a href="#" id="wipe" title="把這台手機的名單與未回傳的報到全部清空，回到剛開頁的狀態">重設這台手機</a>
+      ｜<button type="button" id="reload" title="跟伺服器重新抓一次參加者名單。有人臨時補回覆、或桌次重新發佈後用">重新載入名單</button>
+      ｜<button type="button" id="wipe" title="把這台手機的名單與未回傳的報到全部清空，回到剛開頁的狀態">重設這台手機</button>
     </div>
   </div>
 </div>
