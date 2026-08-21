@@ -29,18 +29,56 @@
 <button data-mode="low">③ 低規格（640 寬・10fps）</button>
 <button data-mode="stop" class="stop">④ 關閉相機</button>
 
+<p class="lead" style="margin-top:20px">
+<b>第二輪</b>：①～③ 證實了「單純開相機」不會出現紅圖示。
+掃描站比這頁多做三件事——把影格畫進 canvas、讀回像素、jsQR 解碼。
+下面每一個按鈕多加一件，看是哪一件讓圖示跑出來。</p>
+
+<button data-mode="draw">⑤ 開相機 ＋ 把影格畫進 canvas（不讀像素、不解碼）</button>
+<button data-mode="read">⑥ ⑤ 再加上 getImageData 讀回像素（仍不解碼）</button>
+<button data-mode="full">⑦ ⑥ 再加上 jsQR 解碼 ＝ 掃描站的完整行為</button>
+
 <video id="v" playsinline muted></video>
 <pre id="log">尚未啟動。</pre>
 
+<script src="assets/jsQR.min.js"></script>
 <script>
 var CONSTRAINTS = {
   current: { video: { facingMode: 'environment', width: { ideal: 1280 }, frameRate: { ideal: 20, max: 24 } }, audio: false },
   bare:    { video: true, audio: false },
   low:     { video: { facingMode: 'environment', width: { ideal: 640 }, frameRate: { ideal: 10, max: 12 } }, audio: false }
 };
-var stream = null, lines = [];
+var stream = null, lines = [], rafId = 0, frames = 0, lastScan = 0;
+var cvs = document.createElement('canvas');
+var c2d = cvs.getContext('2d', { willReadFrequently: true });   // 與 staff.html 同參數
+
+/** 依 stage 決定每格做到哪一步：draw → read → full。節流與縮圖比照掃描站。 */
+function startLoop(stage) {
+  cancelAnimationFrame(rafId); frames = 0; lastScan = 0;
+  var v = document.getElementById('v');
+  (function tick() {
+    if (v.readyState === v.HAVE_ENOUGH_DATA && Date.now() - lastScan >= 80) {
+      lastScan = Date.now();
+      var w = Math.min(640, v.videoWidth) || 0;
+      if (w > 0) {
+        var h = Math.round(v.videoHeight * (w / v.videoWidth));
+        cvs.width = w; cvs.height = h;
+        c2d.drawImage(v, 0, 0, w, h);                                  // ⑤
+        if (stage !== 'draw') {
+          var img = c2d.getImageData(0, 0, w, h);                      // ⑥
+          if (stage === 'full' && window.jsQR) {
+            jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });  // ⑦
+          }
+        }
+        frames++;
+      }
+    }
+    rafId = requestAnimationFrame(tick);
+  })();
+}
 function log(s){ lines.unshift(s); document.getElementById('log').textContent = lines.slice(0,12).join('\n'); }
 function stopCam(){
+  cancelAnimationFrame(rafId); rafId = 0;
   if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
   document.getElementById('v').srcObject = null;
 }
@@ -49,15 +87,18 @@ document.querySelectorAll('button').forEach(function(b){
     var mode = b.getAttribute('data-mode');
     stopCam();
     if (mode === 'stop') { log('④ 已關閉相機（' + new Date().toLocaleTimeString() + '）'); return; }
+    var stage = (mode === 'draw' || mode === 'read' || mode === 'full') ? mode : '';
     try {
-      stream = await navigator.mediaDevices.getUserMedia(CONSTRAINTS[mode]);
+      // ⑤⑥⑦ 一律用①的相機設定，變數只留「多做了哪一步」
+      stream = await navigator.mediaDevices.getUserMedia(CONSTRAINTS[stage ? 'current' : mode]);
       var v = document.getElementById('v');
       v.srcObject = stream; await v.play();
       var s = stream.getVideoTracks()[0].getSettings();
       // 系統實際給了什麼，跟我們「要」的可能不一樣——這才是判斷依據
+      if (stage) startLoop(stage);
       log(b.textContent.slice(0,2) + ' 已開啟｜系統實際給：'
         + s.width + 'x' + s.height + ' @ ' + (s.frameRate ? Math.round(s.frameRate) : '?') + 'fps'
-        + '｜鏡頭 ' + (s.facingMode || '?'));
+        + '｜鏡頭 ' + (s.facingMode || '?') + (stage ? '｜迴圈：' + stage : ''));
     } catch (e) { log('❌ 失敗：' + e.name + ' ' + e.message); }
   });
 });

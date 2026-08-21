@@ -48,6 +48,19 @@ function fakeEl(tag) {
     querySelector() { return fakeEl(); },
     querySelectorAll() { return []; },
     insertAdjacentHTML() {},
+    // canvas：staff.html／camtest.html 都會取 2D context 拉影格。少了它，
+    // 任何在頂層碰 canvas 的頁面都會以「getContext is not a function」假紅。
+    getContext() {
+      return {
+        drawImage() {}, clearRect() {}, fillRect() {}, putImageData() {},
+        getImageData: (x, y, w, h) => ({
+          data: new Uint8ClampedArray(Math.max(0, (w || 0) * (h || 0) * 4)),
+          width: w || 0, height: h || 0,
+        }),
+        set fillStyle(v) {}, get fillStyle() { return '#000'; },
+      };
+    },
+    toDataURL() { return 'data:,'; },
   };
   el.parentNode = null;
   return el;
