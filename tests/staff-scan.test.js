@@ -1,7 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames,
-        seenLoad, seenSave, seenMerge, shouldHandleCode } = require('../assets/staff-scan.js');
+        seenLoad, seenSave, seenMerge, shouldHandleCode,
+        shouldScanNow, scanCanvasSize, SCAN_INTERVAL_MS, SCAN_MAX_W } = require('../assets/staff-scan.js');
 
 test('parseChkCode：格式正確回員編', () => {
   assert.deepEqual(parseChkCode('CHK|nendkai2026|00011|abc123', 'nendkai2026'),
@@ -169,4 +170,51 @@ test('對照組：把「停留中一律不讀」的舊行為寫出來，跟現�
   const 下一位 = ['CHK|a|00002|s', 'CHK|a|00001|s', 9000, HOLD_END, 9500];
   assert.equal(舊行為(...下一位), false, '舊行為會吞掉下一位');
   assert.equal(shouldHandleCode(...下一位), true, '現行必須放行——這一條就是修正本身');
+});
+
+// ── 掃描節流與解碼縮圖（2026-08-21）───────────────────────────────────────
+// 實測：全解析度 + 無節流 ＝ 每秒 546ms 的 JS 工作，手機持續滿載、發燙耗電。
+
+test('節流：間隔未到不解碼', () => {
+  assert.equal(shouldScanNow(1000, 950, 80), false);
+});
+
+test('節流：間隔到了就解碼（用 >= 而非 >，剛好等於也算）', () => {
+  assert.equal(shouldScanNow(1080, 1000, 80), true);
+  assert.equal(shouldScanNow(1079, 1000, 80), false);
+});
+
+test('節流：開頁第一格一定放行——lastScanAt=0 配真實的 epoch 時間', () => {
+  // ⚠️ 這裡要用真實的 Date.now() 量級。第一版我寫 shouldScanNow(1, 0, 80) 而它回 false，
+  // 但那個情境在瀏覽器不存在（now 恆為一兆多的 epoch，減 0 必然遠大於 80）。
+  // 拿不實際的測資去逼程式加一條永遠走不到的分支，是把測試的假設寫進產品裡。
+  assert.equal(shouldScanNow(Date.now(), 0, 80), true);
+});
+
+test('節流：預設間隔換算下來要落在 10–20 次/秒（太密沒必要、太疏會漏掃）', () => {
+  const fps = 1000 / SCAN_INTERVAL_MS;
+  assert.ok(fps >= 10 && fps <= 20, `實際 ${fps} 次/秒`);
+});
+
+test('縮圖：超過上限就等比縮，長寬比不變（壓扁的 QR 解不出來）', () => {
+  const r = scanCanvasSize(1280, 720, 640);
+  assert.deepEqual(r, { w: 640, h: 360 });
+});
+
+test('縮圖：相機本來就比上限小就照原樣，不放大', () => {
+  assert.deepEqual(scanCanvasSize(480, 360, 640), { w: 480, h: 360 });
+});
+
+test('縮圖：直式畫面也要維持比例', () => {
+  assert.deepEqual(scanCanvasSize(720, 1280, 640), { w: 640, h: 1138 });
+});
+
+test('縮圖：影格還沒準備好（0 或 NaN）回 0，呼叫端據此整格略過', () => {
+  assert.deepEqual(scanCanvasSize(0, 0, 640), { w: 0, h: 0 });
+  assert.deepEqual(scanCanvasSize(undefined, undefined, 640), { w: 0, h: 0 });
+});
+
+test('對照組：預設上限確實會讓 1280 被縮小，否則上面的縮圖測試等於沒測', () => {
+  assert.ok(SCAN_MAX_W < 1280);
+  assert.equal(scanCanvasSize(1280, 720).w, SCAN_MAX_W);
 });
