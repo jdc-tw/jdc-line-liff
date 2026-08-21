@@ -30,6 +30,34 @@ function applyScan(state, hash, snapshot, nowMs) {
   return { state: { seen: seen, queue: queue }, verdict: { type: 'ok', person: person } };
 }
 
+/**
+ * 已掃名單（hash 集合）的存取。storage 由呼叫端注入——瀏覽器傳 localStorage，
+ * 測試傳假的；不注入就只能在真瀏覽器裡驗，而這一段正是 2026-08-21 那個缺陷的修法本體。
+ *
+ * 缺陷長相：state.seen 原本只活在記憶體，快照的 person.checked 又是下載當下的凍結值。
+ * 重新整理後兩者一起失憶 → 同一個人再掃一次被判成 ok → 畫面說「已受理」，
+ * 看起來就像他剛剛才報到成功。資料由後端冪等擋住，**壞的只有畫面，而畫面是操作員唯一的依據**。
+ */
+function seenLoad(storage, key) {
+  try {
+    var v = JSON.parse(storage.getItem(key) || '{}');
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  } catch (_) { return {}; }
+}
+function seenSave(storage, key, seen) {
+  try { storage.setItem(key, JSON.stringify(seen || {})); return true; } catch (_) { return false; }
+}
+
+/** 後端回的全場已報到員編併入 seen（跨站防重）。empToHash 查不到的略過——沒有 hash 就對不上快照。 */
+function seenMerge(seen, allChecked, empToHash) {
+  var out = Object.assign({}, seen || {});
+  (allChecked || []).forEach(function (emp) {
+    var h = empToHash[emp];
+    if (h) out[h] = true;
+  });
+  return out;
+}
+
 function chunkByLen(rows, maxLen) {
   var packs = [], cur = [];
   for (var i = 0; i < rows.length; i++) {
@@ -53,4 +81,4 @@ function searchNames(nameTable, query) {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames };
+if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge };
