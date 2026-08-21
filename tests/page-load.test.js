@@ -28,7 +28,7 @@ const ROOT = path.join(__dirname, '..');
 // staff 掛了現場整隊卡住。要能跑起來需要兩個外部相依的替身——LIFF SDK 走 CDN
 // （scriptsOf 一律不抓外部）、相機是瀏覽器 API——都補在 makeContext 裡。
 const PAGES = ['admin.html', 'board.html', 'stats.html', 'attend.html', 'hr-stats.html',
-               'messages.html', 'index.html', 'staff.html'];
+               'messages.html', 'index.html', 'staff.html', 'camtest.html'];
 
 /** 一個什麼都收的假元素——頁面頂層常直接對 getElementById 的結果取屬性。 */
 function fakeEl(tag) {
