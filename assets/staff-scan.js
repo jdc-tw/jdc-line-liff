@@ -84,6 +84,41 @@ function shouldHandleCode(data, lastText, lastAt, holdUntil, now) {
   return now - lastAt > 2500;                  // 同一張碼＋已離開停留期＝原有的防連發
 }
 
+/**
+ * 掃描節流與解碼解析度（2026-08-21）。
+ *
+ * 為何存在：原本 loop() 跟著 requestAnimationFrame 跑，每一格都對相機的**全解析度**
+ * （getUserMedia 要 ideal 1280 → 實際多為 1280×720）做 getImageData ＋ jsQR。
+ * 實測每格 9.1ms（jsQR 佔 8.4ms），乘上 60Hz ＝ **每秒 546ms 的 JS 工作、
+ * 一整顆核心的一半，持續不斷**。使用者的回報是「iPhone 像在錄影」——機身發燙、耗電，
+ * 那不是 iOS 的指示燈，是真的在燒 CPU。六台跑一整晚會很難看。
+ *
+ * 掃 QR 不需要每秒 60 次：人把碼遞到鏡頭前至少停留半秒，12 次/秒綽綽有餘。
+ * 也不需要 720p：jsQR 在 640 寬只要 2.1ms（快 4.1 倍），而 25 模組的 QR 佔畫面 1/3 時，
+ * 640 寬仍有約 8 px/模組，遠高於 jsQR 需要的 2–3 px。
+ * 兩者相乘約可省 95% 的 JS 工作量。
+ */
+var SCAN_INTERVAL_MS = 80;   // ≒ 12.5 次/秒
+var SCAN_MAX_W = 640;        // 解碼用的畫布上限寬；相機本身仍以原解析度顯示
+
+/** 這一格要不要真的解碼？（節流；第一次 lastScanAt=0 一定放行） */
+function shouldScanNow(now, lastScanAt, intervalMs) {
+  return (now - lastScanAt) >= (intervalMs || SCAN_INTERVAL_MS);
+}
+
+/**
+ * 解碼畫布的尺寸：等比縮到不超過 maxW，**不放大**（相機比 maxW 還小就照原樣，
+ * 放大只是多花時間、不會多出任何細節）。維持長寬比，避免 QR 被壓扁而解不出來。
+ */
+function scanCanvasSize(vw, vh, maxW) {
+  var w = Number(vw) || 0, h = Number(vh) || 0;
+  if (w <= 0 || h <= 0) return { w: 0, h: 0 };
+  var limit = maxW || SCAN_MAX_W;
+  if (w <= limit) return { w: w, h: h };
+  var scale = limit / w;
+  return { w: limit, h: Math.max(1, Math.round(h * scale)) };
+}
+
 function chunkByLen(rows, maxLen) {
   var packs = [], cur = [];
   for (var i = 0; i < rows.length; i++) {
@@ -107,4 +142,5 @@ function searchNames(nameTable, query) {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge, shouldHandleCode };
+if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge, shouldHandleCode,
+  shouldScanNow, scanCanvasSize, SCAN_INTERVAL_MS, SCAN_MAX_W };

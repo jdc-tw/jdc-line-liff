@@ -127,6 +127,8 @@
         font-size:12px;color:var(--faint);line-height:2}
   #foot .n{font-weight:700;color:var(--mut);font-variant-numeric:tabular-nums}
   #foot .warn{color:var(--wa-fg)}
+  /* 連結名稱不可從中間斷行——實機截圖看到「重新載入名／單」，讀起來像壞掉。 */
+  #diag a{white-space:nowrap}
   #foot a{color:var(--mut)}
   #foot a#wipe{color:#b08080}
 </style></head><body>
@@ -580,18 +582,26 @@ async function handle(text, t0) {
     '這台已掃 <span class="n">' + Object.keys(state.seen).length + '</span> 人・上次 ' + ms + 'ms';
 }
 
+var lastScanAt = 0;
 function loop(video, ctx, cv) {
-  if (video.readyState === video.HAVE_ENOUGH_DATA) {
-    cv.width = video.videoWidth; cv.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    var img = ctx.getImageData(0, 0, cv.width, cv.height);
-    var t0 = performance.now();
-    var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-    // 判斷邏輯在 assets/staff-scan.js 的 shouldHandleCode（那裡測得到，也寫著為何
-    // 「停留中也要放行不同的碼」——吞掉下一位是靜默失敗，比卡片殘留更糟）。
-    if (shouldHandleCode(code && code.data, lastText, lastAt, holdUntil, Date.now())) {
-      lastText = code.data; lastAt = Date.now();
-      handle(code.data, t0);
+  // 節流＋縮圖再解碼（2026-08-21）。原本每格都對 1280x720 全解析度解碼、又跟著螢幕
+  // 更新率跑＝每秒 546ms 的 JS 工作，手機持續滿載發燙。判準與數字寫在
+  // assets/staff-scan.js 的 shouldScanNow／scanCanvasSize。
+  if (video.readyState === video.HAVE_ENOUGH_DATA && shouldScanNow(Date.now(), lastScanAt)) {
+    lastScanAt = Date.now();
+    var size = scanCanvasSize(video.videoWidth, video.videoHeight);
+    if (size.w > 0) {
+      cv.width = size.w; cv.height = size.h;
+      ctx.drawImage(video, 0, 0, size.w, size.h);   // 縮放交給 drawImage（GPU），比在 JS 裡取樣便宜
+      var img = ctx.getImageData(0, 0, size.w, size.h);
+      var t0 = performance.now();
+      var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      // 判斷邏輯在 assets/staff-scan.js 的 shouldHandleCode（那裡測得到，也寫著為何
+      // 「停留中也要放行不同的碼」——吞掉下一位是靜默失敗，比卡片殘留更糟）。
+      if (shouldHandleCode(code && code.data, lastText, lastAt, holdUntil, Date.now())) {
+        lastText = code.data; lastAt = Date.now();
+        handle(code.data, t0);
+      }
     }
   }
   requestAnimationFrame(function () { loop(video, ctx, cv); });
@@ -660,8 +670,13 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
     note('bad', '已清除', '請重新整理這一頁');
   });
   try {
+    // 幀率明講（2026-08-21）：解碼端已節流到每秒 12.5 次、且縮到 640 寬，
+    // 相機再跑滿幀的 720p 純屬浪費——ISP 的功耗跟幀率直接相關，這是發燙的另一半。
+    // 用 ideal 不用 exact：裝置給不出來時會自動退讓，不會讓 getUserMedia 整個失敗。
+    // ⚠️ 解析度維持 1280：那是**預覽畫面**的清晰度，解碼本來就只吃 640。
     var stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+      video: { facingMode: 'environment', width: { ideal: 1280 }, frameRate: { ideal: 20, max: 24 } },
+      audio: false });
     var video = document.getElementById('cam');
     video.srcObject = stream; await video.play();
     var cv = document.getElementById('cv');
