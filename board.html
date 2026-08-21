@@ -358,6 +358,24 @@ var gOpts={titles:[],units:[]};
 function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function emailPrefix(full){full=(full||'').toString();var i=full.indexOf('@');return i>=0?full.slice(0,i):full;}
 function setMsg(el,text,type){el.className='msg show msg-'+(type||'info');el.textContent=text;}
+// ── 呼叫 nonce（2026-08-21）────────────────────────────────────────────
+// 為何：GET 被瀏覽器視為安全可重試，連線在回應前中斷時會靜默重發，而 GAS 要
+// 2–4 秒才回、窗口很寬。後端拿 nonce 認領：沒見過→照跑並存結果；已完成→**重播
+// 第一次的結果**。本頁十支寫入動作自己都有狀態守門，資料本來就不會被寫兩次；
+// nonce 治的是另一件事——重送時頁面收到的是第二次的回應，於是動作明明成功了，
+// 畫面卻說「此筆已處理」「已存在」。那是「送達卻回報失敗」的同一個形狀。
+//
+// ⚠️ **必須在使用者點擊的那一刻產生，而且要在 confirm()／prompt() 之前、
+//    jsonp() 之外。** 寫在 jsonp 裡面的話每次重送都拿到新的 nonce，後端會把它
+//    當成新的一次操作，整件事白做——而且安靜地白做。
+// ⚠️ 本頁有四支的呼叫在 onclick 處理器裡。nonce 要在**處理器內**產生，不可放到
+//    外層的繪製函式——繪製只跑一次、點擊可以很多次，共用一個 nonce 會讓第二次
+//    真正的點擊被當成重播而**靜默不執行**。這比沒有保護更糟。
+// 唯讀 action 一律不帶 nonce：每個帶 nonce 的呼叫要多一次 ScriptLock 與兩次
+// Property 讀寫，而讀取重播本來就無害，不值得付這個成本。
+function newNonce(){
+  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
+}
 // 動作狀態視窗用共用元件 assets/send-modal.js（sendModal / sendModalClose）。
 // 為何用共用檔而不是本頁自己寫一份：兩頁的視窗要長一樣、改一次就好；
 // 而且那支刻意不引用任何頁面的 CSS 變數或 class——本頁沒有 --ink／--bad／
@@ -409,6 +427,7 @@ function renderRow(o){
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
   var msg=d.querySelector('.msg');
   d.querySelector('.btn').onclick=function(){
+    var nonce=newNonce();   // ⚠️ 點擊當下產生，在處理器內、jsonp 之外。理由見 newNonce 上方。
     if(!val('員編').trim()){setMsg(msg,'請先補員工編號再核准。','err');return;}
     var title=val('職稱').trim();
     if(!title){setMsg(msg,'請選擇或輸入職稱。','err');return;}
@@ -418,7 +437,7 @@ function renderRow(o){
     setMsg(msg,'處理中…','info');
     var who=val('姓名');
     sendModal('busy','核准中…');
-    jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:title,birth:val('生日'),email:email,empno:val('員編')})
+    jsonp('approveCheckin',{token:TOKEN,nonce:nonce,row:o._row,name:val('姓名'),unit:val('單位'),title:title,birth:val('生日'),email:email,empno:val('員編')})
       .then(function(r){
         if(r&&r.ok){
           addDoneItem({'報到日期':o['報到日期'],'姓名':val('姓名'),'單位':val('單位'),'職稱':title,'員編':val('員編')}, true);
@@ -441,11 +460,12 @@ function doneItemHtml(o){
   return '<div class="done-item"><div class="done-head"><span class="done-name">'+esc(o['姓名'])+badge+'</span><span class="done-date">'+esc(o['報到日期']||'')+'</span></div><div class="done-meta">'+meta+'</div>'+resend+'</div>';
 }
 function requeueMail(row,btn){
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 confirm 與 jsonp。理由見 newNonce 上方。
   var msg=btn.parentNode.querySelector('.resend-msg');
   if(!confirm('把這位同仁的留存信重新排入寄送？（今日 17:00 自動寄出）'))return;
   msg.textContent='處理中…';msg.className='resend-msg';
   sendModal('busy','排入待寄中…');
-  jsonp('requeueCheckinMail',{token:TOKEN,row:row}).then(function(r){
+  jsonp('requeueCheckinMail',{token:TOKEN,nonce:nonce,row:row}).then(function(r){
     var t=(r&&r.msg)||(r&&r.ok?'已排入待寄':'失敗');
     msg.textContent=t;
     msg.className='resend-msg '+(r&&r.ok?'ok':'err');
@@ -597,10 +617,11 @@ function renderHrRow(o){
       +'<button type="button" class="linkbtn" data-revert style="color:#b26a00">↩ 撤銷這筆（回到待確認，可重新核定）</button>';
     var pmsg=d.querySelector('.msg');
     d.querySelector('[data-revert]').onclick=function(){
+      var nonce=newNonce();   // ⚠️ 點擊當下產生，在處理器內、早於 confirm。理由見 newNonce 上方。
       if(!confirm('撤銷「'+o['姓名']+'」的待生效？會回到待確認，需重新核定。'))return;
       setMsg(pmsg,'處理中…','info');
       sendModal('busy','撤銷中…');
-      jsonp('revertHrChange',{token:TOKEN,row:o._row}).then(function(r){
+      jsonp('revertHrChange',{token:TOKEN,nonce:nonce,row:o._row}).then(function(r){
         if(r&&r.ok){actDone(pmsg,'已撤銷','ok');setTimeout(loadHr,800);}
         else actDone(pmsg,(r&&r.msg)||'失敗','err');
       });
@@ -630,11 +651,12 @@ function renderHrRow(o){
   var msg=d.querySelector('.msg');
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value.trim():'';}
   d.querySelector('.btn').onclick=function(){
+    var nonce=newNonce();   // ⚠️ 點擊當下產生，在處理器內、jsonp 之外。理由見 newNonce 上方。
     if(!val('eff')){setMsg(msg,'請核定生效日。','err');return;}
     if(isFail&&!val('name')){setMsg(msg,'請先指定名冊中的同仁（或手動輸入姓名）。','err');return;}
     if(cat==='調動'&&!val('unit')){setMsg(msg,'請核定新單位。','err');return;}
     if(cat==='晉升'&&!val('title')){setMsg(msg,'請核定新職稱。','err');return;}
-    var p={token:TOKEN,row:o._row,effDate:val('eff')};
+    var p={token:TOKEN,nonce:nonce,row:o._row,effDate:val('eff')};
     if(isFail)p.name=val('name');
     if(val('unit'))p.newUnit=val('unit');
     if(cat==='晉升')p.newTitle=val('title');
@@ -646,11 +668,12 @@ function renderHrRow(o){
     });
   };
   d.querySelector('[data-reject]').onclick=function(){
+    var nonce=newNonce();   // ⚠️ 點擊當下產生，在處理器內、早於 prompt。理由見 newNonce 上方。
     var reason=prompt('駁回原因（選填，會記在備註與 Slack）：');
     if(reason===null)return;
     setMsg(msg,'處理中…','info');
     sendModal('busy','駁回中…');
-    jsonp('rejectHrChange',{token:TOKEN,row:o._row,reason:reason}).then(function(r){
+    jsonp('rejectHrChange',{token:TOKEN,nonce:nonce,row:o._row,reason:reason}).then(function(r){
       if(r&&r.ok){actDone(msg,'已駁回','ok');setTimeout(loadHr,800);}
       else actDone(msg,(r&&r.msg)||'失敗','err');
     });
@@ -659,35 +682,38 @@ function renderHrRow(o){
 }
 // 單位管理（T10）
 function batchTransfer(){
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 confirm 與 jsonp。理由見 newNonce 上方。
   var msg=document.getElementById('bt-msg');
   var oldU=document.getElementById('bt-old').value, newU=document.getElementById('bt-new').value.trim();
   if(!oldU||!newU){setMsg(msg,'請選舊單位並輸入新單位。','err');return;}
   if(!confirm('確定把「'+oldU+'」全體在職同仁整批轉到「'+newU+'」？\n此動作立即寫入名冊並通知佳岑改 LINE 標籤。'))return;
   setMsg(msg,'處理中…','info');
   sendModal('busy','轉移中…');
-  jsonp('batchTransferUnit',{token:TOKEN,oldUnit:oldU,newUnit:newU}).then(function(r){
+  jsonp('batchTransferUnit',{token:TOKEN,nonce:nonce,oldUnit:oldU,newUnit:newU}).then(function(r){
     if(r&&r.ok){actDone(msg,'已轉移 '+r.moved+' 人 ✅','ok');document.getElementById('bt-new').value='';setTimeout(loadHr,800);}
     else actDone(msg,(r&&r.msg)||'失敗','err');
   });
 }
 function addUnitGo(){
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 jsonp。理由見 newNonce 上方。
   var msg=document.getElementById('au-msg');
   var name=document.getElementById('au-name').value.trim();
   if(!name){setMsg(msg,'請輸入名稱。','err');return;}
   setMsg(msg,'處理中…','info');
   sendModal('busy','新增中…');
-  jsonp('addUnit',{token:TOKEN,name:name,group:document.getElementById('au-group').value}).then(function(r){
+  jsonp('addUnit',{token:TOKEN,nonce:nonce,name:name,group:document.getElementById('au-group').value}).then(function(r){
     if(r&&r.ok){actDone(msg,'已新增「'+name+'」✅','ok');document.getElementById('au-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
     else actDone(msg,(r&&r.msg)||'失敗','err');
   });
 }
 function addTitleGo(){
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 jsonp。理由見 newNonce 上方。
   var msg=document.getElementById('at-msg');
   var name=document.getElementById('at-name').value.trim();
   if(!name){setMsg(msg,'請輸入名稱。','err');return;}
   setMsg(msg,'處理中…','info');
   sendModal('busy','新增中…');
-  jsonp('addTitle',{token:TOKEN,name:name,group:document.getElementById('at-group').value,self:document.getElementById('at-self').value}).then(function(r){
+  jsonp('addTitle',{token:TOKEN,nonce:nonce,name:name,group:document.getElementById('at-group').value,self:document.getElementById('at-self').value}).then(function(r){
     if(r&&r.ok){actDone(msg,'已新增「'+name+'」✅','ok');document.getElementById('at-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
     else actDone(msg,(r&&r.msg)||'失敗','err');
   });
@@ -739,11 +765,12 @@ function editOptionPick(){
   box.style.display='';
 }
 function saveOptionGo(){
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 jsonp。理由見 newNonce 上方。
   var msg=document.getElementById('eo-msg');
   var v=document.getElementById('eo-pick').value;
   if(!v)return;
   var t=v.split('|')[0], n=v.split('|')[1];
-  var p={token:TOKEN,type:t,name:n,group:document.getElementById('eo-group').value,status:document.getElementById('eo-status').value};
+  var p={token:TOKEN,nonce:nonce,type:t,name:n,group:document.getElementById('eo-group').value,status:document.getElementById('eo-status').value};
   if(t==='職稱')p.self=document.getElementById('eo-self').value;
   setMsg(msg,'處理中…','info');
   sendModal('busy','儲存中…');
@@ -798,11 +825,12 @@ function paintHr(r){
 }
 
 function reviveNotice(row,btn){
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 confirm 與 jsonp。理由見 newNonce 上方。
   var msg=btn.parentNode.querySelector('.resend-msg');
   if(!confirm('恢復這筆已駁回的異動？會回到人事異動分頁的待確認清單。'))return;
   msg.textContent='處理中…';msg.className='resend-msg';
   sendModal('busy','恢復中…');
-  jsonp('revertHrChange',{token:TOKEN,row:row}).then(function(r){
+  jsonp('revertHrChange',{token:TOKEN,nonce:nonce,row:row}).then(function(r){
     var t=(r&&r.ok)?'已恢復，請至「人事異動」分頁核定':(r&&r.msg)||'失敗';
     msg.textContent=t;
     msg.className='resend-msg '+(r&&r.ok?'ok':'err');
