@@ -1202,6 +1202,51 @@ function snDelTpl(){
     snLoad();
   });
 }
+// ── 傳送狀態視窗（2026-08-21）─────────────────────────────────────────
+// 為何：使用者實測後指出「狀態說明的文字位置很不明顯」。當天 17:29 那一次
+// 三次呼叫、兩次被冪等網攔下——**看不到回饋就會再按一次**，那正是誤發的形狀。
+// 所以「傳送中」用擋住整個畫面的視窗，讓底下的按鈕**按不到**：
+// 防呆靠版面擋住，不靠使用者的自制力，也不只靠 disabled（disabled 沒有視覺重量）。
+//
+// ⚠️ busy 視窗沒有關閉鍵、點背景也不關。唯一的出口是請求回來。
+//    jsonp() 最後一段 catch 會把任何失敗轉成 {ok:false}，所以 .then 一定會執行，
+//    視窗不會永遠關不掉——這一點是這個設計能成立的前提，改 jsonp 時要一起想。
+var _SENDMODAL=null;
+function sendModalClose(){
+  if(_SENDMODAL&&_SENDMODAL.parentNode)_SENDMODAL.parentNode.removeChild(_SENDMODAL);
+  _SENDMODAL=null;
+}
+function sendModal(state,text){
+  sendModalClose();
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;'
+    +'display:flex;align-items:center;justify-content:center;padding:20px';
+  var card=document.createElement('div');
+  card.style.cssText='background:#fff;border-radius:4px;padding:22px 20px;'
+    +'max-width:320px;width:100%;text-align:center';
+  var msg=document.createElement('div');
+  msg.style.cssText='font-size:15.5px;line-height:1.55;white-space:pre-line;color:'
+    +(state==='err'?'var(--bad)':'var(--ink)');
+  msg.textContent=text;                       // 一律 textContent，不塞 HTML
+  card.appendChild(msg);
+  if(state==='busy'){
+    var sub=document.createElement('div');
+    sub.style.cssText='margin-top:12px;font-size:13px;color:var(--ink3)';
+    sub.textContent='請不要關閉頁面';
+    card.appendChild(sub);
+  }else{
+    var b=document.createElement('button');
+    b.className='btn btn-pri2';b.textContent='知道了';
+    b.style.cssText='margin-top:16px;width:100%';
+    b.onclick=sendModalClose;
+    card.appendChild(b);
+    ov.onclick=function(e){if(e.target===ov)sendModalClose();};
+  }
+  ov.appendChild(card);document.body.appendChild(ov);
+  _SENDMODAL=ov;
+  if(state!=='busy')card.querySelector('button').focus();
+}
+
 // ── 呼叫 nonce（診斷儀器，2026-08-21）──────────────────────────────────
 // 為何：2026-08-20 誤發事故，使用者說只按了一次，後端卻被呼叫三次，成因至今未定案。
 // GAS 執行紀錄取不到，而且就算取得到也答不出這題——它分不出「瀏覽器送了三次」
@@ -1233,17 +1278,22 @@ function snSend(){
       +warn+'LINE 訊息送出後收不回來。'))return;
   document.getElementById('sn-send').disabled=true;
   setMsg('sn-msg','發送中…','ok');
+  sendModal('busy','發送中…');
   jsonp('sendSeniorNotice',{token:q('t'),year:SN.year,idx:i,nonce:nonce,
     tpl:document.getElementById('sn-tpl').value,userIds:JSON.stringify(uids)},120000).then(function(r){
     document.getElementById('sn-send').disabled=false;
-    if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'發送失敗','err');return;}
+    if(!r||!r.ok){var m=(r&&r.msg)||'發送失敗';setMsg('sn-msg',m,'err');sendModal('err',m);return;}
     // r.sent 含被冪等網擋下的那幾則（它們回 ok:true，因為對方確實收到過）。
     // 畫面必須報「這一次真的送了幾則」，否則操作者以為補送成功而其實沒送。
+    // 短句優先（使用者 2026-08-21：「太長了」）。細節留在小字，視窗只講結論。
     var skip=r.skipped||0, t='已送出 '+(r.sent-skip)+' 則';
-    if(skip)t+='；另有 '+skip+' 則（'+(r.skippedNames||[]).join('、')
-      +'）在 60 秒內已經收過一模一樣的內容，這次沒有再送。要重送請等一分鐘。';
+    if(skip)t+='；'+skip+' 則重複傳送，未重送（'+(r.skippedNames||[]).join('、')+'）';
     if(r.failed)t+='；失敗 '+r.failed+' 則：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');
     setMsg('sn-msg',t,r.failed?'err':'ok');
+    var mt='已送出 '+(r.sent-skip)+' 則';
+    if(skip)mt+='\n'+skip+' 則重複傳送，請 60 秒後再試';
+    if(r.failed)mt+='\n失敗 '+r.failed+' 則';
+    sendModal(r.failed?'err':(skip?'err':'done'),mt);
     // 送出成功後主動清掉勾選。重繪現在會**保留**勾選（見 renderSenior），
     // 不清的話剛送出去的那批人會一直勾著，再按一次就是重發同一批給同一群人。
     // 這是主動動作，與「被動重繪保留」不衝突；順序也必須在 snLoad() 之前。
@@ -1547,18 +1597,21 @@ function bcSendOne(){
   var btn=document.getElementById('bc-one-send');
   btn.disabled=true;
   setMsg('bc-msg','補發中…','ok');
+  sendModal('busy','補發中…');
   jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),nonce:nonce,
     tpl:document.getElementById('bc-tpl').value||'',
     userIds:JSON.stringify([sel.value])},60000).then(function(r){
     btn.disabled=false;   // 放在 then 開頭，涵蓋下面每一條 return 分支
-    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'補發失敗','err');return;}
+    if(!r||!r.ok){var m1=(r&&r.msg)||'補發失敗';setMsg('bc-msg',m1,'err');sendModal('err',m1);return;}
     _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
-    if(r.failed){setMsg('bc-msg','補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、'),'err');return;}
+    if(r.failed){var m2='補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');
+      setMsg('bc-msg',m2,'err');sendModal('err',m2);return;}
     // 這一格最要緊：按補發的理由通常正是「他說沒收到」。這次真的沒送卻回
     // 「已補發」，等於告訴他做了一件沒做的事。
-    if(r.skipped){setMsg('bc-msg','這次沒有送——'+who+' 在 60 秒內已經收過一模一樣的內容。'
-      +'如果他真的沒收到，等一分鐘後再按一次。','err');return;}
+    if(r.skipped){setMsg('bc-msg','重複傳送，請 60 秒後再試','err');
+      sendModal('err','重複傳送，請 60 秒後再試');return;}
     setMsg('bc-msg','已補發給 '+who,'ok');
+    sendModal('done','已補發給 '+who);
   });
 }
 function bcSend(){
@@ -1573,19 +1626,27 @@ function bcSend(){
   if(!confirm('發送給全部 '+BC.willSend+' 位同仁？\n\nLINE 訊息送出後收不回來。\n（只想補給某一個人，請用下面的「補發給特定人」。）'))return;
   document.getElementById('bc-send').disabled=true;
   setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
+  sendModal('busy','發送中…');
   jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),nonce:nonce,
     tpl:document.getElementById('bc-tpl').value||'',
     force:noUrl?'1':''},120000).then(function(r){
-    if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
+    // ⚠️ 這顆按鈕原本按下去就永遠 disabled——失敗時承辦人無法重試，只能重新整理。
+    //    那是既有缺陷，順手修掉（2026-08-21）。
+    document.getElementById('bc-send').disabled=false;
+    if(!r||!r.ok){var m3=(r&&r.msg)||'發送失敗';setMsg('bc-msg',m3,'err');sendModal('err',m3);return;}
     _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
     // 同 snSend：r.sent 含被冪等網擋下的，要扣掉才是這一次真的送出的數量。
     var skip=r.skipped||0, t='已送出 '+(r.sent-skip)+' 則';
-    if(skip)t+='；另有 '+skip+' 則在 60 秒內已經收過一模一樣的內容，這次沒有再送';
+    if(skip)t+='；'+skip+' 則重複傳送，未重送';
     if(r.failed){t+='；失敗 '+r.failed+' 則：'
       +r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');}
     setMsg('bc-msg',t,r.failed?'err':'ok');
+    var mt2='已送出 '+(r.sent-skip)+' 則';
+    if(skip)mt2+='\n'+skip+' 則重複傳送，請 60 秒後再試';
+    if(r.failed)mt2+='\n失敗 '+r.failed+' 則';
+    sendModal(r.failed?'err':(skip?'err':'done'),mt2);
   });
 }
 
