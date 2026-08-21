@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { xlsxPostFormulas, splitOfTopLeft, freezeSheetXml, forceRecalcXml } = require('../assets/xlsx-post.js');
+const { xlsxPostFormulas, splitOfTopLeft, freezeSheetXml, forceRecalcXml,
+        pageSetupXml } = require('../assets/xlsx-post.js');
 
 test('forceRecalcXml：無 calcPr 補整段／有 calcPr 補屬性／已有旗標不重複', () => {
   const bare = '<workbook><sheets/></workbook>';
@@ -220,4 +221,68 @@ test('整合：正式座位表的底色與紅字同時寫進檔案，且與排�
   assert.strictEqual(bgOf('B2'), seatingHdrColor('管理部'), '甲：兩份檔案同色');
   assert.strictEqual(bgOf('B3'), seatingHdrColor('施工部'), '乙：兩份檔案同色');
   assert.strictEqual(bgOf('B4'), seatingHdrColor('王小明'), '賓1：兩份檔案同色');
+});
+
+// ── pageSetupXml ────────────────────────────────────────────────────────
+
+/** writer 實際吐出的骨架（xlsx-js-style 0.18.5 實測：無 sheetPr、結尾有 ignoredErrors）。 */
+const SHEET = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+  + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+  + '<dimension ref="A1:H26"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>'
+  + '<cols><col min="1" max="1" width="5"/></cols><sheetData><row r="1"/></sheetData>'
+  + '<mergeCells count="1"><mergeCell ref="A1:H1"/></mergeCells>'
+  + '<ignoredErrors><ignoredError numberStoredAsText="1" sqref="A1:H26"/></ignoredErrors>'
+  + '</worksheet>';
+
+test('pageSetupXml：sheetPr 緊接 worksheet 開標籤（schema 要求它排第一）', () => {
+  const out = pageSetupXml(SHEET, { header: '簽到表' });
+  assert.match(out, /<worksheet[^>]*><sheetPr><pageSetUpPr fitToPage="1"\/><\/sheetPr><dimension/);
+});
+
+test('pageSetupXml：列印三件事插在 ignoredErrors 之前（它在 schema 排 headerFooter 之後）', () => {
+  const out = pageSetupXml(SHEET, { header: '簽到表' });
+  const iHF = out.indexOf('<headerFooter>');
+  const iIgnored = out.indexOf('<ignoredErrors>');
+  assert.ok(iHF > 0 && iIgnored > 0, '兩段都要在');
+  assert.ok(iHF < iIgnored, 'headerFooter 必須排在 ignoredErrors 前面');
+  assert.ok(out.indexOf('<pageMargins') < out.indexOf('<pageSetup '), 'pageMargins 在 pageSetup 前');
+  assert.ok(out.indexOf('<pageSetup ') < iHF, 'pageSetup 在 headerFooter 前');
+});
+
+test('pageSetupXml：A4 直向、寬度縮成一頁、高度不限頁數', () => {
+  const out = pageSetupXml(SHEET, { header: 'x' });
+  assert.match(out, /<pageSetup [^>]*paperSize="9"/);
+  assert.match(out, /<pageSetup [^>]*orientation="portrait"/);
+  assert.match(out, /<pageSetup [^>]*fitToWidth="1"/);
+  assert.match(out, /<pageSetup [^>]*fitToHeight="0"/);
+});
+
+test('pageSetupXml：頁首＝置中＋指定字型級數；文字裡的 & 加倍後再 XML 逸出', () => {
+  const out = pageSetupXml(SHEET, { header: 'A&B <會>', headerFont: '微軟正黑體,粗體', headerSize: 18 });
+  assert.match(out, /<oddHeader>&amp;C&amp;18&amp;"微軟正黑體,粗體"A&amp;&amp;B &lt;會&gt;<\/oddHeader>/);
+});
+
+test('pageSetupXml：數字開頭的標題不會把字級吃掉（&18 後面必須先接 &，不能接數字）', () => {
+  const out = pageSetupXml(SHEET, { header: '2025年度 忘年會簽到表', headerFont: '微軟正黑體,粗體', headerSize: 18 });
+  assert.match(out, /&amp;18&amp;"/, '字級碼後面要緊接字型碼，數字才斷得掉');
+  assert.doesNotMatch(out, /&amp;182025/, '字級與年份黏在一起＝字級被讀成 182025');
+});
+
+test('pageSetupXml：rowBreaks 讓每個區塊自己一頁（不靠列高剛好塞滿）', () => {
+  const out = pageSetupXml(SHEET, { header: 'x', rowBreaks: [26, 52] });
+  assert.match(out, /<rowBreaks count="2" manualBreakCount="2">/);
+  assert.match(out, /<brk id="26" max="16383" man="1"\/><brk id="52" max="16383" man="1"\/>/);
+  assert.ok(out.indexOf('<headerFooter>') < out.indexOf('<rowBreaks '), 'rowBreaks 排在 headerFooter 後');
+  assert.ok(out.indexOf('<rowBreaks ') < out.indexOf('<ignoredErrors>'), 'rowBreaks 排在 ignoredErrors 前');
+});
+
+test('pageSetupXml：沒給 header 也沒給 rowBreaks → 原樣回傳（不亂動別人的檔）', () => {
+  assert.strictEqual(pageSetupXml(SHEET, {}), SHEET);
+  assert.strictEqual(pageSetupXml(SHEET), SHEET);
+});
+
+test('pageSetupXml：結尾沒有 ignoredErrors 時，插在 </worksheet> 前', () => {
+  const bare = '<worksheet xmlns="x"><sheetData/></worksheet>';
+  const out = pageSetupXml(bare, { header: 'x' });
+  assert.match(out, /<headerFooter><oddHeader>.*<\/oddHeader><\/headerFooter><\/worksheet>/);
 });

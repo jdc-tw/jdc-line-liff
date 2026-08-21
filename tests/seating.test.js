@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
         buildFormalAoa, pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
         groupSeatCategories, expandGuestRow, vegSummary,
+        buildSigninPages, SIGNIN_ROWS,
         SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 /** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
@@ -497,4 +498,87 @@ test('sortSeats：無職稱順位者仍殿後，但彼此之間依員編排', ()
     { kind: 'emp', name: '主任', title: '主任', empNo: '99999' },
   ];
   assert.deepEqual(sortSeats(seats, { 主任: 30 }).map(s => s.name), ['主任', '無銜甲', '無銜乙']);
+});
+
+// ── buildSigninPages（來賓簽到表）─────────────────────────────────────────
+
+/** 造一家廠商的 n 席（seatNo 1..n），table 可為單值或逐席陣列。 */
+function vendor(owner, name, n, table) {
+  const out = [];
+  if (n === 0) return [{ owner, name, seatNo: 0, table: '' }];
+  for (let i = 1; i <= n; i++) {
+    out.push({ owner, name, seatNo: i, table: Array.isArray(table) ? table[i - 1] : (table || '') });
+  }
+  return out;
+}
+
+test('buildSigninPages：參加人數 0 的廠商不列出來', () => {
+  const pages = buildSigninPages([].concat(
+    vendor('王小明', '甲營造', 2, '3'),
+    vendor('王小明', '乙工程', 0),
+    vendor('李美麗', '丙機電', 1, '5')));
+  assert.equal(pages.length, 1);
+  assert.deepEqual(pages[0].left.map(e => e.name), ['甲營造', '丙機電']);
+});
+
+test('buildSigninPages：依桌次數字序（10 桌在 2 桌之後，不是字串比大小）', () => {
+  const pages = buildSigninPages([].concat(
+    vendor('a', '十桌家', 1, '10'),
+    vendor('a', '二桌家', 1, '2'),
+    vendor('a', '九桌家', 1, '9')));
+  assert.deepEqual(pages[0].left.map(e => e.name), ['二桌家', '九桌家', '十桌家']);
+  assert.deepEqual(pages[0].left.map(e => e.table), ['2桌', '9桌', '10桌']);
+});
+
+test('buildSigninPages：沒排桌的排最後、桌次欄留空', () => {
+  const pages = buildSigninPages([].concat(
+    vendor('a', '未排桌家', 2, ''),
+    vendor('a', '五桌家', 1, '5')));
+  assert.deepEqual(pages[0].left.map(e => e.name), ['五桌家', '未排桌家']);
+  assert.equal(pages[0].left[1].table, '');
+});
+
+test('buildSigninPages：非數字桌名原樣保留、跨兩桌用「、」串起來', () => {
+  const pages = buildSigninPages([].concat(
+    vendor('a', '主桌家', 1, '主桌'),
+    vendor('a', '跨桌家', 2, ['7', '8'])));
+  const byName = {};
+  pages[0].left.forEach(e => { byName[e.name] = e.table; });
+  assert.equal(byName['跨桌家'], '7桌、8桌');
+  assert.equal(byName['主桌家'], '主桌');
+});
+
+test('buildSigninPages：一頁 48 家（左 24 右 24），編號跨頁連續', () => {
+  let rows = [];
+  for (let i = 1; i <= 49; i++) rows = rows.concat(vendor('a', 'V' + i, 1, String(i)));
+  const pages = buildSigninPages(rows);
+  assert.equal(pages.length, 2);
+  assert.equal(pages[0].left.length, 24);
+  assert.equal(pages[0].right.length, 24);
+  assert.equal(pages[0].left[0].no, 1);
+  assert.equal(pages[0].right[0].no, 25);
+  assert.equal(pages[1].left.length, 1);
+  assert.equal(pages[1].right.length, 0);
+  assert.equal(pages[1].left[0].no, 49);
+  assert.equal(pages[1].left[0].name, 'V49');
+});
+
+test('buildSigninPages：人數＝該廠商的席位數；名稱去掉 tab／全形空白', () => {
+  const pages = buildSigninPages([].concat(
+    vendor('a', '\t吉泰', 2, '11'),
+    vendor('a', '富眾　', 1, '17')));
+  assert.deepEqual(pages[0].left.map(e => e.name), ['吉泰', '富眾']);
+  assert.deepEqual(pages[0].left.map(e => e.seats), [2, 1]);
+});
+
+test('buildSigninPages：全部 0 人或空名單 → 沒有任何頁（呼叫端據此擋下產檔）', () => {
+  assert.deepEqual(buildSigninPages([]), []);
+  assert.deepEqual(buildSigninPages(vendor('a', '乙工程', 0)), []);
+});
+
+test('buildSigninPages：同桌維持名單原順序（穩定排序）', () => {
+  const pages = buildSigninPages([].concat(
+    vendor('a', '後來的', 1, '3'),
+    vendor('a', '先來的', 1, '3')));
+  assert.deepEqual(pages[0].left.map(e => e.name), ['後來的', '先來的']);
 });

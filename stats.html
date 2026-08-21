@@ -342,7 +342,8 @@
   <div class="card">
     <h2>來賓名單<span id="g-sum"></span></h2>
     <div class="btnrow"><button class="btn" onclick="document.getElementById('g-file').click()">上傳</button>
-      <button class="btn" onclick="dlGuestFile()">下載</button></div>
+      <button class="btn" onclick="dlGuestFile()">下載</button>
+      <button class="btn" onclick="dlSignin()">簽到表</button></div>
     <input type="file" id="g-file" accept=".xlsx,.xls" style="display:none" onchange="upGuests(this)">
     <div id="gl-msg" class="msg"></div>
   </div>
@@ -1833,12 +1834,113 @@ function writeSeatXlsx_(aoa,fname,sheetName,opts){
       zip.file(wbp,forceRecalcXml(xs[1]));   // 開檔強制重算（公式無快取值時保險）
       return zip.generateAsync({type:'arraybuffer'});
     });
-  }).then(function(buf){
-    var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fullName;
-    document.body.appendChild(a);a.click();
-    setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},0);
+  }).then(function(buf){ __dlXlsxBlob(buf,fullName); });
+}
+
+/** zip 後製完的位元組 → 觸發下載（writeSeatXlsx_ 與 writeSigninXlsx_ 共用）。 */
+function __dlXlsxBlob(buf,fullName){
+  var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fullName;
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},0);
+}
+
+// ── 來賓簽到表 ─────────────────────────────────────────────────────────
+// 版面完全照使用者 2026-08-22 提供的範本「簽到表_廠商.xlsx」：一頁一區塊（大標題列＋表頭列＋
+// 24 列資料），左欄先填滿 24 家再填右欄，簽名欄右側印淺灰桌號讓來賓知道自己坐哪一桌。
+// 每欄的寬度／字級／框線都是逐格對照範本量出來的，不是估的。
+// 欄寬用 {width:n}（Excel 原始單位）不是 {wch:n}——wch 會被 writer 加上 0.83 的內距，
+// 逐欄偏移一個字寬，右半邊整個推出去。數值＝範本量到的原始值。
+var SIGNIN_COL_W  = [3.59765625, 10.19921875, 3.19921875, 33, 4, 10.59765625, 3.19921875, 33];
+var SIGNIN_HDR_SZ = [10, 11, 8, 11, 10, 11, 8, 11];             // 表頭列字級
+var SIGNIN_ROW_SZ = [10, 12, 8, 12, 10, 12, 8, 12];             // 資料列字級
+var SIGNIN_GRAY   = 'D9D9D9';                                   // 桌號的淺灰（範本＝白底 tint −0.15）
+
+/**
+ * 產出來賓簽到表 xlsx。
+ * 刻意不共用 writeSeatXlsx_——那支寫死「首列粗體／全部置中／自動欄寬」，
+ * 既有三份下載（來賓名單／排位用檔／正式座位表）都靠它，塞條件進去會動到已上線的檔。
+ * @param {Array} pages buildSigninPages 的回傳
+ * @param {string} actName 活動名稱（進列印頁首與檔名）
+ */
+function writeSigninXlsx_(pages,actName){
+  var F='Microsoft JhengHei';
+  var med={style:'medium'},thin={style:'thin'},hair={style:'hair'},dbl={style:'double'};
+  // 左右兩半的直框：A 最外緣粗、E 用雙線隔開左右半邊、H 最外緣粗
+  var LB=[med,hair,hair,hair,dbl,hair,hair,hair];
+  var RB=[hair,hair,hair,undefined,hair,hair,hair,med];
+  var aoa=[],merges=[],rows=[],st={},breaks=[];
+  pages.forEach(function(pg,pi){
+    var base=aoa.length,c;
+    // 大標題列（合併 A:H）
+    aoa.push(['廠商','','','','','','','']);
+    merges.push({s:{r:base,c:0},e:{r:base,c:7}});
+    rows.push({hpt:28.25});
+    for(c=0;c<8;c++)st[base+','+c]={font:{name:F,sz:16,bold:true},
+      alignment:{horizontal:'center',vertical:'center'},
+      border:{top:med,bottom:med,left:c===0?med:undefined,right:c===7?med:undefined}};
+    // 表頭列（欄窄，靠 wrapText 讓「No」「人數」自己折行，與範本一致）
+    aoa.push(['No','姓名','人數','簽名','No','姓名','人數','簽名']);
+    rows.push({hpt:23});
+    for(c=0;c<8;c++)st[(base+1)+','+c]={font:{name:F,sz:SIGNIN_HDR_SZ[c]},
+      alignment:{horizontal:'center',vertical:'center',wrapText:true},
+      border:{bottom:thin,left:LB[c],right:RB[c]}};   // 上緣不畫：標題列的 bottom:medium 已經是那條線
+    // 24 列資料（不足的列留空白格——空字串是刻意的，這個 writer 丟掉真空白格會連框線一起丟）
+    for(var i=0;i<SIGNIN_ROWS;i++){
+      var L=pg.left[i],R=pg.right[i],r=base+2+i,last=(i===SIGNIN_ROWS-1);
+      aoa.push([L?L.no:'',L?L.name:'',L?L.seats:'',L?L.table:'',
+                R?R.no:'',R?R.name:'',R?R.seats:'',R?R.table:'']);
+      rows.push({hpt:28.25});
+      for(c=0;c<8;c++){
+        var sign=(c===3||c===7);
+        // 姓名欄不折行：欄寬只有 10 個字，長廠商名一折行就把整列撐高、24 列塞不進一頁（範本也是不折）
+        var nameCol=(c===1||c===5);
+        st[r+','+c]={font:{name:F,sz:SIGNIN_ROW_SZ[c],color:sign?{rgb:SIGNIN_GRAY}:undefined},
+          alignment:{horizontal:sign?'right':'center',vertical:'center',wrapText:!nameCol},
+          border:{top:thin,bottom:last?med:thin,left:LB[c],right:RB[c]}};
+      }
+    }
+    if(pi<pages.length-1)breaks.push(aoa.length);   // 這個區塊最後一列之後強制分頁
   });
+  var ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges']=merges;
+  ws['!rows']=rows;
+  ws['!cols']=SIGNIN_COL_W.map(function(w){return {width:w};});
+  Object.keys(st).forEach(function(k){
+    var p=k.split(','),ref=XLSX.utils.encode_cell({r:+p[0],c:+p[1]});
+    if(!ws[ref])ws[ref]={t:'s',v:''};
+    ws[ref].s=st[k];
+  });
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'簽到表');
+  var fullName='來賓簽到表_'+actName+'_'+__rdlToday().replace(/\//g,'-')+'.xlsx';
+  // 列印頁首與分頁點 writer 不寫 → 走 JSZip 後製（與凍結窗格同一條路）
+  return __tmLib('assets/jszip.min.js','JSZip').then(function(){
+    return JSZip.loadAsync(XLSX.write(wb,{type:'array',bookType:'xlsx'}));
+  }).then(function(zip){
+    var p='xl/worksheets/sheet1.xml';
+    return zip.file(p).async('string').then(function(x){
+      zip.file(p,pageSetupXml(x,{header:actName+'簽到表',headerFont:'微軟正黑體,粗體',headerSize:18,
+        margins:{left:0.51,right:0.51,top:0.75,bottom:0.75},rowBreaks:breaks}));
+      return zip.generateAsync({type:'arraybuffer'});
+    });
+  }).then(function(buf){ __dlXlsxBlob(buf,fullName); });
+}
+
+/** 「來賓名單」卡的「簽到表」鈕：讀來賓名單 → 分頁 → 產檔。參加人數 0 的廠商不列。 */
+function dlSignin(){
+  if(!actId()){setMsg('gl-msg','請先選活動','err');return;}
+  setMsg('gl-msg','產生中…','');
+  Promise.all([__rdlXlsx(),jsonp('listGuests',{token:q('t'),actId:actId()})]).then(function(rs){
+    var r=rs[1];
+    if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'載入失敗','err');return;}
+    var pages=buildSigninPages(r.rows||[]);
+    if(!pages.length){setMsg('gl-msg','此活動沒有出席的廠商（參加人數都是 0，或還沒有來賓資料）','err');return;}
+    var n=pages.reduce(function(a,p){return a+p.left.length+p.right.length;},0);
+    return writeSigninXlsx_(pages,(SB?SB.actName:actId())).then(function(){
+      setMsg('gl-msg','已下載（'+n+' 家廠商・'+pages.length+' 頁）','ok');
+    });
+  }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
 }
 
 // ── QR ─────────────────────────────────────────────────────────────────

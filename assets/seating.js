@@ -421,8 +421,70 @@ function buildFormalAoa(seats, ranks, palette) {
   return { aoa: aoa, guestCells: guestCells, fills: fills };
 }
 
+// ── 來賓簽到表 ──────────────────────────────────────────────────────────
+var SIGNIN_ROWS = 24;   // 每頁每欄 24 列（＝一頁 48 家，與使用者提供的範本一致）
+
+/** 桌次顯示：純數字補「桌」，其餘（主桌…）原樣；空值回空字串。 */
+function signinTableLabel_(t) {
+  var s = String(t == null ? '' : t).trim();
+  if (!s) return '';
+  return /^\d+(\.\d+)?$/.test(s) ? s + '桌' : s;
+}
+
+/**
+ * 來賓一席一列 → 簽到表分頁結構（stats.html 產 xlsx 與 node --test 共用）。
+ *
+ * 規格來源＝使用者 2026-08-22 提供的「簽到表_廠商.xlsx」範本：
+ * 一頁 48 家、左欄先填滿 24 家再填右欄、依桌次排序、簽名欄右側印淺灰桌號。
+ * **參加人數 0 的廠商不列**（使用者指定：沒有人出席的廠商就不用列出來）——
+ * 判準是來賓名單的席位數，不是當天報到紀錄；來賓不走員編掃碼報到，沒有報到資料可用。
+ *
+ * 聚合鍵沿用「負責人員|廠商名稱」，與既有的來賓名單下載（dlGuestFile）同一把尺——
+ * 同名廠商掛在兩個負責人底下時兩邊都會列成兩列，兩份檔案才不會對不起來。
+ *
+ * @param {Array<{owner,name,seatNo,table}>} guests listGuests 回傳的 rows
+ * @param {number} [perCol] 每欄列數（預設 SIGNIN_ROWS，測試可調小）
+ * @returns {Array<{left:Array<{no,name,seats,table}>, right:Array<...>}>} 沒有可列的廠商時回 []
+ */
+function buildSigninPages(guests, perCol) {
+  perCol = perCol || SIGNIN_ROWS;
+  var agg = {}, order = [];
+  (guests || []).forEach(function (g) {
+    var name = String(g.name || '').replace(/[\t\s　]+/g, ' ').trim();
+    if (!name) return;
+    var k = String(g.owner || '').trim() + '|' + name;
+    if (!agg[k]) { agg[k] = { name: name, seats: 0, tables: [] }; order.push(k); }
+    if (!(Number(g.seatNo) > 0)) return;
+    agg[k].seats++;
+    var t = String(g.table || '').trim();
+    if (t && agg[k].tables.indexOf(t) < 0) agg[k].tables.push(t);
+  });
+  var list = [];
+  order.forEach(function (k, i) {
+    var v = agg[k];
+    if (v.seats <= 0) return;                       // 0 人不列
+    v.tables.sort(tableOrder_);
+    list.push({ v: v, i: i, key: v.tables[0] || '' });
+  });
+  // 依桌次（tableOrder_：數字序、非數字字串在後、未排桌殿後）；同桌維持名單原序
+  list.sort(function (a, b) {
+    var c = tableOrder_(a.key, b.key);
+    return c !== 0 ? c : a.i - b.i;
+  });
+  var pages = [], per = perCol * 2;
+  for (var i = 0; i < list.length; i += per) {
+    var chunk = list.slice(i, i + per).map(function (x, j) {
+      return { no: i + j + 1, name: x.v.name, seats: x.v.seats,
+               table: x.v.tables.map(signinTableLabel_).join('、') };
+    });
+    pages.push({ left: chunk.slice(0, perCol), right: chunk.slice(perCol) });
+  }
+  return pages;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
+  module.exports = {
+    buildSigninPages, SIGNIN_ROWS, buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
                      pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
                      groupSeatCategories, expandGuestRow, vegSummary,
                      countNonEmpty_, SEAT_ROWS, TABLE_COLS };
