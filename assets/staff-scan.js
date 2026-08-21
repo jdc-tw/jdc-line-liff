@@ -58,6 +58,32 @@ function seenMerge(seen, allChecked, empToHash) {
   return out;
 }
 
+/**
+ * 這一格影格解到的碼要不要送去判定？（2026-08-21 修）
+ *
+ * 三種情況要略過：
+ *  1. 沒解到碼。
+ *  2. **停留中且是同一張碼**——人還站在鏡頭前，不該重複觸發。
+ *  3. 不在停留中、但同一張碼且距上次不到 2.5 秒——原本就有的防連發。
+ *
+ * ⚠️ **不同的碼一律放行，即使還在停留中。** 先前寫成「停留期間整個不讀影格」，
+ * 後果是下一位的碼被靜默吞掉：操作員把碼對上去、畫面毫無反應，沒盯著螢幕就會
+ * 以為掃過了而走人——那個人沒報到，且沒有任何地方留下痕跡。
+ * 卡片被下一個人換掉不是問題，那正是要的行為；要擋的只有同一張碼重複觸發。
+ *
+ * @param {string} data 這格解到的碼（空字串／null＝沒解到）
+ * @param {string} lastText 上一次處理過的碼
+ * @param {number} lastAt 上一次處理的時刻
+ * @param {number} holdUntil 判定卡停留到什麼時候
+ * @param {number} now 現在
+ */
+function shouldHandleCode(data, lastText, lastAt, holdUntil, now) {
+  if (!data) return false;
+  if (data !== lastText) return true;          // 不同的人＝立刻接手，停留中也一樣
+  if (now < holdUntil) return false;           // 同一張碼＋停留中＝人還在鏡頭前
+  return now - lastAt > 2500;                  // 同一張碼＋已離開停留期＝原有的防連發
+}
+
 function chunkByLen(rows, maxLen) {
   var packs = [], cur = [];
   for (var i = 0; i < rows.length; i++) {
@@ -81,4 +107,4 @@ function searchNames(nameTable, query) {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge };
+if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge, shouldHandleCode };

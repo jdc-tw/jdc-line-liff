@@ -59,8 +59,10 @@
 
   /* 相機：對焦框是四個角括號，掃到就閃一下判定色——工作人員不必讀字就知道成不成。 */
   #view{position:relative;background:#000}
-  /* 判定卡顯示中會壓暗取景畫面，讓「現在不是在掃」看得出來（見 holdUntil）。 */
-  #view.hold #cam{filter:brightness(.45)}
+  /* 判定卡顯示中略微壓暗取景，純粹是「正在顯示結果」的視覺層次。
+     ⚠️ 刻意不壓深：判讀**沒有**停（見 shouldHandleCode），下一位隨時可以掃，
+     壓成一片黑會讓操作員以為現在不能掃而空等。 */
+  #view.hold #cam{filter:brightness(.8)}
   /* Q6：iOS 亮綠點是系統的「相機使用中」指示，跟錄影無關。講在鏡頭旁邊最省事，
      而且壓在畫面上不佔額外高度——釘住的區塊每多 16px 都是判定卡的損失。 */
   #camnote{position:absolute;left:0;right:0;bottom:5px;text-align:center;
@@ -579,17 +581,15 @@ async function handle(text, t0) {
 }
 
 function loop(video, ctx, cv) {
-  if (Date.now() < holdUntil) {   // 判定卡停留中＝不判讀，避免下一張碼被提早吃掉
-    requestAnimationFrame(function () { loop(video, ctx, cv); });
-    return;
-  }
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
     cv.width = video.videoWidth; cv.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
     var img = ctx.getImageData(0, 0, cv.width, cv.height);
     var t0 = performance.now();
     var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-    if (code && code.data && (code.data !== lastText || Date.now() - lastAt > 2500)) {
+    // 判斷邏輯在 assets/staff-scan.js 的 shouldHandleCode（那裡測得到，也寫著為何
+    // 「停留中也要放行不同的碼」——吞掉下一位是靜默失敗，比卡片殘留更糟）。
+    if (shouldHandleCode(code && code.data, lastText, lastAt, holdUntil, Date.now())) {
       lastText = code.data; lastAt = Date.now();
       handle(code.data, t0);
     }
