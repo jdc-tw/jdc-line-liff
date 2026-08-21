@@ -1202,8 +1202,23 @@ function snDelTpl(){
     snLoad();
   });
 }
+// ── 呼叫 nonce（診斷儀器，2026-08-21）──────────────────────────────────
+// 為何：2026-08-20 誤發事故，使用者說只按了一次，後端卻被呼叫三次，成因至今未定案。
+// GAS 執行紀錄取不到，而且就算取得到也答不出這題——它分不出「瀏覽器送了三次」
+// 與「送一次被執行三次」。nonce 分得出來：後端把每次呼叫記進「呼叫紀錄」分頁，
+//   同一個 nonce 三筆 ⇒ 一次點擊被重複執行（網路層或 GAS 層重送）
+//   三個不同 nonce    ⇒ 瀏覽器真的送了三次（前端還有沒抓到的路徑）
+//
+// ⚠️ **必須在使用者點擊的那一刻產生，而且要在 confirm() 之前、jsonp() 之外。**
+//    寫在 jsonp 裡面的話，每次重送都會拿到新的 nonce，兩種情況看起來一模一樣，
+//    整個實驗白做——而且它會安靜地白做，紀錄照長、只是分不出東西。
+//    這一格是整支儀器唯一會靜默失效的地方。
+function newNonce(){
+  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
+}
 function snSend(){
   if(!SN)return;
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 confirm 與 jsonp。理由見 newNonce 上方。
   var i=Number(document.getElementById('sn-idx').value||0);
   var uids=[].slice.call(document.querySelectorAll('.sn-ck:checked')).map(function(c){return c.dataset.uid;});
   if(!uids.length){setMsg('sn-msg','沒有勾選任何收件人','err');return;}
@@ -1218,7 +1233,7 @@ function snSend(){
       +warn+'LINE 訊息送出後收不回來。'))return;
   document.getElementById('sn-send').disabled=true;
   setMsg('sn-msg','發送中…','ok');
-  jsonp('sendSeniorNotice',{token:q('t'),year:SN.year,idx:i,
+  jsonp('sendSeniorNotice',{token:q('t'),year:SN.year,idx:i,nonce:nonce,
     tpl:document.getElementById('sn-tpl').value,userIds:JSON.stringify(uids)},120000).then(function(r){
     document.getElementById('sn-send').disabled=false;
     if(!r||!r.ok){setMsg('sn-msg',(r&&r.msg)||'發送失敗','err');return;}
@@ -1522,6 +1537,7 @@ function bcFillPeople(){
 function bcSendOne(){
   var sel=document.getElementById('bc-one-sel');
   if(!sel.value){setMsg('bc-msg','請先選一位同仁','err');return;}
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於 confirm 與 jsonp。理由見 newNonce 上方。
   var who=sel.selectedOptions[0].textContent;
   if(!confirm('補發一則給「'+who+'」？\n\nLINE 訊息送出後收不回來。'))return;
   // ⚠️ 送出中鎖住按鈕（2026-08-20 補）。本頁三個發送入口只有這支沒鎖：
@@ -1531,7 +1547,7 @@ function bcSendOne(){
   var btn=document.getElementById('bc-one-send');
   btn.disabled=true;
   setMsg('bc-msg','補發中…','ok');
-  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),
+  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),nonce:nonce,
     tpl:document.getElementById('bc-tpl').value||'',
     userIds:JSON.stringify([sel.value])},60000).then(function(r){
     btn.disabled=false;   // 放在 then 開頭，涵蓋下面每一條 return 分支
@@ -1547,6 +1563,7 @@ function bcSendOne(){
 }
 function bcSend(){
   if(!BC)return;
+  var nonce=newNonce();   // ⚠️ 點擊當下產生，早於兩段 confirm 與 jsonp。理由見 newNonce 上方。
   var noUrl=!BC.tplHasUrl;
   // 兩段確認：第一段講「少了連結會怎樣」，第二段才是一般的送出確認。
   // 分開問是刻意的——把後果跟數量混在同一句，人只會看到數量。
@@ -1556,7 +1573,8 @@ function bcSend(){
   if(!confirm('發送給全部 '+BC.willSend+' 位同仁？\n\nLINE 訊息送出後收不回來。\n（只想補給某一個人，請用下面的「補發給特定人」。）'))return;
   document.getElementById('bc-send').disabled=true;
   setMsg('bc-msg','發送中，請不要關閉頁面…','ok');
-  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),tpl:document.getElementById('bc-tpl').value||'',
+  jsonp('sendPassBroadcast',{token:q('t'),actId:ckActId(),nonce:nonce,
+    tpl:document.getElementById('bc-tpl').value||'',
     force:noUrl?'1':''},120000).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'發送失敗','err');return;}
     _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
