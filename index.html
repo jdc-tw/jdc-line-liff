@@ -70,7 +70,13 @@
     .msg-err  { background: #fdecea; color: #b71c1c; }
     .msg-info { background: #e8f0fe; color: #1a56c4; }
     .msg-warn { background: #fff4e5; color: #8a5300; }   /* 畫面可能不準（非操作失敗）＝與 msg-err 語意不同 */
-    #loading { text-align: center; padding: 40px 0; color: #888; font-size: 15px; }
+    /* 載入畫面（2026-08-21）：原本只有一行灰字「載入中，請稍候…」，實測同仁會以為當掉
+       ——LIFF 握手＋GAS 首載本來就要好幾秒，而畫面完全靜止。放會動的吉祥物是為了讓
+       「還在跑」看得出來，文案分階段是為了讓等待有盡頭感。 */
+    #loading { text-align: center; padding: 32px 0; color: #888; font-size: 15px; }
+    #loading img { width: 96px; height: auto; image-rendering: auto; }
+    #loading .lead { margin-top: 10px; font-size: 16px; font-weight: 700; color: #555; }
+    #loading .sub  { margin-top: 6px; font-size: 13px; color: #999; line-height: 1.6; }
     #main { display: none; }
     .email-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
     .email-row input {
@@ -130,7 +136,11 @@
   </style>
 </head>
 <body>
-  <div id="loading">載入中，請稍候…</div>
+  <div id="loading">
+    <img src="assets/kokudo-waving.gif" alt="" aria-hidden="true">
+    <div class="lead">正在載入資料，請稍候</div>
+    <div class="sub" id="loading-sub">第一次開啟需要幾秒鐘</div>
+  </div>
   <div id="main">
     <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
     <!-- 樂觀渲染的畫面沒被真實狀態校正到時的警示（見 showStateError） -->
@@ -287,6 +297,51 @@
         localStorage.setItem('dl', JSON.stringify(a));
       } catch (e) {}
     }
+
+    /**
+     * 等待文案分階段（2026-08-21）。
+     *
+     * 為何用「經過幾秒」而不是「跑到第幾階段」：階段名（liff.init／getProfile）對同仁沒有
+     * 意義，而且把內部流程攤在入口頁上只會製造更多疑問。時間才是他們感受得到的東西。
+     * 最後一段講「可以關掉重開」——沒有出路的等待才是真的焦慮。
+     */
+    (function stageLoadingText() {
+      var el = document.getElementById('loading-sub');
+      if (!el) return;
+      // 不需要在載入完成時取消：這兩顆計時器改的是 #loading 裡面的字，
+      // 而載入完成時整塊 #loading 已 display:none——改了也沒人看得到。
+      // （原本寫了一個 setInterval 去輪詢並取消，那顆 interval 自己永遠不會停，
+      //   把 page-load 測試的事件迴圈吊死；多餘的收尾程式反而製造了問題。）
+      setTimeout(function () { el.textContent = '還在連線中，請再稍等一下'; }, 5000);
+      setTimeout(function () {
+        el.textContent = '網路好像不太順。若一直停在這裡，可以關掉再重開一次';
+      }, 13000);
+    })();
+
+    /**
+     * 飛行紀錄檢視（`?diag=1`）。
+     *
+     * 紀錄器自 2026-06 就在寫，註解說「日後 LINE 內出事可撈」——但**從來沒有撈的路**，
+     * 寫了等於沒寫。這裡只補上出口，不另建一套計時：每一筆本來就帶毫秒時間戳，
+     * 相鄰兩筆的差就是各階段耗時，要判「慢在 LIFF 握手還是慢在 GAS」看這個就夠。
+     */
+    (function showDiag() {
+      if (new URLSearchParams(location.search).get('diag') !== '1') return;
+      var box = document.createElement('pre');
+      box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:45vh;overflow:auto;'
+        + 'margin:0;padding:8px 10px;background:rgba(0,0,0,.86);color:#8f8;z-index:9999;'
+        + 'font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap';
+      document.body.appendChild(box);
+      setInterval(function () {
+        var a = [];
+        try { a = JSON.parse(localStorage.getItem('dl') || '[]'); } catch (e) {}
+        box.textContent = a.map(function (r, i) {
+          var d = i ? (r.t - a[i - 1].t) : 0;
+          return (i ? ('+' + String(d).padStart(5) + 'ms  ') : '   起點     ') + r.m;
+        }).join('\n') + (a.length ? '\n─── 總計 ' + (a[a.length - 1].t - a[0].t) + 'ms' : '（無紀錄）');
+      }, 500);
+    })();
+
     window.onerror = function (m, src, line, col) { lg('window.onerror: ' + m + ' @' + line + ':' + col); };
     window.addEventListener('unhandledrejection', function (e) {
       lg('unhandledrejection: ' + ((e.reason && e.reason.message) || e.reason));

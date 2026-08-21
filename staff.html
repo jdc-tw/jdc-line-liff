@@ -52,8 +52,20 @@
          background:transparent;color:var(--mut);font-size:15px;line-height:1;cursor:pointer;padding:0}
   #theme:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
+  /* 頂部區塊（站別列＋相機）整塊釘住：捲動時只有下面的判定卡與手動報到在動。
+     為何連 #bar 一起釘：站別是這台手機的身分證，捲走了就分不出自己是哪一站。
+     為何包一層而不是各自 sticky：那要寫死 bar 的高度當 top 值，字級一變就錯位。 */
+  #top{position:sticky;top:0;z-index:5;background:var(--bg)}
+
   /* 相機：對焦框是四個角括號，掃到就閃一下判定色——工作人員不必讀字就知道成不成。 */
   #view{position:relative;background:#000}
+  /* 判定卡顯示中會壓暗取景畫面，讓「現在不是在掃」看得出來（見 holdUntil）。 */
+  #view.hold #cam{filter:brightness(.45)}
+  /* Q6：iOS 亮綠點是系統的「相機使用中」指示，跟錄影無關。講在鏡頭旁邊最省事，
+     而且壓在畫面上不佔額外高度——釘住的區塊每多 16px 都是判定卡的損失。 */
+  #camnote{position:absolute;left:0;right:0;bottom:5px;text-align:center;
+           font-size:11px;line-height:1.4;color:rgba(255,255,255,.72);
+           text-shadow:0 1px 2px rgba(0,0,0,.6);pointer-events:none}
   #cam{display:block;width:100%;height:38vh;object-fit:cover;background:#000}
   #frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
          width:min(52vw,190px);height:min(52vw,190px);pointer-events:none}
@@ -88,6 +100,16 @@
   .msg{font-size:17px;line-height:1.6}
   .msg .sub{display:block;font-size:14px;margin-top:4px;opacity:.85}
 
+  /* 待機卡：上一位已完成的訊號。**空白畫面比殘留畫面安全**——判定卡留在螢幕上時，
+     操作員很容易把上一個人的桌號念給下一個人。 */
+  .card.idle{background:var(--sub);color:var(--mut);text-align:center}
+  .card.idle .msg{font-size:19px;font-weight:700;color:var(--mut)}
+  /* 倒數條：讓「再等一下就會清掉」看得見，而不是畫面莫名其妙自己變了。 */
+  #countdown{height:3px;border-radius:2px;background:currentColor;opacity:.35;
+             margin-top:12px;transform-origin:left center;animation:cd linear forwards}
+  @keyframes cd{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+  @media (prefers-reduced-motion:reduce){ #countdown{animation:none;opacity:.15} }
+
   /* 掃不到時的正路：先選單位、再選姓名（與綁定頁同一種操作，現場不必打中文）。 */
   #pick .eyebrow{color:var(--mut);letter-spacing:.06em}
   #pick label{display:block;font-size:13px;font-weight:700;color:var(--mut);margin:12px 0 6px}
@@ -105,19 +127,19 @@
   #foot .warn{color:var(--wa-fg)}
   #foot a{color:var(--mut)}
   #foot a#wipe{color:#b08080}
-  #pastebox summary{cursor:pointer;color:var(--mut)}
-  #manual{width:100%;font-size:14px;padding:8px 10px;margin-top:6px;border-radius:6px;
-          border:1px solid var(--line2);background:var(--card);color:var(--txt);font-family:inherit}
 </style></head><body>
-<div id="bar">
-  <img src="assets/logo-mark.svg" alt="">
-  <span id="tbAct">—</span>
-  <span id="tbStation">—</span>
-  <button id="theme" type="button" aria-label="切換深色模式" title="切換深色模式">☾</button>
-</div>
-<div id="view">
-  <video id="cam" playsinline muted></video>
-  <div id="frame"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+<div id="top">
+  <div id="bar">
+    <img src="assets/logo-mark.svg" alt="">
+    <span id="tbAct">—</span>
+    <span id="tbStation">—</span>
+    <button id="theme" type="button" aria-label="切換深色模式" title="切換深色模式">☾</button>
+  </div>
+  <div id="view">
+    <video id="cam" playsinline muted></video>
+    <div id="frame"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+    <div id="camnote">相機只用來辨識 QR，不錄影、不留存</div>
+  </div>
 </div>
 <div id="panel">
   <div id="result" class="card bad" style="display:none"></div>
@@ -134,13 +156,9 @@
     <div id="qbadge">待送 0 筆</div>
     <div id="diag">
       <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
-      ｜<a href="#" id="reload">重新載入名單</a>
-      ｜<a href="#" id="wipe">清除本機資料</a>
+      ｜<a href="#" id="reload" title="跟伺服器重新抓一次參加者名單。有人臨時補回覆、或桌次重新發佈後用">重新載入名單</a>
+      ｜<a href="#" id="wipe" title="把這台手機的名單與未回傳的報到全部清空，回到剛開頁的狀態">重設這台手機</a>
     </div>
-    <details id="pastebox">
-      <summary>貼上報到碼（測試用）</summary>
-      <input id="manual" placeholder="CHK|活動ID|員編|簽章　貼上後按 Enter">
-    </details>
   </div>
 </div>
 <canvas id="cv" style="display:none"></canvas>
@@ -186,7 +204,23 @@ var SNAP_KEY = 'evtchk_snap_' + ACT;
 var EXPIRE_KEY = 'evtchk_exp_' + ACT;
 
 var QKEY = 'evtchk_queue_' + ACT;
+var SEEN_KEY = 'evtchk_seen_' + ACT;
 var lastSyncAt = '';   // 版本診斷列用
+
+/**
+ * 已掃名單（hash 集合）改存 localStorage（2026-08-21 修）。
+ *
+ * 原本 state.seen 只活在記憶體裡，而快照的 person.checked 是**下載當下的凍結值**。
+ * 兩者一起失憶的後果：重新整理之後再掃同一個人 → seen 是空的、checked 還是 false
+ * → 判定成 ok → 畫面顯示「已受理」，看起來就像這個人剛剛才報到成功。
+ * 伺服器端冪等（活動ID＋員編）擋住了資料，所以不會長出第二列——**壞的只有畫面，
+ * 而畫面正是操作人員唯一的依據**。同一個動作因為 storage 有沒有活下來而給兩種答案，
+ * 這件事操作人員看不到也控制不了。
+ */
+// 實作在 assets/staff-scan.js（seenLoad／seenSave／seenMerge），那裡測得到；這裡只綁 localStorage。
+function loadSeen() { return seenLoad(localStorage, SEEN_KEY); }
+function saveSeen(seen) { return seenSave(localStorage, SEEN_KEY, seen); }
+state.seen = loadSeen();   // 開頁就把上次的已掃名單接回來（宣告在上面、鍵在這裡，故於此回填）
 function loadQueue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(_) { return []; } }
 function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQueueBadge(); }
 function updateQueueBadge() {   // D4：佇列筆數長駐畫面
@@ -342,9 +376,8 @@ async function flush() {
         lastSyncAt = new Date().toLocaleTimeString();
         document.getElementById('lastsync').textContent = lastSyncAt;
         // C2：後端回傳全場已報到員編 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
-        (res.allChecked || []).forEach(function (emp) {
-          var h = empToHash[emp]; if (h) state.seen[h] = true;
-        });
+        state.seen = seenMerge(state.seen, res.allChecked, empToHash);
+        saveSeen(state.seen);   // 別台掃的也要留在本機，否則重整後又會判成 ok
       } catch (err) {   // 網路中斷／逾時／JSON 解析失敗＝同一種失敗
         note('dup', '回寫未完成，' + loadQueue().length + ' 筆待送', '稍後自動重試，不必重掃');
         return;         // 佇列語意不變：只有成功那支才會被移除，這裡沒動過佇列
@@ -371,8 +404,13 @@ function manualCheckin(p) {
   if (!confirm(msg)) { resetPicker(); return; }
   enqueue(p.empNo, 'manual');
   if (h) state.seen[h] = true;
+  // ⚠️ 臨時出席者不在快照裡＝沒有 hash，seen 追蹤不到他（applyScan 全程以 hash 為鍵）。
+  // 後果僅止於「同一位臨時出席者再手動報到一次時，不會跳已報到過的提醒」；
+  // 資料端仍由後端冪等（活動ID＋員編）擋住，不會重複寫入。
+  saveSeen(state.seen);   // 手動報到也算已掃，否則重整後同一人會再被判成 ok
   personCard('ok', '已受理・手動', p);
   flashFrame('ok');
+  holdThenIdle();
   resetPicker();
 }
 
@@ -397,9 +435,20 @@ function jget(action, params, timeoutMs) {
 var nameTable = {}, snapMeta = { version: 0, generatedAt: '' };
 var ready = false;   // 快照載入 gate：未完成前掃描停用
 
+/**
+ * 快照／已掃名單改存 localStorage（2026-08-21）。
+ *
+ * 原本是 sessionStorage——分頁一關就沒了，於是現場每次不小心關掉視窗，
+ * 137 人的名單就要重抓一次（GAS 5–7 秒，冷啟更久）。到期機制本來就有
+ * （computeCheckinExpiry_＝活動日+1 天 23:59），換成 localStorage 之後
+ * 它才真的派得上用場：撐過關窗、活動結束隔天自動清掉。
+ */
 function purgeIfExpired() {
-  var exp = Number(sessionStorage.getItem(EXPIRE_KEY) || 0);
-  if (exp && Date.now() > exp) { sessionStorage.removeItem(SNAP_KEY); sessionStorage.removeItem(EXPIRE_KEY); }
+  var exp = Number(localStorage.getItem(EXPIRE_KEY) || 0);
+  if (exp && Date.now() > exp) {
+    localStorage.removeItem(SNAP_KEY); localStorage.removeItem(EXPIRE_KEY);
+    localStorage.removeItem(SEEN_KEY);   // 已掃名單跟著快照同生共死，別留下跨場的殘影
+  }
 }
 
 /**
@@ -439,7 +488,7 @@ function applySnapshotPayload(res) {
 
 async function loadSnapshot(force) {
   purgeIfExpired();
-  var cached = force ? null : sessionStorage.getItem(SNAP_KEY);
+  var cached = force ? null : localStorage.getItem(SNAP_KEY);
   if (cached) { applySnapshotPayload(JSON.parse(cached)); ready = true; return; }
   note('dup', '名單載入中，請稍候…');   // 載入 gate：未完成禁掃
   var res = await jget('getEventCheckinSnapshot', { t: TOKEN, act: ACT });
@@ -449,10 +498,10 @@ async function loadSnapshot(force) {
     return;
   }
   applySnapshotPayload(res);
-  sessionStorage.setItem(SNAP_KEY, JSON.stringify(res));
+  localStorage.setItem(SNAP_KEY, JSON.stringify(res));
   // 到期＝活動日+1 天 23:59；解析不到（無 eventDate 或格式外）→維持保守 24h
   var expEpoch = computeCheckinExpiry_(res.eventDate);
-  sessionStorage.setItem(EXPIRE_KEY, String(expEpoch || (Date.now() + 24 * 3600 * 1000)));
+  localStorage.setItem(EXPIRE_KEY, String(expEpoch || (Date.now() + 24 * 3600 * 1000)));
   ready = true;
   note('ok', '名單就緒', Object.keys(snapshot).length + ' 位參加者，可以開始掃描');
 }
@@ -460,6 +509,38 @@ async function loadSnapshot(force) {
 function show(cls, html) {
   var el = document.getElementById('result');
   el.className = 'card ' + cls; el.style.display = 'block'; el.innerHTML = html;
+}
+
+/**
+ * 判定卡的停留期（2026-08-21）。
+ *
+ * 為何不是「按一下確認」：尖峰時多一個動作就會被跳過，而被跳過的確認機制比沒有更糟
+ * ——它讓人以為有防線。改成停留固定秒數後自動回待機，操作員的節奏維持「掃→看→掃」。
+ * 停留期間一併**暫停判讀**：否則下一張碼會在操作員還在讀上一個人的桌號時就被吃掉。
+ */
+var HOLD_MS = 3000;
+var holdUntil = 0, holdTimer = null;
+
+function holdThenIdle(ms) {
+  var d = ms || HOLD_MS;
+  holdUntil = Date.now() + d;
+  document.getElementById('view').classList.add('hold');
+  // 倒數條由這裡補上，不由 personCard 內嵌——否則走 note() 的錯誤卡就沒有條，
+  // 那條路要停 5 秒，沒有指示的 5 秒會被當成當機。
+  var el = document.getElementById('result');
+  var bar = document.getElementById('countdown');
+  if (!bar) { bar = document.createElement('div'); bar.id = 'countdown'; el.appendChild(bar); }
+  bar.style.animation = 'none';
+  void bar.offsetWidth;            // 強制回流，否則連掃兩張時動畫不會重新開始
+  bar.style.animation = 'cd ' + d + 'ms linear forwards';
+  clearTimeout(holdTimer);
+  holdTimer = setTimeout(showIdle, d);
+}
+
+function showIdle() {
+  holdUntil = 0;
+  document.getElementById('view').classList.remove('hold');
+  show('idle', '<div class="msg">請掃下一位</div>');
 }
 
 async function handle(text, t0) {
@@ -478,22 +559,30 @@ async function handle(text, t0) {
     // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
     personCard('ok', '已受理', r.verdict.person);
     flashFrame('ok');
+    holdThenIdle();
     if (navigator.vibrate) navigator.vibrate(80);
+    saveSeen(state.seen);   // 立刻落地：關窗／重整之後這個人仍算已報到
     enqueue(r.verdict.person.empNo, 'scan');
   } else if (r.verdict.type === 'dup') {
     // 重複掃的人多半是忘了自己第幾桌又回頭問，所以這張也要講得出桌次
     personCard('dup', '已報到過', r.verdict.person);
     flashFrame('dup');
+    holdThenIdle();
   } else {
     note('bad', '查無此碼', '快照裡沒有這個人，請洽主辦人工處理');
     flashFrame('bad');
+    holdThenIdle(5000);   // 錯誤要多留一會兒，操作員得有時間讀完並決定怎麼處理
   }
   // 耗時是給我們看的診斷值，不佔現場卡片的版面
   document.getElementById('stat').innerHTML =
-    '已掃 <span class="n">' + Object.keys(state.seen).length + '</span> 人・上次 ' + ms + 'ms';
+    '這台已掃 <span class="n">' + Object.keys(state.seen).length + '</span> 人・上次 ' + ms + 'ms';
 }
 
 function loop(video, ctx, cv) {
+  if (Date.now() < holdUntil) {   // 判定卡停留中＝不判讀，避免下一張碼被提早吃掉
+    requestAnimationFrame(function () { loop(video, ctx, cv); });
+    return;
+  }
   if (video.readyState === video.HAVE_ENOUGH_DATA) {
     cv.width = video.videoWidth; cv.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
@@ -553,9 +642,6 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
       }
     }
   });
-  document.getElementById('manual').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { handle(this.value.trim(), performance.now()); this.value = ''; }
-  });
   document.getElementById('reload').addEventListener('click', function (e) {
     e.preventDefault();
     if (!confirm('重新載入名單？（僅更新名單版本，不影響已掃紀錄與待送佇列）')) return;
@@ -569,8 +655,8 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
       ? '⚠️ 尚有 ' + n + ' 筆報到還沒回寫到伺服器。\n\n清除後這 ' + n + ' 筆會永久消失、無法復原。\n\n仍要清除？'
       : '清除本機快照？（目前 0 筆待送，不會遺失任何報到紀錄）';
     if (!confirm(msg)) return;
-    sessionStorage.removeItem(SNAP_KEY); sessionStorage.removeItem(EXPIRE_KEY);
-    localStorage.removeItem(QKEY);
+    localStorage.removeItem(SNAP_KEY); localStorage.removeItem(EXPIRE_KEY);
+    localStorage.removeItem(QKEY); localStorage.removeItem(SEEN_KEY);
     note('bad', '已清除', '請重新整理這一頁');
   });
   try {
