@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>相機指示器對照測試</title>
+<style>
+  body{margin:0 auto;max-width:480px;padding:16px;font-size:17px;line-height:1.6;
+       font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif;color:#333}
+  h1{font-size:19px;margin:0 0 4px}
+  p.lead{font-size:14px;color:#666;margin:0 0 16px}
+  button{display:block;width:100%;font-size:16px;padding:14px;margin:8px 0;border-radius:8px;
+         border:1px solid #ccc;background:#fff;color:#333;font-family:inherit;cursor:pointer}
+  button.stop{border-color:#e5484d;color:#b71c1c}
+  video{width:100%;height:200px;object-fit:cover;background:#000;border-radius:8px;margin-top:12px}
+  pre{background:#f4f4f4;border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;
+      word-break:break-all;line-height:1.5}
+  .step{background:#fff8e5;border-left:3px solid #f5a524;padding:10px 12px;font-size:14px;margin:16px 0}
+</style></head><body>
+<h1>相機指示器對照測試</h1>
+<p class="lead">這頁<b>只開相機</b>——沒有 QR 解碼、沒有掃描迴圈、沒有任何其他程式。
+用來判斷靈動島那個紅色攝影機圖示是不是單純由「開相機」造成的。</p>
+
+<div class="step">
+每按一個按鈕之後，看一眼螢幕最上方：<b>紅色攝影機圖示有沒有出現？</b>
+記下每一種的結果，四種都試完再回報。
+</div>
+
+<button data-mode="current">① 現行設定（1280 寬・20fps）＝掃描站現在用的</button>
+<button data-mode="bare">② 最陽春（只要 video: true，什麼都不指定）</button>
+<button data-mode="low">③ 低規格（640 寬・10fps）</button>
+<button data-mode="stop" class="stop">④ 關閉相機</button>
+
+<video id="v" playsinline muted></video>
+<pre id="log">尚未啟動。</pre>
+
+<script>
+var CONSTRAINTS = {
+  current: { video: { facingMode: 'environment', width: { ideal: 1280 }, frameRate: { ideal: 20, max: 24 } }, audio: false },
+  bare:    { video: true, audio: false },
+  low:     { video: { facingMode: 'environment', width: { ideal: 640 }, frameRate: { ideal: 10, max: 12 } }, audio: false }
+};
+var stream = null, lines = [];
+function log(s){ lines.unshift(s); document.getElementById('log').textContent = lines.slice(0,12).join('\n'); }
+function stopCam(){
+  if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+  document.getElementById('v').srcObject = null;
+}
+document.querySelectorAll('button').forEach(function(b){
+  b.addEventListener('click', async function(){
+    var mode = b.getAttribute('data-mode');
+    stopCam();
+    if (mode === 'stop') { log('④ 已關閉相機（' + new Date().toLocaleTimeString() + '）'); return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(CONSTRAINTS[mode]);
+      var v = document.getElementById('v');
+      v.srcObject = stream; await v.play();
+      var s = stream.getVideoTracks()[0].getSettings();
+      // 系統實際給了什麼，跟我們「要」的可能不一樣——這才是判斷依據
+      log(b.textContent.slice(0,2) + ' 已開啟｜系統實際給：'
+        + s.width + 'x' + s.height + ' @ ' + (s.frameRate ? Math.round(s.frameRate) : '?') + 'fps'
+        + '｜鏡頭 ' + (s.facingMode || '?'));
+    } catch (e) { log('❌ 失敗：' + e.name + ' ' + e.message); }
+  });
+});
+</script></body></html>
