@@ -134,6 +134,53 @@ test('newNonce 每次都不一樣', () => {
   assert.strictEqual(seen.size, 500, 'nonce 撞號了——撞號會把兩次不同的操作看成同一次');
 });
 
+// ── 完整性檢查：列舉「該有的」，不是列舉「壞的」 ──────────────────────────
+// 上面每一條都是對著已知的十支寫。它們守不到最可能發生的那件事：
+// **日後有人加一支新的寫入呼叫、忘了帶 nonce。** 那支就會靜默重跑，
+// 而上面每一條都還是綠的——因為沒有人告訴它們有這支新的。
+//
+// 所以這裡反過來掃：board.html 的**每一個** jsonp 呼叫，都必須二擇一——
+// 要嘛在唯讀白名單裡，要嘛帶 nonce。兩邊都不符合就紅，逼新增的人表態。
+// （同 line-platform/tests/claspignore.test.js 的形狀：白名單漏一項是靜默的，
+//   所以要列舉該放行的、而不是列舉該擋的。）
+test('每一個 jsonp 呼叫都必須「在唯讀白名單裡」或「帶 nonce」，二擇一', () => {
+  const all = [];
+  const re = /jsonp\(\s*(['"])([A-Za-z][\w]*)\1/g;
+  let m;
+  while ((m = re.exec(SRC))) all.push({ action: m[2], idx: m.index });
+
+  // 先確認掃描器沒漏：字面量呼叫數應等於全部 jsonp( 呼叫數。
+  // 計數前先拿掉整行註解——本檔註解裡就有兩處 `jsonp()`，把它們算進來會讓這條
+  // 永遠紅，而紅在錯的理由上比不紅更糟（人會直接把它關掉）。
+  const CODE = SRC.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  const total = (CODE.match(/[^A-Za-z_$.]jsonp\(/g) || []).length
+    - (CODE.match(/function jsonp\(/g) || []).length;
+  assert.strictEqual(all.length, total,
+    '有 ' + (total - all.length) + ' 個 jsonp 呼叫的 action 不是字面字串，'
+    + '這個掃描器看不到它們——掃描器要跟著改，否則它會安靜地少檢查');
+
+  const missing = [];
+  all.forEach(({ action, idx }) => {
+    if (READ_ACTIONS.indexOf(action) >= 0) return;          // 唯讀白名單，刻意不帶
+    const call = SRC.slice(idx, idx + 400);
+    const argTxt = call.slice(call.indexOf(',') + 1).trimStart();
+    let params = call;
+    if (!argTxt.startsWith('{')) {
+      const id = (argTxt.match(/^([A-Za-z_$][\w$]*)/) || [])[1];
+      const decl = id && new RegExp('var\\s+' + id + '\\s*=\\s*\\{[^}]*\\}')
+        .exec(SRC.slice(entryStart(idx), idx));
+      params = decl ? decl[0] : '';
+    }
+    if (!/nonce\s*:\s*nonce\b/.test(params)) missing.push(action);
+  });
+
+  assert.deepStrictEqual(missing, [],
+    '這些 jsonp 呼叫既不在唯讀白名單裡、也沒帶 nonce：' + missing.join('、')
+    + '。本頁的 jsonp 重試是無條件的 ⇒ 它們失敗時會靜默重跑一次。'
+    + '寫入的請加 nonce；唯讀的請加進 READ_ACTIONS 白名單——兩者都要**刻意**表態，'
+    + '不可以什麼都不做就過關');
+});
+
 // 絆線：這一頁的重試是無條件的，那正是十支寫入都需要 nonce 的理由。
 // 若日後有人把它改成有條件（例如比照 stats.html 加 timeoutMs），這條會紅，
 // 逼他回來讀上面那段說明再決定 nonce 還要不要留。
