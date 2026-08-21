@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames,
-        seenLoad, seenSave, seenMerge } = require('../assets/staff-scan.js');
+        seenLoad, seenSave, seenMerge, shouldHandleCode } = require('../assets/staff-scan.js');
 
 test('parseChkCode：格式正確回員編', () => {
   assert.deepEqual(parseChkCode('CHK|nendkai2026|00011|abc123', 'nendkai2026'),
@@ -134,4 +134,39 @@ test('seenMerge：不就地改動傳進來的 seen（呼叫端會比較新舊）
   const before = {};
   seenMerge(before, ['00011'], { '00011': 'h1' });
   assert.deepEqual(before, {});
+});
+
+// ── 停留期間該不該吃這張碼（2026-08-21，修一個我自己引入的靜默失敗）──────────
+// 原本寫成「停留期間整個不讀影格」，於是 3 秒內下一位的碼被丟掉、畫面毫無反應。
+// 操作員沒盯著螢幕就會以為掃過了走人——那個人沒報到，也沒有任何地方留下痕跡。
+
+const HOLD_END = 10000;   // 假設停留到 t=10000
+
+test('停留中：不同的碼要放行——下一位到了就該立刻接手', () => {
+  assert.equal(shouldHandleCode('CHK|a|00002|s', 'CHK|a|00001|s', 9000, HOLD_END, 9500), true);
+});
+
+test('停留中：同一張碼要略過——人還站在鏡頭前，不該重複觸發', () => {
+  assert.equal(shouldHandleCode('CHK|a|00001|s', 'CHK|a|00001|s', 9000, HOLD_END, 9500), false);
+});
+
+test('沒解到碼一律不處理（空字串／null 都是）', () => {
+  assert.equal(shouldHandleCode('', 'x', 0, 0, 5000), false);
+  assert.equal(shouldHandleCode(null, 'x', 0, 0, 5000), false);
+});
+
+test('不在停留中：同一張碼未滿 2.5 秒仍擋（原有的防連發沒被改壞）', () => {
+  assert.equal(shouldHandleCode('CHK|a|00001|s', 'CHK|a|00001|s', 9000, 0, 11000), false);
+});
+
+test('不在停留中：同一張碼超過 2.5 秒放行（重掃要看得到已報到過）', () => {
+  assert.equal(shouldHandleCode('CHK|a|00001|s', 'CHK|a|00001|s', 9000, 0, 11600), true);
+});
+
+test('對照組：把「停留中一律不讀」的舊行為寫出來，跟現行必須不同', () => {
+  const 舊行為 = (data, lastText, lastAt, holdUntil, now) =>
+    now < holdUntil ? false : !!data && (data !== lastText || now - lastAt > 2500);
+  const 下一位 = ['CHK|a|00002|s', 'CHK|a|00001|s', 9000, HOLD_END, 9500];
+  assert.equal(舊行為(...下一位), false, '舊行為會吞掉下一位');
+  assert.equal(shouldHandleCode(...下一位), true, '現行必須放行——這一條就是修正本身');
 });
