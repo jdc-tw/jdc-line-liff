@@ -215,6 +215,7 @@
 <script src="assets/roster-wide.js"></script>
 <script src="assets/roster-dl.js"></script>
 <script src="assets/anniv.js"></script>
+<script src="assets/send-modal.js"></script>
 <script src="assets/board-cache.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
@@ -357,6 +358,17 @@ var gOpts={titles:[],units:[]};
 function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function emailPrefix(full){full=(full||'').toString();var i=full.indexOf('@');return i>=0?full.slice(0,i):full;}
 function setMsg(el,text,type){el.className='msg show msg-'+(type||'info');el.textContent=text;}
+// 動作狀態視窗用共用元件 assets/send-modal.js（sendModal / sendModalClose）。
+// 為何用共用檔而不是本頁自己寫一份：兩頁的視窗要長一樣、改一次就好；
+// 而且那支刻意不引用任何頁面的 CSS 變數或 class——本頁沒有 --ink／--bad／
+// .btn-pri2，照抄 stats.html 的版本會變成透明字且不報錯。
+//
+// ⚠️ busy 視窗沒有關閉鍵、點背景也不關，唯一的出口是請求回來。
+//    本頁 jsonp() 最後一段 catch 會把任何失敗（含逾時、含重試後仍失敗）轉成
+//    {ok:false}，所以 .then 一定會執行、視窗不會永遠關不掉。已實測確認。
+//    改 jsonp 時要一起想這件事。
+// 行內訊息與視窗一起更新，兩處文案一致——不要在呼叫端各寫一次，會漂移
+function actDone(el,text,type){setMsg(el,text,type);sendModal(type==='err'?'err':'done',text);}
 
 function unitSelectHtml(cur){
   var none='<option value=""'+(cur?'':' selected')+'>── 請選擇 ──</option>';
@@ -404,14 +416,17 @@ function renderRow(o){
     var pre=emailPrefix(val('email-prefix')).replace(/\s/g,'');
     var email=pre?pre+EMAIL_DOMAIN:'';
     setMsg(msg,'處理中…','info');
+    var who=val('姓名');
+    sendModal('busy','核准中…');
     jsonp('approveCheckin',{token:TOKEN,row:o._row,name:val('姓名'),unit:val('單位'),title:title,birth:val('生日'),email:email,empno:val('員編')})
       .then(function(r){
         if(r&&r.ok){
           addDoneItem({'報到日期':o['報到日期'],'姓名':val('姓名'),'單位':val('單位'),'職稱':title,'員編':val('員編')}, true);
           d.remove();
+          sendModal('done','已核准 '+who);
           updateBadge(document.querySelectorAll('#pending .card').length);
           if(!document.querySelector('#pending .card')) document.getElementById('pending').innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
-        } else setMsg(msg,(r&&r.msg)||'失敗','err');
+        } else actDone(msg,(r&&r.msg)||'失敗','err');
       });
   };
   return d;
@@ -429,9 +444,12 @@ function requeueMail(row,btn){
   var msg=btn.parentNode.querySelector('.resend-msg');
   if(!confirm('把這位同仁的留存信重新排入寄送？（今日 17:00 自動寄出）'))return;
   msg.textContent='處理中…';msg.className='resend-msg';
+  sendModal('busy','排入待寄中…');
   jsonp('requeueCheckinMail',{token:TOKEN,row:row}).then(function(r){
-    msg.textContent=(r&&r.msg)||(r&&r.ok?'已排入待寄':'失敗');
+    var t=(r&&r.msg)||(r&&r.ok?'已排入待寄':'失敗');
+    msg.textContent=t;
     msg.className='resend-msg '+(r&&r.ok?'ok':'err');
+    sendModal((r&&r.ok)?'done':'err',t);
   });
 }
 
@@ -581,9 +599,10 @@ function renderHrRow(o){
     d.querySelector('[data-revert]').onclick=function(){
       if(!confirm('撤銷「'+o['姓名']+'」的待生效？會回到待確認，需重新核定。'))return;
       setMsg(pmsg,'處理中…','info');
+      sendModal('busy','撤銷中…');
       jsonp('revertHrChange',{token:TOKEN,row:o._row}).then(function(r){
-        if(r&&r.ok){setMsg(pmsg,'已撤銷','ok');setTimeout(loadHr,800);}
-        else setMsg(pmsg,(r&&r.msg)||'失敗','err');
+        if(r&&r.ok){actDone(pmsg,'已撤銷','ok');setTimeout(loadHr,800);}
+        else actDone(pmsg,(r&&r.msg)||'失敗','err');
       });
     };
     return d;
@@ -620,18 +639,20 @@ function renderHrRow(o){
     if(val('unit'))p.newUnit=val('unit');
     if(cat==='晉升')p.newTitle=val('title');
     setMsg(msg,'處理中…','info');
+    sendModal('busy','確認中…');
     jsonp('confirmHrChange',p).then(function(r){
-      if(r&&r.ok){setMsg(msg,r.applied?'已確認並套用名冊 ✅':'已確認，'+(r.effTag||'到期自動套用')+' ☑️','ok');setTimeout(loadHr,800);}
-      else setMsg(msg,(r&&r.msg)||'失敗','err');
+      if(r&&r.ok){actDone(msg,r.applied?'已確認並套用名冊 ✅':'已確認，'+(r.effTag||'到期自動套用')+' ☑️','ok');setTimeout(loadHr,800);}
+      else actDone(msg,(r&&r.msg)||'失敗','err');
     });
   };
   d.querySelector('[data-reject]').onclick=function(){
     var reason=prompt('駁回原因（選填，會記在備註與 Slack）：');
     if(reason===null)return;
     setMsg(msg,'處理中…','info');
+    sendModal('busy','駁回中…');
     jsonp('rejectHrChange',{token:TOKEN,row:o._row,reason:reason}).then(function(r){
-      if(r&&r.ok){setMsg(msg,'已駁回','ok');setTimeout(loadHr,800);}
-      else setMsg(msg,(r&&r.msg)||'失敗','err');
+      if(r&&r.ok){actDone(msg,'已駁回','ok');setTimeout(loadHr,800);}
+      else actDone(msg,(r&&r.msg)||'失敗','err');
     });
   };
   return d;
@@ -643,27 +664,32 @@ function batchTransfer(){
   if(!oldU||!newU){setMsg(msg,'請選舊單位並輸入新單位。','err');return;}
   if(!confirm('確定把「'+oldU+'」全體在職同仁整批轉到「'+newU+'」？\n此動作立即寫入名冊並通知佳岑改 LINE 標籤。'))return;
   setMsg(msg,'處理中…','info');
+  sendModal('busy','轉移中…');
   jsonp('batchTransferUnit',{token:TOKEN,oldUnit:oldU,newUnit:newU}).then(function(r){
-    if(r&&r.ok){setMsg(msg,'已轉移 '+r.moved+' 人 ✅','ok');document.getElementById('bt-new').value='';setTimeout(loadHr,800);}
-    else setMsg(msg,(r&&r.msg)||'失敗','err');
+    if(r&&r.ok){actDone(msg,'已轉移 '+r.moved+' 人 ✅','ok');document.getElementById('bt-new').value='';setTimeout(loadHr,800);}
+    else actDone(msg,(r&&r.msg)||'失敗','err');
   });
 }
 function addUnitGo(){
   var msg=document.getElementById('au-msg');
   var name=document.getElementById('au-name').value.trim();
   if(!name){setMsg(msg,'請輸入名稱。','err');return;}
+  setMsg(msg,'處理中…','info');
+  sendModal('busy','新增中…');
   jsonp('addUnit',{token:TOKEN,name:name,group:document.getElementById('au-group').value}).then(function(r){
-    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('au-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
-    else setMsg(msg,(r&&r.msg)||'失敗','err');
+    if(r&&r.ok){actDone(msg,'已新增「'+name+'」✅','ok');document.getElementById('au-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
+    else actDone(msg,(r&&r.msg)||'失敗','err');
   });
 }
 function addTitleGo(){
   var msg=document.getElementById('at-msg');
   var name=document.getElementById('at-name').value.trim();
   if(!name){setMsg(msg,'請輸入名稱。','err');return;}
+  setMsg(msg,'處理中…','info');
+  sendModal('busy','新增中…');
   jsonp('addTitle',{token:TOKEN,name:name,group:document.getElementById('at-group').value,self:document.getElementById('at-self').value}).then(function(r){
-    if(r&&r.ok){setMsg(msg,'已新增「'+name+'」✅','ok');document.getElementById('at-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
-    else setMsg(msg,(r&&r.msg)||'失敗','err');
+    if(r&&r.ok){actDone(msg,'已新增「'+name+'」✅','ok');document.getElementById('at-name').value='';optLoaded=false;loadOptionsAdmin();setTimeout(loadHr,400);}
+    else actDone(msg,(r&&r.msg)||'失敗','err');
   });
 }
 // 調整既有選項（分類/自選/啟停）
@@ -720,9 +746,10 @@ function saveOptionGo(){
   var p={token:TOKEN,type:t,name:n,group:document.getElementById('eo-group').value,status:document.getElementById('eo-status').value};
   if(t==='職稱')p.self=document.getElementById('eo-self').value;
   setMsg(msg,'處理中…','info');
+  sendModal('busy','儲存中…');
   jsonp('updateOption',p).then(function(r){
-    if(r&&r.ok){setMsg(msg,'已儲存 ✅','ok');loadOptionsAdmin();setTimeout(loadHr,400);}
-    else setMsg(msg,(r&&r.msg)||'失敗','err');
+    if(r&&r.ok){actDone(msg,'已儲存 ✅','ok');loadOptionsAdmin();setTimeout(loadHr,400);}
+    else actDone(msg,(r&&r.msg)||'失敗','err');
   });
 }
 var hrFirst=true;
@@ -774,9 +801,12 @@ function reviveNotice(row,btn){
   var msg=btn.parentNode.querySelector('.resend-msg');
   if(!confirm('恢復這筆已駁回的異動？會回到人事異動分頁的待確認清單。'))return;
   msg.textContent='處理中…';msg.className='resend-msg';
+  sendModal('busy','恢復中…');
   jsonp('revertHrChange',{token:TOKEN,row:row}).then(function(r){
-    msg.textContent=(r&&r.ok)?'已恢復，請至「人事異動」分頁核定':(r&&r.msg)||'失敗';
+    var t=(r&&r.ok)?'已恢復，請至「人事異動」分頁核定':(r&&r.msg)||'失敗';
+    msg.textContent=t;
     msg.className='resend-msg '+(r&&r.ok?'ok':'err');
+    sendModal((r&&r.ok)?'done':'err',t);
     if(r&&r.ok){logLoaded=false;setTimeout(loadHr,400);}
   });
 }
