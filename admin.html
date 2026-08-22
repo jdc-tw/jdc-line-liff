@@ -137,18 +137,36 @@ function jsonp(action,params,timeoutMs){
 //
 // ⚠️ 走 queueRead 不直接 jsonp：本頁下面的預取也用它，兩支並行違反「讀取不並行」
 //    （見下一段註解）。排在預取之前是刻意的——這支決定畫面上看不看得到入口，優先。
+// 換來的 mt 存進既有的加密快取（T280，2026-08-22 使用者拍板方案 D）。
+// 第二次之後開這一頁，訊息紀錄入口**一趟 API 都不用打**、直接可點。
+// ⚠️ 存的是一顆憑證。可接受的理由：mt 本來就會出現在網址列
+//    （`messages.html?t=<mt>`），而同一份 board-cache 已經在存人事看板的姓名資料，
+//    沒有新的洩漏類型。加密＝AES-GCM、7 天 TTL、依 t 的指紋分格。
+var MSG_TOKEN_SLICE='getMsgLogToken';
 if(mt){
   showMsgLog(mt);                       // 這一頁的後端是 hub，吃的是 mt
 }else if(t){
   showNote('✉️ 訊息紀錄','正在確認權限…');   // 先顯示，別讓人盯著空白等 API
+  // ⚠️ **整段包在佇列的第一個工作裡**，不可以寫成 `cacheBootstrap(t).then(queueRead(...))`。
+  //    cacheBootstrap 是非同步的，等它 resolve 才排隊的話，下面的預取會插到前面去，
+  //    首次開頁（沒快取）的入口就從 ~1.9 秒變成 ~4.7 秒——那等於偷偷做了「預取先」，
+  //    而使用者拍的是方案 D 不是 B。
   queueRead(function(){
-    return jsonp('getMsgLogToken',{token:t}).then(function(r){
-      if(r&&r.ok&&r.token){
+    return cacheBootstrap(t).then(function(){
+      var hit=cacheGet(MSG_TOKEN_SLICE);
+      if(hit&&hit.value&&hit.value.token){
         document.getElementById('msg-note').hidden=true;
-        showMsgLog(r.token);
-      }else{
-        showNote('✉️ 訊息紀錄（目前開不了）',(r&&r.msg)||'無法取得檢視權限，請稍後重試。');
+        showMsgLog(hit.value.token);
+        return;                         // 命中就完全不打 API
       }
+      return jsonp('getMsgLogToken',{token:t}).then(function(r){
+        if(r&&r.ok&&r.token){
+          document.getElementById('msg-note').hidden=true;
+          showMsgLog(r.token);
+          return cacheSave(t,MSG_TOKEN_SLICE,r);   // cacheSave 只收 ok:true
+        }
+        showNote('✉️ 訊息紀錄（目前開不了）',(r&&r.msg)||'無法取得檢視權限，請稍後重試。');
+      });
     });
   });
 }else{
