@@ -30,7 +30,7 @@ const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name:
 /** @param {{cache?:object, urlV?:string, gas?:object}} opt */
 function run(opt) {
   opt = opt || {};
-  const log = [], gasCalls = [];
+  const log = [], gasCalls = [], writes = [], clears = [];
   const els = {};
   const el = (id) => (els[id] = els[id] || { style: {}, textContent: '', innerHTML: '', appendChild() {} });
   const ctx = {
@@ -40,11 +40,11 @@ function run(opt) {
     show: () => {},
     showMsg: () => {},
     escHtml: (s) => s,
-    getAct: () => '',
+    getAct: () => (opt.act || ''),
     getParam: () => (opt.urlV || ''),
     passCacheRead: () => (Object.prototype.hasOwnProperty.call(opt, 'cache') ? opt.cache : null),
-    passCacheWrite: () => {},
-    passCacheClear: () => {},
+    passCacheWrite: (u, a, v) => writes.push({ u, a, v }),
+    passCacheClear: (u, a) => clears.push({ u, a }),
     renderPass: () => {},
     loadLottery: () => {},
     jsonp: (action, params) => {
@@ -57,7 +57,7 @@ function run(opt) {
   vm.createContext(ctx);
   vm.runInContext(extractFn('startPass'), ctx);
   ctx.startPass('U73069bf');
-  return { log, gasCalls };
+  return { log, gasCalls, writes, clears };
 }
 
 test('★快取命中：一次 GAS 都不打，而且紀錄留得下來', async () => {
@@ -128,3 +128,48 @@ test('對照組：把命中那行 lg 拿掉，★那條必須翻紅', () => {
   assert.deepStrictEqual(log, [],
     '拿掉那行後紀錄是空的 ⇒ ★那條斷言確實抓得到「儀器又變回盲的」');
 });
+
+/* ═══════════ 兩個入口共用同一份快取（2026-08-22）═══════════
+ * 通知連結帶 `&act=`、圖文選單不帶 ⇒ 快取鍵不同。8/27 中午暖機、8/28 按圖文選單
+ * 報到的計畫，成敗全在這幾條。
+ */
+
+test('★真實情境：act=midyear2026 進來，auto 鍵也要被寫', async () => {
+  const { writes } = run({ cache: null, urlV: '21', act: 'midyear2026',
+    gas: { ...RES, published: true, isDefaultAct: true } });
+  await new Promise((r) => setImmediate(r));
+  const keys = writes.map((w) => w.a);
+  assert.ok(keys.includes('midyear2026'), '連結自己那把鍵要寫');
+  assert.ok(keys.includes(''), 'auto 鍵沒寫 ⇒ 8/27 暖的機，8/28 按圖文選單一次都不命中');
+  assert.strictEqual(writes.length, 2);
+});
+
+test('不是預設場次：只寫自己那把，不得污染 auto（別場桌號比慢更糟）', async () => {
+  const { writes } = run({ cache: null, act: 'yearend2026',
+    gas: { ...RES, published: true, isDefaultAct: false } });
+  await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(writes.map((w) => w.a), ['yearend2026']);
+});
+
+test('圖文選單進來（act 空）：只有一把鍵，不重複寫', async () => {
+  const { writes } = run({ cache: null, gas: { ...RES, published: true, isDefaultAct: true } });
+  await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual(writes.map((w) => w.a), ['']);
+});
+
+test('取消發佈：兩把鍵都要清，否則圖文選單那把還留著舊 QR', async () => {
+  const { writes, clears } = run({ cache: null, act: 'midyear2026',
+    gas: { ...RES, published: false, isDefaultAct: true } });
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(writes.length, 0, '未發佈不留快取');
+  assert.deepStrictEqual(clears.map((c) => c.a), ['midyear2026', '']);
+});
+
+test('對照組：把「多寫 auto 鍵」那行拿掉，★那條必須翻紅', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const m = src.match(/^    function startPass\([\s\S]*?^    }/m);
+  const mutated = m[0].replace(/\n\s*if \(act && res\.isDefaultAct\) passCacheWrite\(userId, '', urlV, res\);/, '');
+  assert.notStrictEqual(mutated, m[0], '突變沒注入成功——先確認真的改到字了');
+  assert.ok(!mutated.includes("passCacheWrite(userId, '', urlV, res)"));
+});
+

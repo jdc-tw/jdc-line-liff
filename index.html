@@ -542,8 +542,20 @@
         }
         renderPass(res);
         // 未發佈的不留快取，否則發佈後那支手機會一直吃到「還沒公布」那份
-        if (res.published) passCacheWrite(userId, act, urlV, res);
-        else passCacheClear(userId, act);
+        //
+        // 為何要寫兩個鍵（2026-08-22）：通知連結一定帶 `&act=`（後端 passPageUrl 組），
+        // 圖文選單那顆常駐鈕不帶 ⇒ passCacheKey 一個是 `:<actId>`、一個是 `:auto`，
+        // **兩個不同的快取鍵**。8/27 中午請大家點連結暖機、8/28 傍晚按圖文選單報到，
+        // 照舊寫法會一次都不命中——137 個人在排隊當下各打一次 5 秒的 GAS。
+        // 只有伺服器說「這場也是不帶 act 時會挑到的那一場」(isDefaultAct) 才多寫，
+        // 否則會把別場的桌號寫進 auto 鍵，那比慢更糟。
+        if (res.published) {
+          passCacheWrite(userId, act, urlV, res);
+          if (act && res.isDefaultAct) passCacheWrite(userId, '', urlV, res);
+        } else {
+          passCacheClear(userId, act);
+          if (act && res.isDefaultAct) passCacheClear(userId, '');   // 取消發佈也要清乾淨兩邊
+        }
         loadLottery(userId, res.actId || act);   // 伺服器挑的場次為準，否則獎金卡會查錯場
       }).catch(function (err) {
         lg('⑥ getEventCheckinPass catch: ' + (err && err.message));
