@@ -1936,14 +1936,15 @@ function dlSignin(){
     if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'載入失敗','err');return;}
     var pages=buildSigninPages(r.rows||[]);
     if(!pages.length){setMsg('gl-msg','此活動沒有出席的廠商（參加人數都是 0，或還沒有來賓資料）','err');return;}
-    // 既沒有廠商名稱也沒有聯絡人的列：照樣印（姓名留白），但一定要講出來——
-    // 靜默丟掉或靜默留白，都是現場點不到名才發現。
+    // 沒有廠商名稱的列：照樣印（姓名留白），但一定要講出來——
+    // 靜默丟掉或靜默留白，都是現場點不到名才發現。提示裡帶聯絡人，方便回名單補。
     var all=pages.reduce(function(a,p){return a.concat(p.left,p.right);},[]);
     var un=all.filter(function(e){return e.unnamed;});
     return writeSigninXlsx_(pages,(SB?SB.actName:actId())).then(function(){
       var msg='已下載（'+all.length+' 筆・'+pages.length+' 頁）';
-      if(un.length)msg+='　⚠️ 第 '+un.map(function(e){return e.no;}).join('、')
-        +' 號既沒有廠商名稱也沒有聯絡人，姓名欄是空的——請補來賓名單後重產';
+      if(un.length)msg+='　⚠️ 第 '+un.map(function(e){
+        return e.no+(e.who?'（聯絡人 '+e.who+'）':'');}).join('、')
+        +' 沒有廠商名稱，姓名欄是空的——請回來賓名單補上再產一次';
       setMsg('gl-msg',msg,un.length?'err':'ok');
     });
   }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});

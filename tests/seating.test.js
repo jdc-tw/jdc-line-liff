@@ -583,16 +583,18 @@ test('buildSigninPages：同桌維持名單原順序（穩定排序）', () => {
   assert.deepEqual(pages[0].left.map(e => e.name), ['後來的', '先來的']);
 });
 
-test('buildSigninPages：沒有廠商名稱時，用「聯絡人」的人名頂上', () => {
+test('buildSigninPages：姓名欄一律取廠商名稱，聯絡人不會被印上去', () => {
   const pages = buildSigninPages([
     { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
     { _row: 3, owner: 'a', name: '甲營造', contact: '李小華', seatNo: 1, table: '4' },
   ]);
-  assert.deepEqual(pages[0].left.map(e => e.name), ['王大明', '甲營造']);
-  assert.equal(pages[0].left[1].name, '甲營造', '有廠商名稱時不會被聯絡人蓋掉');
+  assert.deepEqual(pages[0].left.map(e => e.name), ['', '甲營造'], '沒有廠商名就留白');
+  assert.equal(pages[0].left[0].unnamed, true);
+  assert.equal(pages[0].left[0].who, '王大明', '聯絡人只留給提示訊息用，不進姓名欄');
+  assert.ok(!pages[0].left[1].unnamed);
 });
 
-test('buildSigninPages：同一位無廠商名的來賓佔兩席，聚合成一列人數 2', () => {
+test('buildSigninPages：無廠商名時用聯絡人分組——同一位佔兩席仍聚合成一列人數 2', () => {
   const pages = buildSigninPages([
     { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
     { _row: 3, owner: 'a', name: '', contact: '王大明', seatNo: 2, table: '3' },
@@ -601,7 +603,7 @@ test('buildSigninPages：同一位無廠商名的來賓佔兩席，聚合成一�
   assert.equal(pages[0].left[0].seats, 2);
 });
 
-test('buildSigninPages：無廠商名的人不會跟同名的廠商併成一列', () => {
+test('buildSigninPages：無廠商名的來賓不會跟同名的廠商併成一列', () => {
   const pages = buildSigninPages([
     { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
     { _row: 3, owner: 'a', name: '王大明', contact: '', seatNo: 1, table: '3' },

@@ -443,10 +443,13 @@ function signinTableLabel_(t) {
  * 同名廠商掛在兩個負責人底下時兩邊都會列成兩列，兩份檔案才不會對不起來。
  *
  * **沒有廠商名稱的來賓不會被丟掉**（2026-08-22 使用者指出有兩位是這種）：
- * 取名順序＝廠商名稱 → 聯絡人；兩欄都空的仍佔一列、姓名欄留白並標記 `unnamed`，
- * 由呼叫端報給使用者補資料。原本這裡跟上傳解析一樣直接 `return`，
- * 有席位的人會**零提示消失**在簽到表上——現場點不到名才會發現。
- * 個人來賓的聚合鍵前綴 `#`，才不會跟剛好同名的廠商併成一列。
+ * 姓名欄**一律只取廠商名稱**（使用者拍板：不要用聯絡人頂上），沒有就留白，
+ * 但那一列仍佔位、標記 `unnamed`、把聯絡人放進 `who` 供呼叫端做提示訊息用——
+ * 人名只出現在畫面提示裡，不印上簽到表。原本這裡跟上傳解析一樣直接 `return`，
+ * 有席位的人會**零提示消失**在簽到表上，現場點不到名才會發現。
+ * 聚合鍵：有廠商名就用它；沒有就退到聯絡人（前綴 `#`，才不會跟剛好同名的廠商併成一列），
+ * 兩者都沒有才併到「該負責人底下的無名席位」。退到聯絡人是為了讓同一位的多個席位
+ * 仍算成一列，人數不會被拆散。
  *
  * @param {Array<{_row,owner,name,contact,seatNo,table}>} guests listGuests 回傳的 rows
  * @param {number} [perCol] 每欄列數（預設 SIGNIN_ROWS，測試可調小）
@@ -459,11 +462,12 @@ function buildSigninPages(guests, perCol) {
   (guests || []).forEach(function (g) {
     var owner = clean(g.owner);
     var vendor = clean(g.name), person = clean(g.contact);
-    // 廠商名稱 → 聯絡人 → 都沒有（姓名留白，等呼叫端提醒使用者補）
-    var name = vendor || person;
     var k = vendor ? (owner + '|' + vendor)
       : (person ? (owner + '|#' + person) : (owner + '|#__無名__'));
-    if (!agg[k]) { agg[k] = { name: name, seats: 0, tables: [], unnamed: !name }; order.push(k); }
+    if (!agg[k]) {
+      agg[k] = { name: vendor, who: person, seats: 0, tables: [], unnamed: !vendor };
+      order.push(k);
+    }
     if (!(Number(g.seatNo) > 0)) return;
     agg[k].seats++;
     var t = String(g.table || '').trim();
@@ -485,7 +489,8 @@ function buildSigninPages(guests, perCol) {
   for (var i = 0; i < list.length; i += per) {
     var chunk = list.slice(i, i + per).map(function (x, j) {
       return { no: i + j + 1, name: x.v.name, seats: x.v.seats,
-               table: x.v.tables.map(signinTableLabel_).join('、'), unnamed: x.v.unnamed };
+               table: x.v.tables.map(signinTableLabel_).join('、'),
+               unnamed: x.v.unnamed, who: x.v.who };
     });
     pages.push({ left: chunk.slice(0, perCol), right: chunk.slice(perCol) });
   }
