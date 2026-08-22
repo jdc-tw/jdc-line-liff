@@ -521,24 +521,44 @@
       var act = getAct(), urlV = getParam('v');
       var msgEl = document.getElementById('pass-msg');
 
-      var cached = passCacheRead(userId, act);
-      if (passCacheUsable(cached, urlV)) {
+      // 飛行紀錄（?diag=1 看得到）。2026-08-21 之前這一整段是**盲的**：紀錄停在
+      // 「③ getProfile OK」，於是「通行證變慢」到底慢在快取沒命中、還是 GAS 本身、
+      // 還是畫 QR，完全看不出來。相鄰兩筆的時間差就是各段耗時，不另建計時器。
+      var cached = passCacheRead(userId, act), today = passToday();
+      if (passCacheUsable(cached, urlV, today)) {
+        lg('⑤ pass 快取命中 → 0 次 GAS');
         renderPass(cached.res);
         loadLottery(userId, cached.res.actId || act);
         return;                                   // 這條路一次 GAS 都不打
       }
 
+      lg('⑤ pass 快取未命中（' + passCacheMissReason(cached, urlV, today) + '）→ 打 GAS');
       jsonp('getEventCheckinPass', { userId: userId, act: act }).then(function (res) {
+        lg('⑥ getEventCheckinPass 回 ok=' + !!(res && res.ok)
+           + ' published=' + !!(res && res.published));
         if (!res || !res.ok) {
           showMsg(msgEl, escHtml((res && res.msg) || '取得報到碼失敗，請稍後再試。'), 'err');
           return;
         }
         renderPass(res);
         // 未發佈的不留快取，否則發佈後那支手機會一直吃到「還沒公布」那份
-        if (res.published) passCacheWrite(userId, act, urlV, res);
-        else passCacheClear(userId, act);
+        //
+        // 為何要寫兩個鍵（2026-08-22）：通知連結一定帶 `&act=`（後端 passPageUrl 組），
+        // 圖文選單那顆常駐鈕不帶 ⇒ passCacheKey 一個是 `:<actId>`、一個是 `:auto`，
+        // **兩個不同的快取鍵**。8/27 中午請大家點連結暖機、8/28 傍晚按圖文選單報到，
+        // 照舊寫法會一次都不命中——137 個人在排隊當下各打一次 5 秒的 GAS。
+        // 只有伺服器說「這場也是不帶 act 時會挑到的那一場」(isDefaultAct) 才多寫，
+        // 否則會把別場的桌號寫進 auto 鍵，那比慢更糟。
+        if (res.published) {
+          passCacheWrite(userId, act, urlV, res);
+          if (act && res.isDefaultAct) passCacheWrite(userId, '', urlV, res);
+        } else {
+          passCacheClear(userId, act);
+          if (act && res.isDefaultAct) passCacheClear(userId, '');   // 取消發佈也要清乾淨兩邊
+        }
         loadLottery(userId, res.actId || act);   // 伺服器挑的場次為準，否則獎金卡會查錯場
       }).catch(function (err) {
+        lg('⑥ getEventCheckinPass catch: ' + (err && err.message));
         showMsg(msgEl, escHtml('網路錯誤：' + (err && err.message ? err.message : err)), 'err');
       });
     }
@@ -562,6 +582,7 @@
         seatEl.style.display = 'none';
         qrEl.innerHTML = '';
         hintEl.textContent = '桌次公布後，您的報到 QR 就會出現在這裡。';
+        lg('⑦ 未發佈 → 不出 QR');
         return;
       }
 
@@ -581,11 +602,13 @@
       // 2026-08-18 之前這裡是光禿禿的黑白格，看板那顆有膠囊，使用者一眼就看出不一致。
       // 掃出來的碼兩邊本來就一模一樣，差的只有外觀。
       qrBadgeReady().then(function () {
+        lg('⑦ QR 畫完');
         qrEl.innerHTML = '';
         var cv = qrBadgeCanvas(res.code, res.name || '', a.name || '');
         cv.style.cssText = 'width:100%;max-width:280px;height:auto;display:block;margin:0 auto';
         qrEl.appendChild(cv);
       }).catch(function () {
+        lg('⑦ QR 畫完（膠囊版失敗，退陽春版）');
         // logo 拿不到也不能讓人沒有 QR：退回沒有膠囊的陽春版（掃出來的碼一樣）
         var qr = qrcode(0, 'H'); qr.addData(res.code); qr.make();
         qrEl.innerHTML = qr.createImgTag(6, 8);
@@ -611,7 +634,7 @@
         if (!res || !res.ok || !res.enabled || !res.checkedIn) return;
         try { sessionStorage.setItem(key, JSON.stringify(res)); } catch (e) {}
         renderLotteryInto(res, userId, act, key);
-      }).catch(function (err) { lg('⑤ getMyLottery catch: ' + (err && err.message)); });
+      }).catch(function (err) { lg('⑧ getMyLottery catch: ' + (err && err.message)); });
     }
     function loadLottery(userId, act) {
       var key = 'lottery_' + userId + '_' + act;
