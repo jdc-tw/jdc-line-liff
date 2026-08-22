@@ -4,34 +4,295 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>訊息紀錄</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
-  body { font-family: system-ui, "Noto Sans TC", sans-serif; margin: 0; padding: 16px;
-         background: #fafafa; color: #222; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  .since { font-size: 13px; color: #666; margin-bottom: 16px; }
-  .since.warn { color: #b00; font-weight: 600; }
-  .batch { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
-           margin-bottom: 10px; overflow: hidden; }
-  .batch > summary { padding: 12px 14px; cursor: pointer; font-size: 14px; }
-  .fail { color: #b00; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { border-top: 1px solid #eee; padding: 8px 10px; text-align: left;
-           vertical-align: top; word-break: break-all; }
-  .wrap { overflow-x: auto; }
-  #msg { padding: 24px; text-align: center; color: #666; }
+  /* ═══════════════════════════════════════════════════════════════
+     設計語彙全部沿用 stats.html（活動紀錄看板，2026-08-16 改版）。
+     四條做法照抄：①綠降飽和 ②按鈕全扁平（**每顆明寫 color**，不寫 iOS 給系統藍）
+     ③不用 emoji ④卡片去陰影改細線。
+     三色職責：藍＝可以按的動作、綠＝正常與已完成、紅＝例外與注意。
+     刻意單一亮色主題——原看板沒有深色版，兩頁要長得一樣。
+     ═══════════════════════════════════════════════════════════════ */
+  :root {
+    --g: #4a7c62; --g-bg: #eff4f1; --g-ln: #d5e2da;
+    --ink: #2c2c2b; --ink2: #6b6b68; --ink3: #9a9a96;
+    --bg: #fbfbfa; --ln: #ececea;
+    --warn: #8a6a2f; --warn-bg: #f7f2e6;
+    --r-dim: #8f3040; --r-bg: #fbeef1;
+    --b: #2f4858;
+    --bad: var(--r-dim); --bad-bg: var(--r-bg);
+    --rail-w: 44px;
+    /* 分類色：明度／彩度比照系統既有的 --g(#4a7c62) 與 --g-bg(#eff4f1)，不拉高飽和。
+       四個色相＝四個子系統，同組深淺兩階，顏色本身就說得出「這是哪一類」。
+       ⚠️ 刻意不用綠與紅——那兩色燈號正在用（綠＝成功、紅＝失敗），
+          分類再借會出現「綠徽章配紅燈號」的自打架畫面。 */
+    --t1: #5d5182; --t1-bg: #f0edf6;   /* 通知類 */
+    --t2: #3d6b7d; --t2-bg: #e9f1f4;   /* 報到類 */
+    --t3: #5b8794;
+    --t4: #46617a; --t4-bg: #ecf0f4;   /* 綁定類 */
+    --t5: #6d7f94;
+    --t6: #7d6244; --t6-bg: #f5efe8;   /* 補登類 */
+    --t7: #99805f;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    margin: 0; padding-left: var(--rail-w);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    font-size: 16px; line-height: 1.65; color: var(--ink); background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  /* 標題列：訊息紀錄　○搜尋　……　清除本機快取（靠右） */
+  .topbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: .01em; flex: none; }
+  .topbar .gap { flex: 1; }
+
+  /* 起始日未設定才出現。正常情況完全不顯示——使用者 2026-08-22：「看就知道了」。
+     但**未設定是真的故障訊號**，留白會讓「還沒開始記」看起來像「這段期間沒發過」。 */
+  .warnbar {
+    display: none; margin: 0 0 12px; padding: 8px 11px; border-radius: 3px;
+    background: var(--warn-bg); color: var(--warn); font-size: 13px; line-height: 1.6;
+  }
+  .warnbar.on { display: block; }
+
+  /* 搜尋：圓點在標題列，按下去才在下面長出整行輸入框 */
+  .searchbar { display: none; margin: 0 0 6px; }
+  .searchbar.open { display: block; }
+  .sdot {
+    flex: none; width: 28px; height: 28px; border-radius: 50%;
+    border: 1px solid var(--ln); background: #fff; color: var(--ink3);
+    cursor: pointer; padding: 0; font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color .15s, color .15s;
+  }
+  .sdot:hover { border-color: var(--ink3); color: var(--ink2); }
+  body.searching .sdot { border-color: var(--b); color: var(--b); }
+  .sdot:focus-visible { outline: 2px solid var(--b); outline-offset: 2px; }
+  /* 放大鏡用 CSS 畫：鏡片是圓，握把是旋轉 45° 的線。
+     不用字元圖示——那等於 emoji，設計語彙第③條說不用。 */
+  .mag {
+    position: relative; width: 9px; height: 9px; border-radius: 50%;
+    border: 1.5px solid currentColor; margin: -2px 2px 2px -2px;
+  }
+  .mag::after {
+    content: ''; position: absolute; right: -4px; bottom: -3px;
+    width: 1.5px; height: 5px; background: currentColor;
+    transform: rotate(-45deg); transform-origin: top;
+  }
+  #q {
+    width: 100%; font-size: 16px; font-family: inherit;
+    padding: 7px 10px; border: 1px solid var(--ln); border-radius: 3px;
+    color: var(--ink); background: #fff;
+  }
+  #q::placeholder { color: var(--ink3); }
+  #q:focus { outline: none; border-color: var(--b); }
+  .shint {
+    font-size: 12px; color: var(--ink3); line-height: 1.6;
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin: -2px 0 10px;
+  }
+  .shint:empty { display: none; }
+  .shint .clear {
+    background: none; border: none; padding: 0; font-family: inherit;
+    font-size: 12px; color: var(--b); cursor: pointer;
+  }
+  .shint .fuzzy { color: var(--warn); }
+
+  /* 清除鈕：在標題列最右，只佔自己需要的寬 */
+  .btn-sm {
+    padding: 3px 8px; font-size: 12px; border: none; border-radius: 3px;
+    background: #f0f0ee; color: var(--ink2); cursor: pointer; font-family: inherit;
+    flex: none;
+  }
+  .btn-sm:active { background: #e4e4e1; }
+  /* 沒快取時變淡不可按（使用者 2026-08-22 拍板：位置永遠固定，
+     而且「淡掉」本身就在告訴他這台目前沒快取——公用電腦上這是有用的資訊）。 */
+  .btn-sm:disabled { cursor: default; }
+  .btn-sm:disabled:active { background: #f0f0ee; }
+
+  /* 月份分段 */
+  .sec {
+    font-size: 13px; color: var(--ink3); margin: 20px 0 8px;
+    font-weight: 600; letter-spacing: .06em; scroll-margin-top: 20px;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .sec:first-of-type { margin-top: 10px; }
+  .sec .n { font-weight: 400; letter-spacing: 0; }
+
+  /* 批次卡：三列 */
+  .card { background: #fff; border: 1px solid var(--ln); border-radius: 3px; margin-bottom: 8px; }
+  .card > .head { padding: 11px 13px; display: flex; flex-direction: column; gap: 5px; }
+  .ln { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+  .tag {
+    display: inline-block; font-size: 11px; line-height: 1.75; padding: 0 6px;
+    border-radius: 2px; background: #f1f1ef; color: var(--ink2);
+    white-space: nowrap; flex: none;
+  }
+  .tag.g { background: var(--g-bg); color: var(--g); }
+  .tag.r { background: var(--r-bg); color: var(--r-dim); }
+  .tag.senior_notice  { background: var(--t1-bg); color: var(--t1); }
+  .tag.pass_broadcast { background: var(--t2-bg); color: var(--t2); }
+  .tag.checkin_done   { background: var(--t2-bg); color: var(--t3); }
+  .tag.bind_success   { background: var(--t4-bg); color: var(--t4); }
+  .tag.bind_expired   { background: var(--t4-bg); color: var(--t5); }
+  .tag.refill_grant   { background: var(--t6-bg); color: var(--t6); }
+  .tag.refill_auto    { background: var(--t6-bg); color: var(--t7); }
+
+  .dt { font-size: 12.5px; color: var(--ink2); white-space: nowrap; flex: none; }
+  .tm { font-size: 12.5px; color: var(--ink3); white-space: nowrap; flex: none; }
+
+  .lamp { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-left: auto; }
+  .lamp.ok { background: var(--g); }
+  .lamp.bad { background: var(--bad); }
+  .lamp.skip { background: var(--ink3); }
+
+  .num { font-size: 13px; color: var(--ink); white-space: nowrap; flex: none; }
+  .num u { text-decoration: none; color: var(--ink3); font-size: 11.5px; }
+
+  .strip { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--g); } .dot.bad { background: var(--bad); } .dot.skip { background: #d8d8d5; }
+  .bar { display: flex; height: 6px; width: 100%; max-width: 180px; border-radius: 2px; overflow: hidden; background: #eeeeec; }
+  .bar span { height: 100%; }
+  .bar .ok { background: var(--g); } .bar .bad { background: var(--bad); } .bar .skip { background: #d8d8d5; }
+
+  .subject { font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 名單：預設收起，只給一個三角形，不放文字 */
+  .card details { border-top: 1px solid #f4f4f2; }
+  .fold-sum {
+    list-style: none; cursor: pointer; padding: 7px 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fold-sum::-webkit-details-marker { display: none; }
+  /* 用 border 畫三角形才不受字型影響——▾ 這類字元在不同平台粗細與基線差很多 */
+  .fold-sum::before {
+    content: ''; width: 0; height: 0;
+    border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-top: 5px solid var(--ink3);
+    transition: transform .18s;
+  }
+  .fold-sum:hover::before { border-top-color: var(--ink2); }
+  details[open] > .fold-sum::before { transform: rotate(180deg); }
+  .fold-body { padding: 0 13px 10px; }
+
+  .prow {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+    padding: 6px 0; border-bottom: 1px solid #f4f4f2; font-size: 14px;
+  }
+  .prow:last-child { border-bottom: none; }
+  .prow .nm { font-size: 15px; font-weight: 600; color: var(--ink); min-width: 58px; }
+  .prow .sp { flex: 1; }
+  .prow .err { font-size: 12px; color: var(--ink3); flex-basis: 100%; }
+  .bid {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px; color: var(--ink3); padding-top: 8px; word-break: break-all;
+  }
+
+  mark { background: var(--g-ln); color: inherit; border-radius: 1px; padding: 0 1px; }
+  .empty { text-align: center; color: var(--ink3); padding: 30px 0; font-size: 14px; }
+  #msg { padding: 26px 0; text-align: center; color: var(--ink3); font-size: 14px; }
+
+  /* 左側月份滑桿：全灰階。收合時只有短線＋月份數字；靠近才等比例放大（Dock）。
+     ⚠️ .line/.mm 的 flex: none 不可拿掉——rail 有固定寬度，
+        不寫的話會被同列文字擠成寬度 0，線整條消失且零錯誤訊息。 */
+  .rail {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%);
+    z-index: 20; width: var(--rail-w); padding: 12px 0 12px 10px;
+    display: flex; flex-direction: column; gap: 9px;
+  }
+  .rail[hidden] { display: none; }
+  .rail::before {
+    content: ''; position: absolute; inset: 0; width: 132px;
+    background: #fff; border: 1px solid var(--ln); border-left: none;
+    border-radius: 0 3px 3px 0;
+    /* 浮層用陰影是規範內的（.ph-pop 就是這個值）；不加的話面板在窄螢幕上
+       會像「把卡片挖掉一塊」而不是「浮在上面」 */
+    box-shadow: 0 4px 14px rgba(0,0,0,.08);
+    opacity: 0; transform: translateX(-6px);
+    transition: opacity .18s, transform .18s; pointer-events: none;
+  }
+  .rail.awake::before { opacity: 1; transform: none; }
+  .rail::after {   /* 好進來的隱形觸發區，比視覺寬 */
+    content: ''; position: absolute; left: 0; top: -26px; bottom: -26px;
+    width: 132px; pointer-events: auto;
+  }
+  .tick {
+    position: relative; z-index: 1; display: flex; align-items: center; gap: 7px;
+    background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+    height: 13px; text-align: left;
+    color: var(--ink3);   /* 每顆按鈕都要明寫 color——不寫 iOS 給系統藍 */
+  }
+  .tick .line {
+    display: block; flex: none; width: 12px; height: 2px; border-radius: 1px;
+    background: #c4c4c0; transition: background .18s; will-change: width, height;
+  }
+  .tick .mm {
+    flex: none; font-size: 10.5px; font-weight: 600; color: var(--ink3);
+    white-space: nowrap; transition: color .18s;
+  }
+  .tick .full {   /* 絕對定位：不參與 flex，不會回頭擠壓線 */
+    position: absolute; left: 62px; top: 50%;
+    font-size: 11px; color: var(--ink2); white-space: nowrap;
+    opacity: 0; transform: translateY(-50%) translateX(-4px);
+    transition: opacity .18s, transform .18s; pointer-events: none;
+  }
+  .rail.awake .tick .full { opacity: 1; transform: translateY(-50%); }
+  .tick:hover .line, .tick.near .line { background: var(--ink2); }
+  .tick:hover .mm, .tick.near .mm { color: var(--ink); }
+  .tick.current .line { background: var(--ink2); }
+  .tick.current .mm { color: var(--ink); }
+  .tick.dim { opacity: .3; }
+  .tick:focus-visible { outline: 2px solid var(--b); outline-offset: 3px; border-radius: 2px; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }
+
+  @media (min-width: 768px) {
+    :root { --rail-w: 60px; }
+    body { font-size: 17px; }
+    .wrap { max-width: 720px; padding: 32px 24px 80px; }
+    h1 { font-size: 23px; }
+  }
 </style>
 </head>
 <body>
-<h1>訊息紀錄</h1>
-<div class="since" id="since"></div>
-<div id="msg">載入中…</div>
-<div id="list"></div>
 
+<nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
+
+<div class="wrap">
+  <div class="topbar">
+    <h1>訊息紀錄</h1>
+    <button class="sdot" id="sdot" type="button" aria-expanded="false"
+            aria-controls="q" aria-label="搜尋"><span class="mag"></span></button>
+    <span class="gap"></span>
+    <button class="btn-sm" id="clearBtn" type="button">清除本機快取</button>
+  </div>
+
+  <div class="searchbar" id="searchbar">
+    <input id="q" type="search" autocomplete="off" spellcheck="false" tabindex="-1"
+           placeholder="姓名・單位・主旨・分類・日期・批次・錯誤" aria-label="搜尋訊息紀錄">
+  </div>
+  <div class="shint" id="shint"></div>
+
+  <div class="warnbar" id="warnbar"></div>
+  <div id="msg">載入中…</div>
+  <div id="list"></div>
+</div>
+
+<script src="assets/board-cache.js"></script>
 <script src="assets/messages-view.js"></script>
+<script src="assets/messages-search.js"></script>
 <script>
 // 這一頁的後端是 jdc-line-hub（獨立的 GAS 專案），不是本站其他頁用的 line-platform。
-// 部署後填入 hub 的 /exec 網址（jdc-line-hub 計畫 Task 10）。
 var EXEC_URL = 'https://script.google.com/macros/s/AKfycbwCMxy9K3A8ZE56yJrGW1C9ee1iZnsMRHosBygDHcm8qJD9UeyUINnRuh3aKX9QMqR8/exec';
+
+// 一次全拿，前端自己分月。hub 的 readLog_ 是 `Number(days) || 30`，沒有上限。
+// 為何全拿：左側月份滑桿點下去要能立刻到位，逐月再打一次 GAS 會等 8–17 秒，
+// 那個 rail 就會難用到沒人用（2026-08-22 拍板）。
+var DAYS_ALL = '3650';
 
 function qs(k) { return new URLSearchParams(location.search).get(k) || ''; }
 
@@ -83,28 +344,262 @@ function callApi(params) {
   });
 }
 
-// 渲染邏輯在 assets/messages-view.js（純函式、有測試）。這裡只負責塞進 DOM。
-function render(data) {
-  var s = sinceText(data.logSince);
-  var since = document.getElementById('since');
-  since.textContent = s.text;
-  since.className = s.warn ? 'since warn' : 'since';
+/* ═══ 狀態 ═══════════════════════════════════════════════ */
+var TOKEN = qs('t');
+var CACHE_NAME = 'msglog';       // board-cache 的切片名，與看板頁的切片不會撞
+var BATCHES = [];                // groupBatches 的產出，新到舊
+var INDEX = [];                  // buildIndex 的產出
+var SHOWN_KEYS = [];             // 目前畫面上有哪些月／日（滑桿淡化用）
+var RAIL_MODE = 'month';
 
-  var rows = data.rows || [];
-  var msg = document.getElementById('msg');
-  msg.style.display = rows.length ? 'none' : '';
-  if (!rows.length) { msg.textContent = '這段期間沒有你權限內的紀錄。'; return; }
-  document.getElementById('list').innerHTML = batchesHtml(data.header, rows);
+var listEl = document.getElementById('list');
+var msgEl = document.getElementById('msg');
+var warnEl = document.getElementById('warnbar');
+var hintEl = document.getElementById('shint');
+var qEl = document.getElementById('q');
+var barEl = document.getElementById('searchbar');
+var dotEl = document.getElementById('sdot');
+var railEl = document.getElementById('rail');
+var clearBtn = document.getElementById('clearBtn');
+
+/* ═══ 渲染 ═══════════════════════════════════════════════ */
+function paint(query) {
+  var res = search(INDEX, query || '');
+  var toks = tokenize(query || '');
+  listEl.innerHTML = listHtml(res.list, toks, res.all);
+
+  SHOWN_KEYS = [];
+  res.list.forEach(function (b) {
+    var k = RAIL_MODE === 'month' ? b.month : b.time.slice(0, 10);
+    if (SHOWN_KEYS.indexOf(k) < 0) SHOWN_KEYS.push(k);
+  });
+  syncRailDim();
+  return res;
 }
 
-callApi({ action: 'listMessageLog', t: qs('t'), days: qs('days') || '30' })
-  .then(function (res) {
-    if (!res.ok) { document.getElementById('msg').textContent = res.msg || '無法載入。'; return; }
-    render(res);
-  })
-  .catch(function (err) {
-    document.getElementById('msg').textContent = '載入失敗：' + (err && err.message ? err.message : err);
+function setHint(res) {
+  if (res.all) { hintEl.innerHTML = ''; return; }
+  var s = '<span>' + res.list.length + ' 筆符合</span>';
+  if (res.fuzzy) s += '<span class="fuzzy">含相近拼法</span>';
+  s += '<button class="clear" type="button" id="clearQ">清除搜尋</button>';
+  hintEl.innerHTML = s;
+  var c = document.getElementById('clearQ');
+  if (c) c.addEventListener('click', function () { qEl.value = ''; go(''); qEl.focus(); });
+}
+
+function go(v) { setHint(paint(v)); }
+
+/* ═══ 左側滑桿（全灰階）═══════════════════════════════════
+   未滿兩個月列「日」且只列有訊息的日；兩個月以上列「月」。
+   ⚠️ 必須在第一次 go() 之前建好：paint() 結尾會呼叫 syncRailDim()，它讀 `ticks`。
+      順序寫反的話 ticks 是 undefined，整段初始化在這裡同步中斷——
+      **卡片已經畫完所以看起來正常**，但滑桿從未建立、搜尋提示也不會出現。
+      同型前例是 stats.html 的 SECOND.then（見 tests/page-load.test.js 的註解）。
+   ═══════════════════════════════════════════════════════ */
+var ticks = [];
+var BASE_W = 12, MAX_W = 34, BASE_H = 2, MAX_H = 4, SIGMA = 42;
+
+function buildRail() {
+  var spec = railTicks(BATCHES);
+  RAIL_MODE = spec.mode;
+  if (spec.ticks.length < 2) { railEl.hidden = true; ticks = []; return; }
+  railEl.hidden = false;
+  railEl.innerHTML = spec.ticks.map(function (o) {
+    return '<button class="tick" type="button" data-k="' + esc(o.key) + '" '
+      + 'aria-label="\u8df3\u5230 ' + esc(o.key) + '\uff0c' + o.n + ' \u6279\u5171 '
+      + o.msgs + ' \u5247">'
+      + '<span class="line"></span><span class="mm">' + esc(o.short) + '</span>'
+      + '<span class="full">' + o.n + ' \u6279\u3000' + o.msgs + ' \u5247</span></button>';
+  }).join('');
+  ticks = Array.prototype.slice.call(railEl.querySelectorAll('.tick'));
+  magnify(null);
+}
+
+function magnify(y) {
+  ticks.forEach(function (t) {
+    var line = t.querySelector('.line');
+    if (y == null) {
+      line.style.width = BASE_W + 'px'; line.style.height = BASE_H + 'px';
+      t.classList.remove('near'); return;
+    }
+    var r = t.getBoundingClientRect();
+    var d = Math.abs((r.top + r.height / 2) - y);
+    var f = Math.exp(-(d * d) / (2 * SIGMA * SIGMA));   // 高斯衰減
+    line.style.width = (BASE_W + (MAX_W - BASE_W) * f) + 'px';
+    line.style.height = (BASE_H + (MAX_H - BASE_H) * f) + 'px';
+    t.classList.toggle('near', f > 0.6);
   });
+}
+
+/** 搜尋後沒有結果的月／日淡掉，滑桿才不會指到空的地方。 */
+function syncRailDim() {
+  ticks.forEach(function (t) {
+    t.classList.toggle('dim', SHOWN_KEYS.indexOf(t.dataset.k) < 0);
+  });
+}
+
+function anchorFor(key) {
+  return document.getElementById((RAIL_MODE === 'month' ? 'm-' : 'd-') + key);
+}
+
+function syncCurrent() {
+  if (!ticks.length) return;
+  var best = null, bestD = Infinity;
+  ticks.forEach(function (t) {
+    var el = anchorFor(t.dataset.k);
+    if (!el) return;
+    var d = Math.abs(el.getBoundingClientRect().top - 60);
+    if (d < bestD) { bestD = d; best = t.dataset.k; }
+  });
+  ticks.forEach(function (t) { t.classList.toggle('current', t.dataset.k === best); });
+}
+
+var hasHover = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+if (hasHover) {
+  railEl.addEventListener('pointermove', function (e) {
+    railEl.classList.add('awake'); magnify(e.clientY);
+  });
+  railEl.addEventListener('pointerleave', function () {
+    railEl.classList.remove('awake'); magnify(null);
+  });
+} else {
+  // 觸控沒有 hover：點一下展開，點外面收起
+  railEl.addEventListener('click', function (e) {
+    if (!railEl.classList.contains('awake') && !e.target.closest('.tick')) {
+      railEl.classList.add('awake');
+      magnify(railEl.getBoundingClientRect().top + railEl.offsetHeight / 2);
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#rail')) { railEl.classList.remove('awake'); magnify(null); }
+  });
+}
+railEl.addEventListener('focusin', function (e) {
+  railEl.classList.add('awake');
+  var t = e.target.closest('.tick');
+  if (t) { var r = t.getBoundingClientRect(); magnify(r.top + r.height / 2); }
+});
+railEl.addEventListener('focusout', function () {
+  if (!railEl.contains(document.activeElement)) { railEl.classList.remove('awake'); magnify(null); }
+});
+railEl.addEventListener('click', function (e) {
+  var t = e.target.closest('.tick');
+  if (!t) return;
+  if (qEl.value) { qEl.value = ''; go(''); }   // 搜尋中跳月份＝先回到完整清單
+  var el = anchorFor(t.dataset.k);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+window.addEventListener('scroll', syncCurrent, { passive: true });
+
+/* ═══ 搜尋圓點的開合 ═══════════════════════════════════ */
+function openSearch() {
+  barEl.classList.add('open');
+  document.body.classList.add('searching');
+  dotEl.setAttribute('aria-expanded', 'true');
+  qEl.tabIndex = 0; qEl.focus();
+}
+function closeSearch() {
+  if (qEl.value) { qEl.value = ''; go(''); }
+  barEl.classList.remove('open');
+  document.body.classList.remove('searching');
+  dotEl.setAttribute('aria-expanded', 'false');
+  qEl.tabIndex = -1;
+}
+dotEl.addEventListener('click', function () {
+  if (barEl.classList.contains('open')) { closeSearch(); } else { openSearch(); }
+});
+qEl.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { closeSearch(); dotEl.focus(); }
+});
+qEl.addEventListener('blur', function () {
+  if (!qEl.value) {   // 空的才收，有結果就留著
+    barEl.classList.remove('open');
+    document.body.classList.remove('searching');
+    dotEl.setAttribute('aria-expanded', 'false');
+    qEl.tabIndex = -1;
+  }
+});
+var debounce;
+qEl.addEventListener('input', function () {
+  clearTimeout(debounce);
+  var v = qEl.value;
+  debounce = setTimeout(function () { go(v); }, 90);   // 打字中不要每個字重排整頁
+});
+
+/* ═══ 快取 ═══════════════════════════════════════════════
+   用站上既有的 assets/board-cache.js（AES-GCM、token 指紋分格、七天 TTL），
+   不另寫一套——自建替代品要自己維護、自己驗，而且原生那支壞了不會有人發現。
+   ⚠️ 快取內容含姓名與訊息內容。金鑰從網址的 token 派生，所以**擋不住
+      「有人用這台電腦」**（他也拿得到瀏覽紀錄裡的 token）。因此「清除本機快取」
+      必須一直看得見，讓使用者在公用電腦上自己收乾淨。 */
+function syncClearBtn() {
+  var has = !!cacheGet(CACHE_NAME);
+  clearBtn.disabled = !has;
+  clearBtn.style.opacity = has ? '' : '.45';
+  clearBtn.title = has ? '' : '\u9019\u53f0\u96fb\u8166\u76ee\u524d\u6c92\u6709\u5feb\u53d6';
+}
+clearBtn.addEventListener('click', function () {
+  cacheClear(TOKEN).then(function () {
+    clearBtn.textContent = '\u5df2\u6e05\u9664';
+    syncClearBtn();
+    setTimeout(function () { clearBtn.textContent = '\u6e05\u9664\u672c\u6a5f\u5feb\u53d6'; }, 1800);
+  });
+});
+
+/* ═══ 起動 ═══════════════════════════════════════════════
+   先畫快取讓畫面立刻有東西，再打網路換上最新的。
+   ⚠️ 這是 SWR，而 SWR 的第二次繪製會抹掉使用者當下的操作
+      （memory feedback_swr_repaint_eats_user_input：2026-08-20 誤發事故）。
+      這頁沒有輸入欄位，但**展開的名單與捲動位置會被重繪吃掉**。
+      使用者 2026-08-22 拍板：正在搜尋或有名單展開時就不重畫，只換資料，
+      等他下一次操作自然更新。
+   ═══════════════════════════════════════════════════════ */
+function adopt(data, force) {
+  BATCHES = groupBatches(data.header, data.rows || []);
+  INDEX = buildIndex(BATCHES);
+
+  var w = sinceWarning(data.logSince);
+  warnEl.textContent = w;
+  warnEl.className = w ? 'warnbar on' : 'warnbar';
+
+  if (!BATCHES.length) {
+    msgEl.style.display = '';
+    msgEl.textContent = '\u9019\u6bb5\u671f\u9593\u6c92\u6709\u4f60\u6b0a\u9650\u5167\u7684\u7d00\u9304\u3002';
+    listEl.innerHTML = '';
+    railEl.hidden = true;
+    return;
+  }
+  msgEl.style.display = 'none';
+
+  var busy = !!qEl.value || !!listEl.querySelector('details[open]');
+  if (force || !busy) {
+    buildRail();
+    go(qEl.value);
+    syncCurrent();
+  }
+}
+
+cacheBootstrap(TOKEN).then(function () {
+  syncClearBtn();
+  var hit = cacheGet(CACHE_NAME);
+  if (hit && hit.value && hit.value.header) adopt(hit.value, true);
+  return callApi({ action: 'listMessageLog', t: TOKEN, days: qs('days') || DAYS_ALL });
+}).then(function (res) {
+  if (!res || !res.ok) {
+    if (!BATCHES.length) {
+      msgEl.textContent = (res && res.msg) || '\u7121\u6cd5\u8f09\u5165\u3002';
+    }
+    return;
+  }
+  adopt(res, false);
+  // 存快取：含姓名與內容，使用者已知並拍板。cacheSave 只收 ok:true 的物件。
+  return cacheSave(TOKEN, CACHE_NAME, res).then(syncClearBtn);
+}).catch(function (e) {
+  if (!BATCHES.length) {
+    msgEl.textContent = '\u8f09\u5165\u5931\u6557\uff1a' + (e && e.message ? e.message : e);
+  }
+});
 </script>
 </body>
 </html>
