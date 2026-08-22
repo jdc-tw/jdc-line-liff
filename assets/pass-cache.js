@@ -36,4 +36,22 @@ function passCacheUsable(rec, urlV) {
   return rec.v === urlV;
 }
 
-if (typeof module !== 'undefined') module.exports = { PASS_CK, passCacheKey, passCacheUsable };
+/**
+ * 沒命中的**原因**（2026-08-21 補）。字串會寫進飛行紀錄，`?diag=1` 看得到。
+ *
+ * 為何需要：8/21 實測證明 localStorage 沒被清（飛行紀錄六輪都在），所以「快取不見」
+ * 一定是這三個原因之一——但當時的儀器只記到 `③ getProfile OK` 就斷了，看不出是哪個。
+ * 三個原因的修法完全不同：沒寫進去 vs 存的是未發佈那份 vs 桌次動過而重抓。
+ *
+ * 最後那條「（其實可用）」正常永遠不會出現——它只會在本函式與 passCacheUsable
+ * 判斷不一致時冒出來，等於一條免費的自我對照。看到它就是這兩支已經分歧了。
+ */
+function passCacheMissReason(rec, urlV) {
+  if (!rec) return '無快取';
+  if (!rec.res) return '快取殘缺';
+  if (!rec.res.published) return '存的是未發佈那份';
+  if (urlV && rec.v !== urlV) return 'v 不同(桌次動過)';
+  return '（其實可用）';
+}
+
+if (typeof module !== 'undefined') module.exports = { PASS_CK, passCacheKey, passCacheUsable, passCacheMissReason };
