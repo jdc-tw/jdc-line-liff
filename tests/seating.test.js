@@ -582,3 +582,48 @@ test('buildSigninPages：同桌維持名單原順序（穩定排序）', () => {
     vendor('a', '先來的', 1, '3')));
   assert.deepEqual(pages[0].left.map(e => e.name), ['後來的', '先來的']);
 });
+
+test('buildSigninPages：沒有廠商名稱時，用「聯絡人」的人名頂上', () => {
+  const pages = buildSigninPages([
+    { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
+    { _row: 3, owner: 'a', name: '甲營造', contact: '李小華', seatNo: 1, table: '4' },
+  ]);
+  assert.deepEqual(pages[0].left.map(e => e.name), ['王大明', '甲營造']);
+  assert.equal(pages[0].left[1].name, '甲營造', '有廠商名稱時不會被聯絡人蓋掉');
+});
+
+test('buildSigninPages：同一位無廠商名的來賓佔兩席，聚合成一列人數 2', () => {
+  const pages = buildSigninPages([
+    { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
+    { _row: 3, owner: 'a', name: '', contact: '王大明', seatNo: 2, table: '3' },
+  ]);
+  assert.equal(pages[0].left.length, 1);
+  assert.equal(pages[0].left[0].seats, 2);
+});
+
+test('buildSigninPages：無廠商名的人不會跟同名的廠商併成一列', () => {
+  const pages = buildSigninPages([
+    { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
+    { _row: 3, owner: 'a', name: '王大明', contact: '', seatNo: 1, table: '3' },
+  ]);
+  assert.equal(pages[0].left.length, 2, '一個是廠商、一個是個人來賓，是兩列');
+});
+
+test('buildSigninPages：廠商名與聯絡人都空白也不丟掉——列出來並標記，讓呼叫端能報給使用者', () => {
+  const pages = buildSigninPages([
+    { _row: 2, owner: '王小明', name: '', contact: '', seatNo: 1, table: '3' },
+    { _row: 3, owner: '王小明', name: '', contact: '', seatNo: 2, table: '3' },
+    { _row: 4, owner: '王小明', name: '甲營造', contact: '', seatNo: 1, table: '4' },
+  ]);
+  const rows = pages[0].left;
+  assert.equal(rows.length, 2, '無名那筆仍佔一列，沒有被靜默丟掉');
+  const blank = rows.filter(e => e.unnamed);
+  assert.equal(blank.length, 1);
+  assert.equal(blank[0].name, '', '姓名欄留白等人工補');
+  assert.equal(blank[0].seats, 2, '同一位負責人底下的無名席位併成一列，人數不會漏');
+  assert.ok(!rows.find(e => e.name === '甲營造').unnamed, '有名字的不該被標記');
+});
+
+test('buildSigninPages：無名但 0 席，一樣不列（0 人不列的規則優先）', () => {
+  assert.deepEqual(buildSigninPages([{ _row: 2, owner: 'a', name: '', contact: '', seatNo: 0, table: '' }]), []);
+});

@@ -442,18 +442,28 @@ function signinTableLabel_(t) {
  * 聚合鍵沿用「負責人員|廠商名稱」，與既有的來賓名單下載（dlGuestFile）同一把尺——
  * 同名廠商掛在兩個負責人底下時兩邊都會列成兩列，兩份檔案才不會對不起來。
  *
- * @param {Array<{owner,name,seatNo,table}>} guests listGuests 回傳的 rows
+ * **沒有廠商名稱的來賓不會被丟掉**（2026-08-22 使用者指出有兩位是這種）：
+ * 取名順序＝廠商名稱 → 聯絡人；兩欄都空的仍佔一列、姓名欄留白並標記 `unnamed`，
+ * 由呼叫端報給使用者補資料。原本這裡跟上傳解析一樣直接 `return`，
+ * 有席位的人會**零提示消失**在簽到表上——現場點不到名才會發現。
+ * 個人來賓的聚合鍵前綴 `#`，才不會跟剛好同名的廠商併成一列。
+ *
+ * @param {Array<{_row,owner,name,contact,seatNo,table}>} guests listGuests 回傳的 rows
  * @param {number} [perCol] 每欄列數（預設 SIGNIN_ROWS，測試可調小）
- * @returns {Array<{left:Array<{no,name,seats,table}>, right:Array<...>}>} 沒有可列的廠商時回 []
+ * @returns {Array<{left:Array<{no,name,seats,table,unnamed}>, right:Array<...>}>} 沒有可列的來賓時回 []
  */
 function buildSigninPages(guests, perCol) {
   perCol = perCol || SIGNIN_ROWS;
   var agg = {}, order = [];
+  var clean = function (v) { return String(v == null ? '' : v).replace(/[\t\s　]+/g, ' ').trim(); };
   (guests || []).forEach(function (g) {
-    var name = String(g.name || '').replace(/[\t\s　]+/g, ' ').trim();
-    if (!name) return;
-    var k = String(g.owner || '').trim() + '|' + name;
-    if (!agg[k]) { agg[k] = { name: name, seats: 0, tables: [] }; order.push(k); }
+    var owner = clean(g.owner);
+    var vendor = clean(g.name), person = clean(g.contact);
+    // 廠商名稱 → 聯絡人 → 都沒有（姓名留白，等呼叫端提醒使用者補）
+    var name = vendor || person;
+    var k = vendor ? (owner + '|' + vendor)
+      : (person ? (owner + '|#' + person) : (owner + '|#__無名__'));
+    if (!agg[k]) { agg[k] = { name: name, seats: 0, tables: [], unnamed: !name }; order.push(k); }
     if (!(Number(g.seatNo) > 0)) return;
     agg[k].seats++;
     var t = String(g.table || '').trim();
@@ -475,7 +485,7 @@ function buildSigninPages(guests, perCol) {
   for (var i = 0; i < list.length; i += per) {
     var chunk = list.slice(i, i + per).map(function (x, j) {
       return { no: i + j + 1, name: x.v.name, seats: x.v.seats,
-               table: x.v.tables.map(signinTableLabel_).join('、') };
+               table: x.v.tables.map(signinTableLabel_).join('、'), unnamed: x.v.unnamed };
     });
     pages.push({ left: chunk.slice(0, perCol), right: chunk.slice(perCol) });
   }

@@ -209,3 +209,25 @@ test('簽到表：檔名帶活動名與產檔日期', async () => {
   const { name } = await produce(vendors(1), '2026年中聚餐');
   assert.equal(name, '來賓簽到表_2026年中聚餐_2026-08-22.xlsx');
 });
+
+test('簽到表：沒有廠商名稱的來賓，姓名欄印聯絡人的人名', async () => {
+  const { ws } = await produce([
+    { _row: 2, owner: 'a', name: '', contact: '王大明', seatNo: 1, table: '3' },
+    { _row: 3, owner: 'a', name: '甲營造', contact: '李小華', seatNo: 1, table: '4' },
+  ], 'x');
+  assert.equal(ws['B3'].v, '王大明');
+  assert.equal(ws['C3'].v, 1);
+  assert.equal(ws['D3'].v, '3桌');
+  assert.equal(ws['B4'].v, '甲營造', '有廠商名稱的不受影響');
+});
+
+test('簽到表：兩欄都沒名字的來賓仍佔一列（席位不會憑空消失）', async () => {
+  const { ws } = await produce([
+    { _row: 2, owner: '王小明', name: '', contact: '', seatNo: 1, table: '3' },
+    { _row: 3, owner: '王小明', name: '', contact: '', seatNo: 2, table: '3' },
+  ], 'x');
+  assert.equal(ws['A3'].v, 1);
+  assert.equal(ws['B3'].v, '', '姓名留白等人工補');
+  assert.equal(ws['C3'].v, 2, '人數照算，不會漏掉席位');
+  assert.equal(ws['D3'].v, '3桌');
+});
