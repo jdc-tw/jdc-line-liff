@@ -171,35 +171,91 @@ test('monthGroups：每個月一段，並累計該月共幾則', () => {
   assert.equal(g[0].msgCount, 2);
 });
 
-test('滑桿：兩個月以上列「月」', () => {
+test('滑桿：兩個月以上停在「月」，不列到日', () => {
   const spec = V.railTicks(twoMonths);
   assert.equal(spec.mode, 'month');
-  assert.deepEqual(spec.ticks.map((t) => t.key), ['2026-08', '2026-07']);
-  assert.deepEqual(spec.ticks.map((t) => t.short), ['08', '07']);
+  assert.deepEqual(spec.ticks.map((t) => t.level), ['year', 'month', 'month']);
+  assert.deepEqual(spec.ticks.map((t) => t.label), ['2026', '08', '07']);
 });
 
-test('滑桿：未滿兩個月列「日」，而且只列真的有訊息的日', () => {
+test('滑桿：未滿兩個月列到「日」，而且只列真的有訊息的日', () => {
   const spec = V.railTicks(oneMonth);
   assert.equal(spec.mode, 'day');
-  assert.deepEqual(spec.ticks.map((t) => t.key), ['2026-08-21', '2026-08-20', '2026-08-19']);
+  assert.deepEqual(spec.ticks.map((t) => t.level), ['year', 'month', 'day', 'day', 'day']);
+  assert.deepEqual(spec.ticks.map((t) => t.label), ['2026', '08', '21', '20', '19']);
   // 8/18、8/17… 沒有資料，就不該冒出來
-  assert.equal(spec.ticks.length, 3);
+  assert.equal(spec.ticks.filter((t) => t.level === 'day').length, 3);
 });
 
-test('滑桿：同一天多批只算一格，但批數與則數要累加', () => {
+test('滑桿：年只出現一次，不會每個月重複一條', () => {
+  const spec = V.railTicks(twoMonths);
+  assert.equal(spec.ticks.filter((t) => t.level === 'year').length, 1);
+});
+
+test('滑桿：跨年時每一年各一條', () => {
+  const cross = V.groupBatches(H, [
+    row({ 發送時間: '2026-01-05 09:00:00', 批次: 'a' }),
+    row({ 發送時間: '2025-12-20 09:00:00', 批次: 'b' }),
+  ]);
+  const spec = V.railTicks(cross);
+  assert.deepEqual(spec.ticks.map((t) => t.label), ['2026', '01', '2025', '12']);
+});
+
+test('滑桿：每一格都有捲動目標，年跳到該年最新的那個月', () => {
+  const spec = V.railTicks(twoMonths);
+  assert.deepEqual(spec.ticks.map((t) => t.anchor),
+    ['m-2026-08', 'm-2026-08', 'm-2026-07']);
+});
+
+test('滑桿：日模式的日跳到當天第一張卡的錨點', () => {
+  const spec = V.railTicks(oneMonth);
+  const days = spec.ticks.filter((t) => t.level === 'day');
+  assert.deepEqual(days.map((t) => t.anchor),
+    ['d-2026-08-21', 'd-2026-08-20', 'd-2026-08-19']);
+});
+
+test('滑桿：同一天多批只算一格', () => {
   const sameDay = V.groupBatches(H, [
     row({ 發送時間: '2026-08-21 09:00:00', 批次: 'a', 訊息型別: 'text+image' }),
     row({ 發送時間: '2026-08-21 15:00:00', 批次: 'b' }),
   ]);
   const spec = V.railTicks(sameDay);
-  assert.equal(spec.ticks.length, 1);
-  assert.equal(spec.ticks[0].n, 2);
-  assert.equal(spec.ticks[0].msgs, 3);   // 2 + 1
+  assert.equal(spec.ticks.filter((t) => t.level === 'day').length, 1);
 });
 
 test('滑桿：完全沒資料時不炸，回空清單', () => {
   assert.deepEqual(V.railTicks([]).ticks, []);
   assert.deepEqual(V.railTicks(null).ticks, []);
+});
+
+/* ── 分類代號 ────────────────────────────────────────── */
+
+test('手動發送的兩個代號翻成中文，不留英文代號在畫面上', () => {
+  assert.equal(V.groupBatches(H, [row({ 來源: 'hub_path_test' })])[0].categoryLabel, '測試');
+  assert.equal(V.groupBatches(H, [row({ 來源: 'correction' })])[0].categoryLabel, '測試');
+});
+
+/* ── 全文 ────────────────────────────────────────────── */
+
+test('fullMessageOf：取第一個人收到的完整內文，不是截斷的主旨', () => {
+  const long = '開頭。' + '中段'.repeat(40) + '結尾在很後面。';
+  const b = V.groupBatches(H, [row({ 訊息內容: long })])[0];
+  assert.notEqual(b.subject, long, '前提：主旨確實被截斷了');
+  assert.equal(V.fullMessageOf(b), long);
+});
+
+test('fullMessageOf：沒有內容時給明確字樣', () => {
+  const b = V.groupBatches(H, [row({ 訊息內容: '' })])[0];
+  assert.equal(V.fullMessageOf(b), '（無內容）');
+});
+
+test('cardHtml：主旨是可展開的，展開後看得到全文', () => {
+  const long = '第一行\n第二行是全文才看得到的';
+  const b = V.groupBatches(H, [row({ 訊息內容: long })])[0];
+  const html = V.cardHtml(b, []);
+  assert.ok(html.indexOf('<details class="subj">') >= 0);
+  assert.ok(html.indexOf('class="fullmsg"') >= 0);
+  assert.ok(html.indexOf('第二行是全文才看得到的') >= 0);
 });
 
 /* ── sinceWarning ────────────────────────────────────── */

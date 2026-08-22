@@ -22,6 +22,12 @@ var CATEGORY = {
   bind_expired: '綁定過期提醒',
   refill_grant: '補登核准',
   refill_auto: '自動補登',
+  // 下面兩個不是 line-platform 申報的七個來源之一，是手動發送留下的紀錄。
+  // `hub_path_test` 是 2026-08-20 驗證 hub 端到端路徑的煙霧測試，刻意不借既有
+  // 代號，免得紀錄表的來源標籤說謊；它不在 hub 的 SOURCE_ROLES 裡，只有 admin 看得到。
+  // 使用者 2026-08-22 拍板：兩個統一顯示「測試」。
+  hub_path_test: '測試',
+  correction: '測試',
 };
 
 /**
@@ -207,6 +213,11 @@ function foldHtml(batch, toks) {
  * 一張批次卡：三列（分類·日期·時間·燈號／人數·則數·狀態列／主旨）。
  * @param {string} [anchorId] 當天第一張卡才給——滑桿的「日」模式靠它跳。
  */
+function fullMessageOf(batch) {
+  var r = (batch.rows && batch.rows[0]) || {};
+  return String(r.content == null ? '' : r.content) || '（無內容）';
+}
+
 function cardHtml(batch, toks, anchorId) {
   return '<div class="card"' + (anchorId ? ' id="' + esc(anchorId) + '"' : '') + '><div class="head">'
     + '<div class="ln">'
@@ -222,7 +233,11 @@ function cardHtml(batch, toks, anchorId) {
     +   '<span class="num">' + batch.msgCount + '<u>則</u></span>'
     +   stripHtml(batch)
     + '</div>'
-    + '<div class="subject">' + highlight(batch.subject, toks) + '</div>'
+    /* 主旨點開＝看全文。⚠️ 同一批裡每個人的內文不一樣（套版帶各自姓名年資），
+       這裡固定拿第一個人的；使用者 2026-08-22 拍板不標明是誰的。 */
+    + '<details class="subj"><summary class="subject">'
+    +   highlight(batch.subject, toks) + '</summary>'
+    +   '<div class="fullmsg">' + highlight(fullMessageOf(batch), toks) + '</div></details>'
     + '</div>' + foldHtml(batch, toks) + '</div>';
 }
 
@@ -268,38 +283,56 @@ function sinceWarning(logSince) {
 }
 
 /**
- * 左側滑桿要列什麼。
- * 未滿兩個月 → 列「日」，而且**只列真的有訊息的日**（使用者 2026-08-22 指定：
- * 每天都畫一條會出現一堆空的線）。兩個月以上 → 列「月」。
+ * 左側時間滑桿要列什麼。
  *
- * 為何不是「永遠列月」：hub 2026-08-19 才上線，剛上線時全部資料都在同一個月，
- * 滑桿只會有一條線，等於看不出它在做什麼。
- * @returns {{mode:'day'|'month', ticks:{key,short,n,msgs}[]}}
+ * **層級靠線條長度表達，不靠展開**（使用者 2026-08-22 指定）：
+ *   ━━━━━━━━━  2026     年，線最長
+ *   ━━━━━━     08       月，次之，標籤對齊年的前二碼
+ *   ━━━━         21     日，最短，標籤對齊年的後二碼
+ * 不必點、不必 hover 就看得出「這個 21 是哪一年哪一月的 21」。
+ * 上一版是「收合只給數字、hover 才展開面板顯示 N 批 M 則」——使用者看到那個面板
+ * 直接問「這是什麼功能」，證明它沒有自我說明的能力，整個移除。
+ *
+ * 未滿兩個月才列到「日」，而且**只列真的有訊息的日**（每天都畫會出現一堆空線）。
+ * 兩個月以上就停在「月」——hub 2026-08-19 才上線，剛上線全部資料都在同一個月，
+ * 只列月的話滑桿只有一條線，看不出它在做什麼。
+ *
+ * @returns {{mode:'day'|'month', ticks:{level,key,label,anchor}[]}}
+ *   level: 'year' | 'month' | 'day'；anchor: 要捲到的元素 id
  */
 function railTicks(batches) {
-  var months = [], seen = {};
+  var months = [], seenM = {};
   (batches || []).forEach(function (b) {
-    if (!Object.prototype.hasOwnProperty.call(seen, b.month)) { seen[b.month] = 1; months.push(b.month); }
+    if (!Object.prototype.hasOwnProperty.call(seenM, b.month)) { seenM[b.month] = 1; months.push(b.month); }
   });
+  if (!months.length) return { mode: 'month', ticks: [] };
+
   var mode = months.length >= 2 ? 'month' : 'day';
-  var keyOf = function (b) { return mode === 'month' ? b.month : b.time.slice(0, 10); };
-  var map = {}, order = [];
+  var ticks = [], seen = {};
+  var push = function (level, key, label, anchor) {
+    var id = level + ':' + key;
+    if (Object.prototype.hasOwnProperty.call(seen, id)) return;
+    seen[id] = 1;
+    ticks.push({ level: level, key: key, label: label, anchor: anchor });
+  };
+
   (batches || []).forEach(function (b) {
-    var k = keyOf(b);
-    if (!Object.prototype.hasOwnProperty.call(map, k)) {
-      map[k] = { key: k, short: mode === 'month' ? k.slice(5) : k.slice(8), n: 0, msgs: 0 };
-      order.push(map[k]);
+    var year = b.month.slice(0, 4);
+    // 年跳到該年最新的那個月；月跳到月標；日跳到當天第一張卡
+    push('year', year, year, 'm-' + b.month);
+    push('month', b.month, b.month.slice(5), 'm-' + b.month);
+    if (mode === 'day') {
+      var day = b.time.slice(0, 10);
+      push('day', day, day.slice(8), 'd-' + day);
     }
-    map[k].n++;
-    map[k].msgs += b.msgCount;
   });
-  return { mode: mode, ticks: order };
+  return { mode: mode, ticks: ticks };
 }
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     CATEGORY: CATEGORY, SKIP_RESULT: SKIP_RESULT, STATUS_LABEL: STATUS_LABEL,
-    sinceWarning: sinceWarning, railTicks: railTicks,
+    sinceWarning: sinceWarning, railTicks: railTicks, fullMessageOf: fullMessageOf,
     esc: esc, col: col, statusOf: statusOf, subjectOf: subjectOf,
     msgCountOf: msgCountOf, tallyOf: tallyOf, lampOf: lampOf,
     groupBatches: groupBatches, monthGroups: monthGroups,

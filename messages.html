@@ -21,7 +21,7 @@
     --r-dim: #8f3040; --r-bg: #fbeef1;
     --b: #2f4858;
     --bad: var(--r-dim); --bad-bg: var(--r-bg);
-    --rail-w: 44px;
+    --rail-w: 74px;   /* 要放得下「2026」這個標籤 */
     /* 分類色：明度／彩度比照系統既有的 --g(#4a7c62) 與 --g-bg(#eff4f1)，不拉高飽和。
        四個色相＝四個子系統，同組深淺兩階，顏色本身就說得出「這是哪一類」。
        ⚠️ 刻意不用綠與紅——那兩色燈號正在用（綠＝成功、紅＝失敗），
@@ -44,7 +44,13 @@
   }
   .wrap { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
 
-  /* 標題列：訊息紀錄　○搜尋　……　清除本機快取（靠右） */
+  /* 標題列：訊息紀錄　○搜尋　……　清除本機快取（靠右）
+     固定在頂端（使用者 2026-08-22）——捲到第五個月還看得到自己在哪一頁、
+     也還按得到搜尋。背景要不透明，否則捲動時卡片會透上來。 */
+  .stickytop {
+    position: sticky; top: 0; z-index: 30; background: var(--bg);
+    padding: 12px 0 2px; margin: -12px 0 0;
+  }
   .topbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
   h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: .01em; flex: none; }
   .topbar .gap { flex: 1; }
@@ -159,7 +165,22 @@
   .bar span { height: 100%; }
   .bar .ok { background: var(--g); } .bar .bad { background: var(--bad); } .bar .skip { background: #d8d8d5; }
 
-  .subject { font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 主旨點開＝看全文（第一個人收到的那則） */
+  details.subj { }
+  .subject {
+    font-size: 14.5px; color: var(--ink); cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    list-style: none;
+  }
+  .subject::-webkit-details-marker { display: none; }
+  details.subj[open] > .subject { white-space: normal; color: var(--ink2); }
+  .subject:focus-visible { outline: 2px solid var(--b); outline-offset: 2px; border-radius: 2px; }
+  .fullmsg {
+    margin-top: 6px; padding: 9px 11px; border-radius: 3px;
+    background: #f7f7f5; border: 1px solid var(--ln);
+    font-size: 13.5px; line-height: 1.7; color: var(--ink);
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
 
   /* 名單：預設收起，只給一個三角形，不放文字 */
   .card details { border-top: 1px solid #f4f4f2; }
@@ -196,51 +217,45 @@
   .empty { text-align: center; color: var(--ink3); padding: 30px 0; font-size: 14px; }
   #msg { padding: 26px 0; text-align: center; color: var(--ink3); font-size: 14px; }
 
-  /* 左側月份滑桿：全灰階。收合時只有短線＋月份數字；靠近才等比例放大（Dock）。
-     ⚠️ .line/.mm 的 flex: none 不可拿掉——rail 有固定寬度，
-        不寫的話會被同列文字擠成寬度 0，線整條消失且零錯誤訊息。 */
+  /* 左側時間滑桿：全灰階，**層級靠線條長度表達**（使用者 2026-08-22 指定）
+       ━━━━━━━━━  2026     年，最長
+       ━━━━━━     08       月，次之
+       ━━━━       21       日，最短
+     標籤一直看得見，不必 hover、不必點。
+     ⚠️ 原本是「收合只給數字、hover 展開面板顯示 N 批 M 則」——使用者看到那個面板
+        問「這是什麼功能」，證明它沒有自我說明的能力，已整個移除。
+     ⚠️ 線用絕對定位、標籤位置固定：放大時只有線變長，標籤不會跟著位移。 */
   .rail {
     position: fixed; left: 0; top: 50%; transform: translateY(-50%);
-    z-index: 20; width: var(--rail-w); padding: 12px 0 12px 10px;
-    display: flex; flex-direction: column; gap: 9px;
+    z-index: 20; width: var(--rail-w); padding: 10px 0 10px 10px;
+    display: flex; flex-direction: column; gap: 8px;
   }
   .rail[hidden] { display: none; }
-  .rail::before {
-    content: ''; position: absolute; inset: 0; width: 132px;
-    background: #fff; border: 1px solid var(--ln); border-left: none;
-    border-radius: 0 3px 3px 0;
-    /* 浮層用陰影是規範內的（.ph-pop 就是這個值）；不加的話面板在窄螢幕上
-       會像「把卡片挖掉一塊」而不是「浮在上面」 */
-    box-shadow: 0 4px 14px rgba(0,0,0,.08);
-    opacity: 0; transform: translateX(-6px);
-    transition: opacity .18s, transform .18s; pointer-events: none;
-  }
-  .rail.awake::before { opacity: 1; transform: none; }
-  .rail::after {   /* 好進來的隱形觸發區，比視覺寬 */
-    content: ''; position: absolute; left: 0; top: -26px; bottom: -26px;
-    width: 132px; pointer-events: auto;
-  }
   .tick {
-    position: relative; z-index: 1; display: flex; align-items: center; gap: 7px;
+    position: relative; height: 13px; width: 100%;
     background: none; border: none; padding: 0; margin: 0; cursor: pointer;
-    height: 13px; text-align: left;
+    text-align: left; font-family: inherit;
     color: var(--ink3);   /* 每顆按鈕都要明寫 color——不寫 iOS 給系統藍 */
   }
   .tick .line {
-    display: block; flex: none; width: 12px; height: 2px; border-radius: 1px;
+    position: absolute; left: 0; top: 50%; margin-top: -1px;
+    display: block; height: 2px; border-radius: 1px;
     background: #c4c4c0; transition: background .18s; will-change: width, height;
   }
+  /* 標籤像日期拆開來疊（使用者 2026-08-22）：
+       2026
+       08        ← 對齊年的前二碼「20」
+         21      ← 對齊年的後二碼「26」
+     ⚠️ 三階的**字級必須一致**，數字寬度不同就對不齊；層級改用顏色深淺區分。
+     ⚠️ 一定要 tabular-nums：比例數字的 1 比 8 窄，21 和 08 會歪掉。 */
   .tick .mm {
-    flex: none; font-size: 10.5px; font-weight: 600; color: var(--ink3);
+    position: absolute; left: 42px; top: 50%; transform: translateY(-50%);
+    font-size: 10.5px; font-weight: 600; color: var(--ink3);
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
     white-space: nowrap; transition: color .18s;
   }
-  .tick .full {   /* 絕對定位：不參與 flex，不會回頭擠壓線 */
-    position: absolute; left: 62px; top: 50%;
-    font-size: 11px; color: var(--ink2); white-space: nowrap;
-    opacity: 0; transform: translateY(-50%) translateX(-4px);
-    transition: opacity .18s, transform .18s; pointer-events: none;
-  }
-  .rail.awake .tick .full { opacity: 1; transform: translateY(-50%); }
+  .tick.year .mm { color: var(--ink2); }
+  .tick.day .mm { left: calc(42px + 2ch); }   /* 縮排兩個數字寬＝對齊年的後二碼 */
   .tick:hover .line, .tick.near .line { background: var(--ink2); }
   .tick:hover .mm, .tick.near .mm { color: var(--ink); }
   .tick.current .line { background: var(--ink2); }
@@ -251,7 +266,7 @@
   @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }
 
   @media (min-width: 768px) {
-    :root { --rail-w: 60px; }
+    :root { --rail-w: 84px; }
     body { font-size: 17px; }
     .wrap { max-width: 720px; padding: 32px 24px 80px; }
     h1 { font-size: 23px; }
@@ -263,6 +278,7 @@
 <nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
 
 <div class="wrap">
+  <div class="stickytop">
   <div class="topbar">
     <h1>訊息紀錄</h1>
     <button class="sdot" id="sdot" type="button" aria-expanded="false"
@@ -274,6 +290,7 @@
   <div class="searchbar" id="searchbar">
     <input id="q" type="search" autocomplete="off" spellcheck="false" tabindex="-1"
            placeholder="姓名・單位・主旨・分類・日期・批次・錯誤" aria-label="搜尋訊息紀錄">
+  </div>
   </div>
   <div class="shint" id="shint"></div>
 
@@ -369,9 +386,11 @@ function paint(query) {
   listEl.innerHTML = listHtml(res.list, toks, res.all);
 
   SHOWN_KEYS = [];
+  var mark = function (k) { if (SHOWN_KEYS.indexOf(k) < 0) SHOWN_KEYS.push(k); };
   res.list.forEach(function (b) {
-    var k = RAIL_MODE === 'month' ? b.month : b.time.slice(0, 10);
-    if (SHOWN_KEYS.indexOf(k) < 0) SHOWN_KEYS.push(k);
+    mark('year:' + b.month.slice(0, 4));
+    mark('month:' + b.month);
+    if (RAIL_MODE === 'day') mark('day:' + b.time.slice(0, 10));
   });
   syncRailDim();
   return res;
@@ -389,15 +408,16 @@ function setHint(res) {
 
 function go(v) { setHint(paint(v)); }
 
-/* ═══ 左側滑桿（全灰階）═══════════════════════════════════
-   未滿兩個月列「日」且只列有訊息的日；兩個月以上列「月」。
+/* ═══ 左側時間滑桿（全灰階）═══════════════════════════
+   層級靠線條長度：年最長、月次之、日最短。標籤一直看得見，不展開。
    ⚠️ 必須在第一次 go() 之前建好：paint() 結尾會呼叫 syncRailDim()，它讀 `ticks`。
       順序寫反的話 ticks 是 undefined，整段初始化在這裡同步中斷——
       **卡片已經畫完所以看起來正常**，但滑桿從未建立、搜尋提示也不會出現。
       同型前例是 stats.html 的 SECOND.then（見 tests/page-load.test.js 的註解）。
    ═══════════════════════════════════════════════════════ */
 var ticks = [];
-var BASE_W = 12, MAX_W = 34, BASE_H = 2, MAX_H = 4, SIGMA = 42;
+var BASE_W = { year: 26, month: 19, day: 12 };   // 收合時的線長，長度＝層級
+var GROW = 12, BASE_H = 2, MAX_H = 4, SIGMA = 40;
 
 function buildRail() {
   var spec = railTicks(BATCHES);
@@ -405,92 +425,102 @@ function buildRail() {
   if (spec.ticks.length < 2) { railEl.hidden = true; ticks = []; return; }
   railEl.hidden = false;
   railEl.innerHTML = spec.ticks.map(function (o) {
-    return '<button class="tick" type="button" data-k="' + esc(o.key) + '" '
-      + 'aria-label="\u8df3\u5230 ' + esc(o.key) + '\uff0c' + o.n + ' \u6279\u5171 '
-      + o.msgs + ' \u5247">'
-      + '<span class="line"></span><span class="mm">' + esc(o.short) + '</span>'
-      + '<span class="full">' + o.n + ' \u6279\u3000' + o.msgs + ' \u5247</span></button>';
+    return '<button class="tick ' + o.level + '" type="button" '
+      + 'data-k="' + esc(o.level + ':' + o.key) + '" data-anchor="' + esc(o.anchor) + '" '
+      + 'aria-label="\u8df3\u5230 ' + esc(o.key) + '">'
+      + '<span class="line"></span><span class="mm">' + esc(o.label) + '</span></button>';
   }).join('');
   ticks = Array.prototype.slice.call(railEl.querySelectorAll('.tick'));
   magnify(null);
 }
 
+/** Dock 式縮放。每一階從自己的基準長度往外長，層級關係不會因為放大而錯亂。 */
 function magnify(y) {
   ticks.forEach(function (t) {
     var line = t.querySelector('.line');
+    var base = BASE_W[t.classList.contains('year') ? 'year'
+      : (t.classList.contains('month') ? 'month' : 'day')];
     if (y == null) {
-      line.style.width = BASE_W + 'px'; line.style.height = BASE_H + 'px';
+      line.style.width = base + 'px'; line.style.height = BASE_H + 'px';
       t.classList.remove('near'); return;
     }
     var r = t.getBoundingClientRect();
     var d = Math.abs((r.top + r.height / 2) - y);
     var f = Math.exp(-(d * d) / (2 * SIGMA * SIGMA));   // 高斯衰減
-    line.style.width = (BASE_W + (MAX_W - BASE_W) * f) + 'px';
+    line.style.width = (base + GROW * f) + 'px';
     line.style.height = (BASE_H + (MAX_H - BASE_H) * f) + 'px';
     t.classList.toggle('near', f > 0.6);
   });
 }
 
-/** 搜尋後沒有結果的月／日淡掉，滑桿才不會指到空的地方。 */
+/** 搜尋後沒有結果的年／月／日淡掉，滑桿才不會指到空的地方。 */
 function syncRailDim() {
   ticks.forEach(function (t) {
     t.classList.toggle('dim', SHOWN_KEYS.indexOf(t.dataset.k) < 0);
   });
 }
 
-function anchorFor(key) {
-  return document.getElementById((RAIL_MODE === 'month' ? 'm-' : 'd-') + key);
-}
-
 function syncCurrent() {
   if (!ticks.length) return;
   var best = null, bestD = Infinity;
   ticks.forEach(function (t) {
-    var el = anchorFor(t.dataset.k);
+    var el = document.getElementById(t.dataset.anchor);
     if (!el) return;
-    var d = Math.abs(el.getBoundingClientRect().top - 60);
+    var d = Math.abs(el.getBoundingClientRect().top - 70);
     if (d < bestD) { bestD = d; best = t.dataset.k; }
   });
   ticks.forEach(function (t) { t.classList.toggle('current', t.dataset.k === best); });
 }
 
-var hasHover = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
-if (hasHover) {
-  railEl.addEventListener('pointermove', function (e) {
-    railEl.classList.add('awake'); magnify(e.clientY);
-  });
-  railEl.addEventListener('pointerleave', function () {
-    railEl.classList.remove('awake'); magnify(null);
-  });
-} else {
-  // 觸控沒有 hover：點一下展開，點外面收起
-  railEl.addEventListener('click', function (e) {
-    if (!railEl.classList.contains('awake') && !e.target.closest('.tick')) {
-      railEl.classList.add('awake');
-      magnify(railEl.getBoundingClientRect().top + railEl.offsetHeight / 2);
-      e.preventDefault();
-    }
-  });
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('#rail')) { railEl.classList.remove('awake'); magnify(null); }
-  });
+// 沒有展開面板了，所以觸控不需要「先點開再點格」——直接點格就跳。
+if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+  railEl.addEventListener('pointermove', function (e) { magnify(e.clientY); });
+  railEl.addEventListener('pointerleave', function () { magnify(null); });
 }
 railEl.addEventListener('focusin', function (e) {
-  railEl.classList.add('awake');
   var t = e.target.closest('.tick');
   if (t) { var r = t.getBoundingClientRect(); magnify(r.top + r.height / 2); }
 });
 railEl.addEventListener('focusout', function () {
-  if (!railEl.contains(document.activeElement)) { railEl.classList.remove('awake'); magnify(null); }
+  if (!railEl.contains(document.activeElement)) magnify(null);
 });
 railEl.addEventListener('click', function (e) {
   var t = e.target.closest('.tick');
   if (!t) return;
-  if (qEl.value) { qEl.value = ''; go(''); }   // 搜尋中跳月份＝先回到完整清單
-  var el = anchorFor(t.dataset.k);
+  if (qEl.value) { qEl.value = ''; go(''); }   // 搜尋中跳日期＝先回到完整清單
+  var el = document.getElementById(t.dataset.anchor);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
-window.addEventListener('scroll', syncCurrent, { passive: true });
+
+/* 捲過去就自動收起展開中的名單與全文（使用者 2026-08-22）。
+   判準是「整塊都跑到視窗上緣以外」——只露出一點點還不算，
+   不然使用者往下讀個兩行就被收掉，比不收更煩。 */
+function collapsePassed() {
+  var open = document.querySelectorAll('#list details[open]');
+  var i, d, r;
+  for (i = 0; i < open.length; i++) {
+    d = open[i];
+    r = d.getBoundingClientRect();
+    if (r.bottom < 0) d.open = false;
+  }
+}
+
+/* 節流用 setTimeout 不用 requestAnimationFrame。
+   ⚠️ 原本把「解鎖旗標」寫在 rAF 的回呼裡：rAF 只要有一次沒被呼叫
+      （分頁在背景、系統忙、無痕的省電模式），旗標就永遠停在 true，
+      之後每一次捲動都被 `if (pending) return` 擋掉 ⇒ 滑桿高亮與自動收納
+      **永久失效而且零錯誤訊息**。2026-08-22 在真瀏覽器實測到這個卡死狀態。
+      setTimeout 沒有這個問題：它一定會到期。 */
+var scrollPending = false;
+window.addEventListener('scroll', function () {
+  if (scrollPending) return;
+  scrollPending = true;
+  setTimeout(function () {
+    scrollPending = false;
+    syncCurrent();
+    collapsePassed();
+  }, 100);
+}, { passive: true });
 
 /* ═══ 搜尋圓點的開合 ═══════════════════════════════════ */
 function openSearch() {
