@@ -524,15 +524,15 @@
       // 飛行紀錄（?diag=1 看得到）。2026-08-21 之前這一整段是**盲的**：紀錄停在
       // 「③ getProfile OK」，於是「通行證變慢」到底慢在快取沒命中、還是 GAS 本身、
       // 還是畫 QR，完全看不出來。相鄰兩筆的時間差就是各段耗時，不另建計時器。
-      var cached = passCacheRead(userId, act);
-      if (passCacheUsable(cached, urlV)) {
+      var cached = passCacheRead(userId, act), today = passToday();
+      if (passCacheUsable(cached, urlV, today)) {
         lg('⑤ pass 快取命中 → 0 次 GAS');
         renderPass(cached.res);
         loadLottery(userId, cached.res.actId || act);
         return;                                   // 這條路一次 GAS 都不打
       }
 
-      lg('⑤ pass 快取未命中（' + passCacheMissReason(cached, urlV) + '）→ 打 GAS');
+      lg('⑤ pass 快取未命中（' + passCacheMissReason(cached, urlV, today) + '）→ 打 GAS');
       jsonp('getEventCheckinPass', { userId: userId, act: act }).then(function (res) {
         lg('⑥ getEventCheckinPass 回 ok=' + !!(res && res.ok)
            + ' published=' + !!(res && res.published));

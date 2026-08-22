@@ -22,7 +22,7 @@ function extractFn(name) {
   return m[0];
 }
 
-const { passCacheKey, passCacheUsable, passCacheMissReason } = require('../assets/pass-cache.js');
+const { passCacheKey, passCacheUsable, passCacheMissReason, passToday } = require('../assets/pass-cache.js');
 
 const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name: '洪炫佑', table: '21',
               actId: 'midyear2026', activity: { name: '2026 年中聚餐' } };
@@ -34,7 +34,7 @@ function run(opt) {
   const els = {};
   const el = (id) => (els[id] = els[id] || { style: {}, textContent: '', innerHTML: '', appendChild() {} });
   const ctx = {
-    console, passCacheKey, passCacheUsable, passCacheMissReason,
+    console, passCacheKey, passCacheUsable, passCacheMissReason, passToday,
     lg: (m) => log.push(m),
     document: { getElementById: el },
     show: () => {},
@@ -112,7 +112,7 @@ test('對照組：把命中那行 lg 拿掉，★那條必須翻紅', () => {
   const log = [];
   const els = {};
   const ctx = {
-    console, passCacheKey, passCacheUsable, passCacheMissReason,
+    console, passCacheKey, passCacheUsable, passCacheMissReason, passToday,
     lg: (m) => log.push(m),
     document: { getElementById: (id) => (els[id] = els[id] || { style: {}, textContent: '', innerHTML: '' }) },
     show: () => {}, showMsg: () => {}, escHtml: (s) => s,
@@ -171,5 +171,40 @@ test('對照組：把「多寫 auto 鍵」那行拿掉，★那條必須翻紅',
   const mutated = m[0].replace(/\n\s*if \(act && res\.isDefaultAct\) passCacheWrite\(userId, '', urlV, res\);/, '');
   assert.notStrictEqual(mutated, m[0], '突變沒注入成功——先確認真的改到字了');
   assert.ok(!mutated.includes("passCacheWrite(userId, '', urlV, res)"));
+});
+
+test('★過期的快取：startPass 必須真的把今天傳進去（漏傳會靜默關掉整個到期判斷）', async () => {
+  const stale = { v: '', res: { ...RES, activity: { name: '2020 尾牙', eventDate: '2020/01/10' } } };
+  const { log, gasCalls } = run({ cache: stale, gas: { ...RES, isDefaultAct: true } });
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(gasCalls.length, 1,
+    '過期快取仍被當成命中 ⇒ startPass 沒把 today 傳給 passCacheUsable');
+  assert.strictEqual(log[0], '⑤ pass 快取未命中（活動已過去）→ 打 GAS');
+});
+
+test('對照組：把 today 從呼叫裡拿掉，★那條必須翻紅', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const m = src.match(/^    function startPass\([\s\S]*?^    }/m);
+  const mutated = m[0].replace('passCacheUsable(cached, urlV, today)', 'passCacheUsable(cached, urlV)');
+  assert.notStrictEqual(mutated, m[0], '突變沒注入成功——先確認真的改到字了');
+  const stale = { v: '', res: { ...RES, activity: { name: '2020 尾牙', eventDate: '2020/01/10' } } };
+  const gasCalls = [];
+  const els = {};
+  const ctx = {
+    console, passCacheKey, passCacheUsable, passCacheMissReason, passToday,
+    lg: () => {},
+    document: { getElementById: (id) => (els[id] = els[id] || { style: {}, textContent: '', innerHTML: '' }) },
+    show: () => {}, showMsg: () => {}, escHtml: (s) => s,
+    getAct: () => '', getParam: () => '',
+    passCacheRead: () => stale,
+    passCacheWrite: () => {}, passCacheClear: () => {},
+    renderPass: () => {}, loadLottery: () => {},
+    jsonp: () => { gasCalls.push(1); return Promise.resolve(RES); },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(mutated, ctx);
+  ctx.startPass('U73069bf');
+  assert.strictEqual(gasCalls.length, 0,
+    '漏傳 today 之後過期快取又被當成命中 ⇒ ★那條斷言確實抓得到');
 });
 
