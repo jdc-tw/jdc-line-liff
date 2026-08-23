@@ -2,14 +2,17 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<!-- viewport-fit=cover：不加的話 env(safe-area-inset-*) 全部回 0（2026-08-23 實測前提）。
-     加了之後可視區明確延伸到整個螢幕，fixed／sticky 的 top:0 才真的是螢幕頂端；
-     代價是安全區要自己留，見下方 --sat／--sal／--sar／--sab。 -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 加到主畫面（standalone）時的狀態列底色。使用者 2026-08-23 就是這樣開這一頁的。
-     不設的話 iOS 會自己取頁面頂端的顏色，捲動時那一條會跟著內容變色。
-     值＝ --bg #fbfbfa（頁面底色）；⚠️ 這裡是**寫死的字面值**，CSS 變數在 meta 裡讀不到，
-     改 --bg 的話這一行要跟著改，否則狀態列會與頁面差一階而沒有任何錯誤訊息。 -->
+<!-- ⚠️ 刻意**不加** viewport-fit=cover，且 head 與 stats/board/admin 三頁一致（2026-08-23）。
+     為何：iPhone（iOS 26.6.1、加到主畫面）捲動時卡片內容從狀態列後面透出來。
+     同 App 的另外三頁沒有這個問題，它們就是沒有 cover、有下面兩行 apple-mobile 的 meta。
+     iOS 26.1 起 env(safe-area-inset-top) 回 0（WebKit bug 301994，26.5.2 仍 REOPENED），
+     狀態列那 62px 任何 DOM 都碰不到——所以偽元素、box-shadow、viewport 外的 fixed 遮罩
+     全部無效（六種都在真機試過）。cover 在這個狀態下什麼都沒帶來，
+     只會告訴 Safari「內容可延伸到邊緣」，讓 Liquid Glass 狀態列取樣到真實像素。
+     出處：1ar.io/updates/safari-26-liquid-glass-web、muffinman.io/blog/pwa-ios-status-bar-blur。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fbfbfa">
 <!-- ⚠️ GitHub Pages 的 HTML 回 `Cache-Control: max-age=600`，改不了（Pages 不支援自訂 header）。
      這行讓瀏覽器**第二次起**不要用快取——第一次仍可能拿到舊版，
@@ -94,62 +97,32 @@
     /* ⚠️ top 是 var(--sat) 不是 0（2026-08-23 使用者兩張真機截圖對照查出）：
        加了 viewport-fit=cover 之後 top:0 ＝ 螢幕頂端，標題列會鑽到狀態列後面。
        黏在安全區下緣才對；狀態列那一帶由下面的 box-shadow 往上鋪滿。 */
-    position: sticky; top: var(--sat); z-index: 30; background: var(--bg);
+    /* 🔑 2026-08-23 晚：底色**不放在 sticky 元素本身**，放在下面的 ::before（absolute 子層）。
+       為何：活動看板頁頂沒有任何 sticky／fixed 元素、從不穿透；這頁是同 App 裡唯一有的。
+       1ar.io（Safari 26 Liquid Glass）：Safari 會掃描貼近頂端的 fixed／sticky 元素，
+       讀它的 background 來決定系統列後面畫什麼，規則是「sticky 本體透明、底色放 absolute 子元素」。
+       這是旁證（講的是 Safari 瀏覽器），與 head 的兩行 apple meta 一起改、一次上線。 */
+    position: sticky; top: var(--sat); z-index: 30; background: transparent;
     /* 頂端貼齊 wrap 的內距：原本 padding-top 12px 配 margin-top -12px，
        但 wrap 的 padding-top 是 20px（桌機 32px），差的那 8px 沒被蓋住——
        捲動一開始標題列會往上跳那 8px。改吃同一個 --pad-y 就不會有缺口。 */
     padding: var(--pad-y) 0 8px; margin: calc(-1 * var(--pad-y)) 0 0;
     /* .wrap 的 padding-top 已含 --sat，這裡不必再減一次——減了會讓標題列反向溢出。 */
 
-    /* 背景橫向滿版（使用者 2026-08-23 回報「標題列後面看得到內容在滑」）。
-       ⚠️ 實測澄清，別照著錯的理由改：.stickytop 住在 .wrap 裡，390px 手機上只佔
-       left=90～right=374——但**卡片也是同一個寬度**，左右露出的是 body 背景、
-       與 --bg 同色。所以「卡片從縫裡滑過去」是錯的推論，真正的成因是下面那條
-       分隔線當時不存在（白卡 #fff 對底色 #fbfbfa，邊界剛好在標題列下方穿過去）。
-       滿版背景留著的理由是另一個：讓標題列在視覺上是一整條橫幅，
-       而不是浮在畫面中間的一塊——桌機上左右各有一大片空白時差別很明顯。
-       用 box-shadow 鋪兩側，**不用偽元素的 left:-50vw**——絕對定位溢出 body 會生出
-       橫向捲軸，得再去 overflow-x:hidden，而那會動到 sticky 的捲動容器。
-       box-shadow 不參與版面，也不被 hit-test 命中，所以不影響點擊。
-
-       ⚠️ **一個 shadow 同時處理上方與左右，刻意不用偽元素**（2026-08-23 第二輪）：
-       `0 -50vmax 0 50vmax` ＝ 往上偏移 50vmax、再往四周擴散 50vmax，實際塗到的範圍是
-       上緣 top-100vmax、下緣**維持在 bottom**（不會蓋到下方內容）、左右各外擴 50vmax。
-       ⚠️ 兩個值必須相等，下緣才會剛好落在 bottom：`offset > spread` 會在標題列下方
-          留一道沒塗到的空隙。
-       ⚠️ 單位用 vmax（視窗長邊）不用 vh：寬而矮的視窗上 50vh 撐不過左右兩側
-          （2560×600 時左右各需 920px，50vh 只有 300px），vmax 取長邊，兩個方向都夠。
-       上一版用 `.stickytop::before { bottom:100%; height:100vh }` 往上鋪，
-       **在 Chromium 實測有效（關掉它那一帶會露出卡片白），但 iPhone 加到主畫面的
-       standalone 模式下 Safari 沒有畫出來**——使用者 11:25 的截圖，狀態列後面
-       清楚看得到「1人 許倩瑋」那張卡。成因是 iOS 的橡皮筋回彈：往下拉一點時
-       sticky 標題列跟著下移，它後面的卡片就從上方露出來。
-       改用元素本體的 box-shadow：那是自身繪製，不是另一個盒子，Safari 穩定得多。 */
-    box-shadow: 0 -50vmax 0 50vmax var(--bg);
+    /* 底色與左右滿版都在 ::before 上（見下）。滿版的理由：讓標題列在視覺上是一整條橫幅，
+       桌機上左右各有一大片空白時差別很明顯。用 box-shadow 鋪兩側、不用 left:-50vw——
+       絕對定位溢出 body 會生出橫向捲軸。
+       歷史：今天先後用過「::before 往上鋪 100vh」「本體 box-shadow 往上 50vmax」「fixed 遮罩」
+       三種往狀態列方向鋪的遮罩，真機全部無效，已全部拆掉；原因見檔頭註解。 */
   }
-  /* 🔑 狀態列那一帶的遮罩：**一個實體元素**，不是陰影也不是偽元素。
-     2026-08-23 這是第三種寫法，前兩種都在 iPhone standalone 上沒被畫出來：
-       ① `.stickytop::before`（偽元素往上鋪 100vh）——Chromium 有完整對照組證明有效，真機無效
-       ② `.stickytop` 的 `box-shadow: 0 -50vmax 0 50vmax`——同上，真機無效
-     兩次的共通點是「依附在 sticky 元素上、畫在它的邊界之外」。
-     Safari 捲動時會把 sticky 元素提升到合成層，超出邊界的繪製就不保證了。
-     實體元素沒有這個問題：它自己就是一個盒子，一定會被畫。
-     ⚠️ 這一版**必須配 viewport-fit=cover**——沒有 cover 時 --sat 是 0、高度 0，
-        而且 fixed 的 top:0 也到不了螢幕頂端。兩者是一組，不可只留一個。
-     ⚠️ z-index 32 要高於 .stickytop(30) 與 .brandmark(31)：它只佔 0～--sat，
-        logo 在 14px+--sat 以下，不會被壓到。 */
-  .topmask {
-    /* ⚠️ 從 -–sat 蓋到 +--sat（高度兩倍），**刻意涵蓋兩種可能**：
-       · 若 viewport-fit=cover 生效，fixed 的 top:0 ＝ 螢幕頂端
-         ⇒ 負的那一半落在螢幕外（無害），0～--sat 正好蓋住狀態列。
-       · 若 cover 沒生效（舊系統／被 manifest 覆蓋），fixed 的 top:0 在安全區內
-         ⇒ -–sat～0 才是狀態列，正好蓋住；0～--sat 蓋到的是標題列上緣的空白，也無害。
-       這個寫法來自 StackOverflow 61735881 的解法（`top:-80px` 的負值定位），
-       差別是那邊寫死 80px，這裡吃 --sat 所以在沒有安全區的裝置上高度是 0、完全不存在。 */
-    position: fixed; top: calc(-1 * var(--sat)); left: 0; right: 0;
-    height: calc(var(--sat) * 2);
-    background: var(--bg); z-index: 32;
+  .stickytop::before {
+    content: ''; position: absolute; inset: 0; z-index: -1; background: var(--bg);
+    box-shadow: -100vw 0 0 var(--bg), 100vw 0 0 var(--bg);
   }
+  /* 2026-08-23 晚：原本這裡有第三種狀態列遮罩 .topmask（fixed 實體元素），已拆。
+     三種遮罩（偽元素／box-shadow／fixed 元素）在 iPhone standalone 都無效——
+     iOS 26.1+ 那 62px 是 DOM 碰不到的縫（WebKit bug 301994）；而且 fixed 元素本身
+     就是 Safari 26 掃描的對象，留著可能反而讓它被取樣。 */
 
   /* 🔑 分隔線才是這次真正修好問題的那一條。卡片是白的、頁面底是 #fbfbfa，
      兩色太近，沒有線就看不出「標題列到哪裡為止」，捲動時卡片邊界從標題下方穿過，
@@ -469,7 +442,6 @@
 </head>
 <body>
 
-<div class="topmask" aria-hidden="true"></div>
 <div class="brandmark"><img src="assets/logo-mark.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 
 <nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
