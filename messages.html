@@ -232,13 +232,16 @@
   /* 收件人名字。放得下幾個就顯示幾個——截斷交給 CSS，不在 JS 算字寬
      （字寬隨字型／字級／裝置／使用者縮放變動，算出來的數字在某一台一定是錯的）。
      ⚠️ min-width:0 一定要有：flex 子項預設不會縮到內容寬以下，沒有它 ellipsis 永不觸發。
-     ⚠️ 字級與 .num 同為 13px、**顏色也要同為 --ink**（2026-08-23 使用者：「應該可以跟
-        人數的字大小一致」）。實測當時兩者字級本來就都是 13px，差的是顏色：
-        名字用 --ink2 rgb(107,107,104)、數字用 --ink rgb(44,44,43)——
-        **淺色小字讀起來就是比較細、比較小**，所以那句「大小不一致」講的是顏色。
-        日後想調這一格時先量 computed fontSize，別直接動字級。 */
+     ⚠️ 顏色的來回走過兩次，兩次都是使用者當場否決，**不要再改回去**：
+        · 原本 --ink2 → 他說「人名應該可以跟人數的字大小一致」。實測字級本來就
+          都是 13px，差的是顏色（107,107,104 vs 44,44,43）——淺色小字讀起來
+          就是比較細、比較小，所以那句「大小不一致」講的是顏色，於是改成 --ink。
+        · 改成 --ink 之後他說「感覺很搶眼」，改回 --ink2（2026-08-23）。
+        兩次不矛盾：**中間名字從「印到被切斷為止」改成最多三個**，視覺重量本來就降了，
+        而字級 13px 與 .num 一致這件事沒有變。三階層級：數字 --ink ＞ 名字 --ink2
+        ＞「人」--ink3。日後想調先量 computed fontSize，別直接動字級。 */
   .names {
-    flex: 1; min-width: 0; font-size: 13px; color: var(--ink);
+    flex: 1; min-width: 0; font-size: 13px; color: var(--ink2);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
@@ -253,7 +256,9 @@
      而內容其實只是「○○您好」。
      ⚠️ 單行省略號，截斷交給 CSS 不寫死字數：手機與桌機放得下的字數不同。 */
   .gist {
-    font-size: 12.5px; line-height: 1.6; color: var(--ink2); min-width: 0;
+    /* flex:1 ＋ min-width:0：現在它與失敗註記同一列，要能縮才觸發得了 ellipsis */
+    flex: 1; min-width: 0;
+    font-size: 12.5px; line-height: 1.6; color: var(--ink2);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 

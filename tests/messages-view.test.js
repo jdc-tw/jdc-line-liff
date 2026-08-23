@@ -314,7 +314,10 @@ test('cardHtml：卡面第三列是摘要，不是「○○您好」那一行', 
   const html = V.cardHtml(b, []);
   // ⚠️ 不可以用 indexOf('class="gist"') 之後的整段來檢查——那一段還含著下拉裡的
   //    全文，而全文本來就有稱呼行，這條就永遠綠（同型假測試 8/23 已犯過一次）。
-  const m = html.match(/<div class="gist">([\s\S]*?)<\/div>/);
+  // ⚠️ 標籤名要跟著實作走：.gist 2026-08-23 從 <div> 改成 <span>（與失敗註記同列），
+  //    regex 寫死 <div> 的話這條會變成「永遠找不到 ⇒ assert.ok(m) 紅」——
+  //    紅了還算好的，寫成「找不到就跳過」才是靜默失效。
+  const m = html.match(/<span class="gist">([\s\S]*?)<\/span>/);
   assert.ok(m, '卡面要有摘要那一列');
   assert.equal(m[1], '真正的內容在第二行');
 });
@@ -337,11 +340,31 @@ test('cardHtml：人數旁邊列出名字，不列單位', () => {
   assert.equal(m[1].indexOf('工務管理組'), -1, '單位不進卡面');
 });
 
-test('namesLine：名字全部輸出，截斷交給 CSS（JS 不算字寬）', () => {
-  const b = V.groupBatches(H, Array.from({ length: 40 }, (_, i) => row({ 對象姓名: '員工' + i })))[0];
+test('namesLine：最多三個名字，其餘收成「…」（使用者 2026-08-23）', () => {
+  const b = V.groupBatches(H, Array.from({ length: 19 }, (_, i) => row({ 對象姓名: '員工' + i })))[0];
   const line = V.namesLine(b, []);
-  assert.equal(line.split('、').length, 40, '40 個名字一個都不能少——少了就搜不到');
-  assert.ok(line.indexOf('員工39') >= 0);
+  assert.equal(line, '員工0、員工1、員工2…');
+  assert.equal(line.indexOf('員工3'), -1, '第四個以後不該出現');
+});
+
+test('namesLine：剛好三個人不加「…」——沒有被省略的東西就不要暗示有', () => {
+  const b = V.groupBatches(H, [row({ 對象姓名: 'A' }), row({ 對象姓名: 'B' }), row({ 對象姓名: 'C' })])[0];
+  assert.equal(V.namesLine(b, []), 'A、B、C');
+});
+
+test('namesLine：上限是「人數」不是「字寬」——名字再長也還是三個', () => {
+  // 當初拒絕的是在 JS 算得下幾個字（字寬隨字型／裝置／縮放變動）；人數是純機械的
+  const long = V.groupBatches(H, Array.from({ length: 5 },
+    (_, i) => row({ 對象姓名: '很長的名字第' + i + '位員工' })))[0];
+  assert.equal(long.rows.length, 5);
+  assert.equal(V.namesLine(long, []).split('、').length, 3);
+});
+
+test('namesLine：卡面只列三個，但搜尋索引拿得到全部（看不見 ≠ 搜不到）', () => {
+  const b = V.groupBatches(H, Array.from({ length: 19 }, (_, i) => row({ 對象姓名: '員工' + i })))[0];
+  assert.equal(V.namesLine(b, []).indexOf('員工18'), -1, '前提：第 19 個確實不在卡面上');
+  assert.equal(b.rows.length, 19, '但 rows 一個都沒少——索引走的是這裡');
+  assert.equal(b.rows[18].name, '員工18');
 });
 
 test('cardHtml：那排每人一顆的點已撤除（統一用右上角燈號）', () => {
@@ -367,6 +390,22 @@ test('failNote：有失敗要講出幾個——燈號三色分不出 3 個失敗
   const b = V.groupBatches(H, rows)[0];
   assert.equal(V.failNote(b), '3 失敗');
   assert.ok(V.cardHtml(b, []).indexOf('3 失敗') >= 0);
+});
+
+test('cardHtml：失敗註記不可以跟名字同一列——同列會把第三個名字切成半個', () => {
+  const rows = Array.from({ length: 137 }, (_, i) => row({ 對象姓名: 'N' + i }));
+  rows[0] = row({ 對象姓名: 'N0', 結果: '失敗' });
+  const b = V.groupBatches(H, rows)[0];
+  const html = V.cardHtml(b, []);
+  const namesRow = html.slice(html.indexOf('class="names"'));
+  const rowEnd = namesRow.indexOf('</div>');
+  assert.ok(rowEnd > 0);
+  assert.equal(namesRow.slice(0, rowEnd).indexOf('class="fail"'), -1,
+    '失敗註記要在摘要那一列，不在名字那一列');
+  // 而且它確實存在（不是被我刪掉才「不同列」）
+  assert.ok(html.indexOf('class="fail"') >= 0);
+  assert.ok(html.indexOf('class="gist"') < html.indexOf('class="fail"'),
+    '順序：摘要在前、註記在後');
 });
 
 test('failNote：略過也要講，而且與失敗分開列（三態不是兩態）', () => {
