@@ -413,6 +413,16 @@
      `CriOS`＝Chrome for iOS 的一般分頁，`navigator.standalone` false，
      那份數字量的不是出問題的環境）。
      manifest 的 scope 是 "/"，同 scope 的連結從 App 點進去會留在 App 內。 */
+  /* 版本戳：用 document.lastModified，**不必手動維護**。
+     為何存在：2026-08-23 反覆出現「他看到的是不是新版」這個疑問——
+     Cache-Control 是 600 秒，改完馬上看很可能拿到舊版，而畫面上完全看不出來。
+     有這一行就能一眼確認，不必再靠猜或等。 */
+  .verstamp {
+    display: block; text-align: center; margin: 18px 0 0;
+    font-size: 10.5px; color: var(--ink3);
+    font-variant-numeric: tabular-nums;
+  }
+
   .diaglink {
     display: block; text-align: center; margin: 26px 0 0;
     font-size: 12px; color: var(--ink3); text-decoration: none;
@@ -460,6 +470,7 @@
   <div id="list"></div>
   <!-- ⚠️ 暫時的，量完就拆（2026-08-23）。刻意不帶 token——診斷頁只讀瀏覽器環境。 -->
   <a class="diaglink" href="diag-msg.html">讓位寬度實驗</a>
+  <span class="verstamp" id="ver"></span>
 </div>
 </div>
 
@@ -773,6 +784,13 @@ function adopt(data, force) {
     syncCurrent();
   }
 }
+
+/* 版本戳：document.lastModified 是這份 HTML 的 Last-Modified，瀏覽器自動給，
+   拿到快取的舊版時會顯示舊時間 —— 不必手動維護版本號。 */
+(function () {
+  var el = document.getElementById('ver');
+  if (el) el.textContent = '版本 ' + document.lastModified;
+})();
 
 cacheBootstrap(TOKEN).then(function () {
   syncClearBtn();
