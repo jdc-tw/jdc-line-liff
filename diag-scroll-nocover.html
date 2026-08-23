@@ -55,6 +55,28 @@
   }
   .row:nth-child(even) { background: #ad1457; }
 
+  /* ⚠️ 第二輪（2026-08-23）：四種組合都不穿透 ⇒ 成因不在 cover、也不在 body/容器捲動。
+     那就在 messages.html 特有的東西上。這頁現在是**乾淨基準**，
+     逐一加入下面三個特徵，第一個讓它開始穿透的就是元凶。
+
+     最可疑的是 A 與 B——它們都是我自己為了「遮住狀態列」加上去的。
+     muffinman.io 描述的機制是「viewport 外的繪製會被頁面內容揭露出來」，
+     若屬實，那我加的遮罩可能反而是讓 Safari 開始繪製那一帶的觸發器。 */
+  /* A：messages.html 標題列上那個巨大陰影 */
+  body.fx-shadow .bar { box-shadow: 0 -50vmax 0 50vmax #fbfbfa; }
+  /* B：負向定位、伸到 viewport 之外的 fixed 遮罩（就是 messages 的 .topmask） */
+  #tm { display: none; }
+  body.fx-mask #tm {
+    display: block; position: fixed; top: -62px; left: 0; right: 0;
+    height: 124px; background: #fbfbfa; z-index: 32;
+  }
+  /* C：畫面上另外有 fixed 元素（messages 的滑桿與 logo） */
+  #fx { display: none; }
+  body.fx-fixed #fx {
+    display: block; position: fixed; left: 6px; top: 50%; transform: translateY(-50%);
+    z-index: 20; font-size: 11px; color: #9a9a96; line-height: 2;
+  }
+
   /* ── 模式二：捲動發生在內部容器，body 不捲 ──
      推論：body 捲動時 Safari 把整份文件的圖層畫到可視區之外（也就是狀態列那 62px）；
      改成內部容器捲動的話，那個容器有明確邊界，內容不該溢出。**待實測驗證。** */
@@ -64,6 +86,8 @@
 </style>
 </head>
 <body>
+<div id="tm"></div>
+<div id="fx">2026<br>08<br>23<br>21<br>20</div>
 <div id="scroller">
   <div class="bar">
     <h1>捲動實驗（無 cover）</h1>
@@ -71,6 +95,11 @@
       <button id="b1" type="button">body 捲動</button>
       <button id="b2" type="button">容器捲動</button>
       <a class="lnk" href="diag-scroll.html">← 切回「有 cover」版</a>
+    </div>
+    <div class="btns" style="margin-top:8px">
+      <button id="fa" type="button">A 巨大陰影</button>
+      <button id="fb" type="button">B 負向遮罩</button>
+      <button id="fc" type="button">C 其他 fixed</button>
     </div>
   </div>
   <div class="now" id="now"></div>
@@ -95,9 +124,16 @@
       + 'env top ' + px('safe-area-inset-top')
       + '　screen ' + screen.height + '　inner ' + window.innerHeight
       + '　差 ' + (screen.height - window.innerHeight)
-      + '<br>' + (mq ? '✅ standalone（量對環境）' : '🔴 不是主畫面 App，這樣量不算數');
+      + '<br>' + (mq ? '✅ standalone（量對環境）' : '🔴 不是主畫面 App，這樣量不算數')
+      + '<br>已開啟的特徵：<b>' + (['fx-shadow','fx-mask','fx-fixed']
+          .filter(function (c) { return document.body.classList.contains(c); })
+          .map(function (c) { return { 'fx-shadow':'A 巨大陰影','fx-mask':'B 負向遮罩','fx-fixed':'C 其他 fixed' }[c]; })
+          .join('、') || '（都沒開，乾淨基準）') + '</b>';
     document.getElementById('b1').className = inner ? '' : 'on';
     document.getElementById('b2').className = inner ? 'on' : '';
+    [['fa','fx-shadow'],['fb','fx-mask'],['fc','fx-fixed']].forEach(function (p) {
+      document.getElementById(p[0]).className = document.body.classList.contains(p[1]) ? 'on' : '';
+    });
   }
   function set(inner) {
     document.body.classList.toggle('inner', inner);
@@ -108,6 +144,14 @@
   }
   document.getElementById('b1').addEventListener('click', function () { set(false); });
   document.getElementById('b2').addEventListener('click', function () { set(true); });
+
+  // 三個可疑特徵各自獨立開關——一次只開一個，才分得出是誰造成的
+  [['fa','fx-shadow'],['fb','fx-mask'],['fc','fx-fixed']].forEach(function (pair) {
+    document.getElementById(pair[0]).addEventListener('click', function () {
+      document.body.classList.toggle(pair[1]);
+      paint();
+    });
+  });
 
   var rows = '';
   for (var i = 1; i <= 40; i++) rows += '<div class="row">填充列 ' + i + '　狀態列後面有沒有桃紅色？</div>';
