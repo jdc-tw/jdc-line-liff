@@ -445,7 +445,10 @@
   padding: 8px; font: 12px/1.5 -apple-system, sans-serif; max-width: 190px;
   box-shadow: 0 2px 10px rgba(0,0,0,.12);
 }
-#dctl b { display: block; margin-bottom: 5px; font-size: 12px; }
+#dctl b { display: block; margin-bottom: 5px; font-size: 13px; }
+#dctl .stepline { font-size: 11.5px; line-height: 1.6; color: #2c2c2b; margin-bottom: 6px; }
+#dctl #dyes { background: #d81b60; color: #fff; border-color: #d81b60; }
+#dctl #dno { background: #2e7d4f; color: #fff; border-color: #2e7d4f; }
 #dctl button {
   font: inherit; display: block; width: 100%; margin: 3px 0; padding: 6px 8px;
   border: 1px solid #c9c9c5; border-radius: 5px; background: #fff; color: #2c2c2b;
@@ -842,47 +845,89 @@ cacheBootstrap(TOKEN).then(function () {
 </script>
 
 <div id="dctl">
-  <b>逐一關掉特徵</b>
-  <button data-c="d-nomask">關 topmask</button>
-  <button data-c="d-noshadow">關 標題列陰影</button>
-  <button data-c="d-norail">關 滑桿與 logo</button>
-  <button data-c="d-nosticky">關 sticky（改靜態）</button>
-  <button data-c="d-nosat">關 安全區變數</button>
-  <button data-c="d-flat">卡片改同底色</button>
-  <button data-c="d-nobar">整個標題列拿掉</button>
-  <button data-c="d-noafter">關 分隔線陰影</button>
-  <button data-c="d-nomargin">關 標題列負 margin</button>
-  <button data-c="d-nopad">關 body 左右內距</button>
-  <button data-c="d-nowrap">關 wrap 限寬</button>
-  <button id="dall">全部關</button>
-  <button id="dnone">全部開回</button>
+  <b id="dq">二分搜尋定位</b>
+  <div class="stepline" id="dstep"></div>
+  <button id="dyes">會穿透</button>
+  <button id="dno">沒穿透</button>
+  <button id="dback">上一步</button>
+  <button id="dreset">重來</button>
   <div class="st" id="dst"></div>
 </div>
 <script>
+/* 引導式二分搜尋（delta debugging）。
+   ⚠️ 為何改成這樣：上一版是 11 顆獨立開關，等於把「排列組合並歸納」的工作
+      丟給使用者——2048 種組合，回報一定會亂（實際回報就出現前後矛盾的句子）。
+      現在機器算組合、人只回答「穿透 / 沒穿透」，最多四步定位。
+   已知前提（使用者實測）：11 個全關 → 不穿透；全不關 → 穿透。
+      所以元凶必在這 11 個之中。 */
 (function () {
-  var btns = [].slice.call(document.querySelectorAll('#dctl button[data-c]'));
-  function paint() {
-    btns.forEach(function (b) {
-      b.className = document.body.classList.contains(b.dataset.c) ? 'on' : '';
-    });
-    var on = btns.filter(function (b) { return document.body.classList.contains(b.dataset.c); })
-                 .map(function (b) { return b.textContent; });
-    var sa = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-    document.getElementById('dst').textContent =
-      (sa ? '✅ App' : '🔴 非 App') + '／已關：' + (on.length ? on.join('、') : '（無，原樣）');
+  var FEATS = [
+    ['d-nomask', 'topmask'],
+    ['d-noshadow', '標題列陰影'],
+    ['d-norail', '滑桿與 logo'],
+    ['d-nosticky', 'sticky 改靜態'],
+    ['d-nosat', '安全區變數'],
+    ['d-flat', '卡片同底色'],
+    ['d-nobar', '整個標題列'],
+    ['d-noafter', '分隔線陰影'],
+    ['d-nomargin', '標題列負 margin'],
+    ['d-nopad', 'body 左右內距'],
+    ['d-nowrap', 'wrap 限寬']
+  ];
+  // cand＝還可能是元凶的候選（全部關掉它們就不穿透）
+  var cand = FEATS.map(function (f) { return f[0]; });
+  var trying = null;      // 這一步正在「關掉」的子集
+  var hist = [];
+  var done = null;
+
+  function apply(off) {
+    FEATS.forEach(function (f) { document.body.classList.remove(f[0]); });
+    off.forEach(function (c) { document.body.classList.add(c); });
   }
-  btns.forEach(function (b) {
-    b.addEventListener('click', function () {
-      document.body.classList.toggle(b.dataset.c); paint();
-    });
+  function name(c) {
+    for (var i = 0; i < FEATS.length; i++) if (FEATS[i][0] === c) return FEATS[i][1];
+    return c;
+  }
+  function step() {
+    if (done) return paint();
+    if (cand.length === 1) { done = cand[0]; apply([]); return paint(); }
+    trying = cand.slice(0, Math.ceil(cand.length / 2));   // 關掉前半
+    apply(trying);
+    paint();
+  }
+  function answer(pierced) {
+    if (done) return;
+    hist.push({ cand: cand.slice(), trying: trying.slice() });
+    // 關掉 trying 之後「沒穿透」⇒ 元凶在 trying 裡；「還是穿透」⇒ 在另一半
+    cand = pierced ? cand.filter(function (c) { return trying.indexOf(c) < 0; }) : trying.slice();
+    step();
+  }
+  function paint() {
+    var st = document.getElementById('dst');
+    var q = document.getElementById('dq');
+    var sp = document.getElementById('dstep');
+    var sa = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    if (done) {
+      q.textContent = '找到了';
+      sp.innerHTML = '<b style="color:#d81b60">' + name(done) + '</b>';
+      st.textContent = '把這一項的結果告訴我就好';
+      return;
+    }
+    q.textContent = '現在穿透嗎？';
+    sp.innerHTML = '已關掉：<b>' + trying.map(name).join('、') + '</b>'
+      + '<br>剩 ' + cand.length + ' 個候選';
+    st.textContent = (sa ? '✅ App' : '🔴 非 App') + '／捲一下再回答';
+  }
+  document.getElementById('dyes').addEventListener('click', function () { answer(true); });
+  document.getElementById('dno').addEventListener('click', function () { answer(false); });
+  document.getElementById('dback').addEventListener('click', function () {
+    var h = hist.pop(); if (!h) return;
+    cand = h.cand; trying = h.trying; done = null; apply(trying); paint();
   });
-  document.getElementById('dall').addEventListener('click', function () {
-    btns.forEach(function (b) { document.body.classList.add(b.dataset.c); }); paint();
+  document.getElementById('dreset').addEventListener('click', function () {
+    cand = FEATS.map(function (f) { return f[0]; }); hist = []; done = null; step();
   });
-  document.getElementById('dnone').addEventListener('click', function () {
-    btns.forEach(function (b) { document.body.classList.remove(b.dataset.c); }); paint();
-  });
-  paint();
+  step();
 })();
 </script>
 </body>
