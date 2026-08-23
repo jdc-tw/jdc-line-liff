@@ -255,14 +255,11 @@ var TOKEN=getToken();
 var CACHE_READY=cacheBootstrap(TOKEN);   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 
 // ── LINE 訊息紀錄連結與未送出警語 ────────────────────────────────────────
-// ⚠️ 暫停對承辦人露出（2026-08-20 使用者指示）：功能完整保留，只是不接上。
-//    要上線把下面這個常數改成 true——**但不是只改這一個字就好**：
-//    `getUndelivered` 的呼叫點在首載批次之前、而且沒走 queueRead，
-//    旗標一翻它就會與首載批次同時起跑，違反本站「同頁任一時刻最多一支 /exec」。
-//    （yu-agent-a5 在 bb72b32 實測：getUndelivered 34→2135ms 與 batch 35→6034ms
-//      重疊。**現在量不到並行是因為旗標是 false，不是因為修好了。**）
-//    修法：把這段移到第二發批次之後，再包 queueRead——警語晚幾秒到沒有代價；
-//    不要併進首載 batch，那會讓首屏多等 2 秒。
+// ⚠️ 這一頁**維持關**（2026-08-23 使用者拍板）：本頁是雅慧的人事看板，
+//    未送出的紅字是「去試算表確認要不要重發」——那不歸她處理。
+//    stats.html（佳岑）同日已翻 true。
+//    排隊順序的坑（T279）已經修掉了：呼叫點在第二發之後、包了 queueRead，
+//    所以這裡要上線就真的只是把 false 改 true。
 //    ⚠️ 這個開關**不管** stats.html 的資深通知三態顯示——那是安全機制，
 //       斷了會讓小字永遠空白（後端已不回舊的 SN.sent），故意不放進來。
 var MSG_LOG_UI_ON = false;
@@ -280,13 +277,24 @@ var MSG_LOG_UI_ON = false;
   }
 })();
 
-if (MSG_LOG_UI_ON) {
-  jsonp('getUndelivered', { token: TOKEN }).then(function (r) {
-    if (r && r.ok && r.pending > 0) {
-      var bar = document.getElementById('alertBar');
-      bar.textContent = '🔴 有 ' + r.pending + ' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
-      bar.style.display = 'block';
-    }
+// 未送出警語的呼叫**排在第二發批次之後、且包 queueRead**（2026-08-23，T279）。
+// 原本是頂層裸 jsonp：旗標一翻就會與首載批次同時起跑，違反本站「同頁任一時刻
+// 最多一支 /exec」。不併進首載 batch——那會讓首屏多等 2 秒。
+// second 收到 null＝第一發撤銷或離線，此時不再追加請求。
+function wireUndeliveredAlert(second) {
+  if (!MSG_LOG_UI_ON) return Promise.resolve(null);
+  return second.then(function (env) {
+    if (!env) return null;
+    return queueRead(function () {
+      return jsonp('getUndelivered', { token: TOKEN }).then(function (r) {
+        if (r && r.ok && r.pending > 0) {
+          var bar = document.getElementById('alertBar');
+          bar.textContent = '🔴 有 ' + r.pending + ' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
+          bar.style.display = 'block';
+        }
+        return r;
+      });
+    });
   });
 }
 
@@ -333,6 +341,7 @@ var SECOND=FIRST.then(function(first){
     });
   });
 });
+wireUndeliveredAlert(SECOND);   // 見上面 wireUndeliveredAlert 的註解：必須在 SECOND 賦值之後
 // pick2：切片必須存在且 slice.ok===true 才回傳，否則回 null。
 // 只檢查外層 ok 不夠——{ok:false} 的切片會被當成資料傳給 loader，loader 收到「有值」
 // 就直接 render，不會再查一次 ok，畫面會顯示怪東西且不報錯。
