@@ -53,7 +53,9 @@
   .hrow .seg.only{border-radius:3px}
   .hrow .cnt{font-size:12px;color:var(--ink3);margin-left:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
   /* 人口金字塔 */
-  .pyr{display:flex;flex-direction:column;gap:4px}
+  .pyr{display:flex;flex-direction:column;gap:4px;position:relative}
+  .pmark{position:absolute;height:0;border-top:1.5px dashed;pointer-events:none;z-index:1}
+  .pmark.l{left:0;right:calc(50% + 30px)}.pmark.r{left:calc(50% + 30px);right:0}
   .prow2{display:flex;align-items:center;gap:6px}
   .prow2 .mid{flex:0 0 52px;text-align:center;font-size:11px;color:var(--ink3);white-space:nowrap}
   .prow2 .side{flex:1;display:flex;align-items:center;gap:5px;min-width:0}
@@ -68,6 +70,7 @@
   .tmc{position:relative;min-width:0;overflow:hidden;border-radius:2px;color:#fff;padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between}
   .tmc .nm{font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.95}
   .tmc .v{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+  .tmc .v small{display:block;font-size:9.5px;font-weight:400;opacity:.85;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 熱力圖 */
   .hmwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .hm{border-collapse:separate;border-spacing:2px;font-size:12px;font-variant-numeric:tabular-nums;width:100%}
@@ -78,9 +81,13 @@
   /* 100% 比例條 */
   .trk.prop{max-width:100%}
   .trk.prop .seg{height:16px;font-size:10px;line-height:16px;text-align:center;overflow:hidden;white-space:nowrap;color:var(--ink)}
+  .refrow{padding-bottom:6px;margin-bottom:4px;border-bottom:1px dashed var(--ln)}
+  .refrow .nm{font-weight:600}
   /* 點圖 */
   .dtrk{flex:1;position:relative;height:18px;background:linear-gradient(var(--ln),var(--ln)) center/100% 1px no-repeat}
-  .dtrk i{position:absolute;top:4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+  .dtrk i{position:absolute;top:4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.06);box-sizing:border-box}
+  .dtrk i.o{background:#fff;border-width:2px;box-shadow:none}
+  .dtrk b{position:absolute;top:8px;height:2px;opacity:.45}
   .hrow .cnt u{text-decoration:none;color:var(--ink3);font-size:11px}
   /* 棒棒糖（⑨）：細桿＋頂端圓點，圓點用 ::after 畫在桿頂 */
   .col .stem{position:relative;width:2px;background:currentColor;min-height:2px;border-radius:1px}
@@ -210,9 +217,13 @@ function stackRows(order,units,key,ramp,segLabels,maxCount,noteFn){
    ⑨ 逐年＋累計＝棒棒糖＋線　⑩ 單一比率排名＝點圖 */
 
 /** 人口金字塔：左＝總公司、右＝工地，同一條尺（最大值共用），中間放年齡段。 */
-function pyramid(labels,left,right,cl,cr){
+function pyramid(labels,left,right,cl,cr,marks){
   var max=Math.max.apply(null,left.concat(right,[1]));
-  return '<div class="pyr">'+labels.map(function(lb,i){
+  // marks=[{side:'l'|'r', y:0~1(由上往下), text}]：平均線，畫在整張圖的覆蓋層上
+  var ov=(marks||[]).map(function(m){
+    return '<div class="pmark '+m.side+'" style="top:'+(m.y*100).toFixed(1)+'%;border-color:'+m.color+'" title="'+esc(m.text)+'"></div>';
+  }).join('');
+  return '<div class="pyr">'+ov+labels.map(function(lb,i){
     var wl=left[i]/max*100, wr=right[i]/max*100;
     return '<div class="prow2">'
       +'<div class="side l"><span class="v">'+(left[i]||'')+'</span><i style="width:'+wl.toFixed(1)+'%;background:'+cl+'"></i></div>'
@@ -230,8 +241,8 @@ function treemap(items,total,height){
   return '<div class="tm" style="height:'+height+'px">'+rows.map(function(r){
     return '<div class="tmr" style="flex:'+r.sum+'">'+r.items.map(function(it){
       var big=it.v/total>0.045;
-      return '<div class="tmc" style="flex:'+it.v+';background:'+it.c+'" title="'+esc(it.nm)+'：'+it.v+' 人">'
-        +'<span class="nm">'+esc(it.nm)+'</span>'+(big?'<span class="v">'+it.v+'</span>':'')+'</div>';
+      return '<div class="tmc" style="flex:'+it.v+';background:'+it.c+'" title="'+esc(it.nm)+'：'+it.v+' 人'+(it.sub?'・'+esc(it.sub):'')+'">'
+        +'<span class="nm">'+esc(it.nm)+'</span>'+(big?'<span class="v">'+it.v+(it.sub?'<small>'+esc(it.sub)+'</small>':'')+'</span>':'')+'</div>';
     }).join('')+'</div>';
   }).join('')+'</div>';
 }
@@ -251,7 +262,8 @@ function heatmap(order,units,key,segLabels,ramp,noteFn){
 }
 /** 面積圖（時間序列）。SVG 用 viewBox，寬＝每年 30 單位，放進可橫滑容器。
  *  只標最高的三個峰值，不在每點印數字。 */
-function areaChart(labels,values,color,fill){
+function areaChart(labels,values,color,fill,lines){
+  lines=lines||[];
   var n=values.length, W=Math.max(n*22,320), H=150, PX=14, PT=22, PB=22, every=n>14?2:1, max=Math.max.apply(null,values.concat([1]));
   var x=function(i){return PX+i/(n-1)*(W-2*PX);}, y=function(v){return PT+(1-v/max)*(H-PT-PB);};
   var pts=values.map(function(v,i){return x(i).toFixed(1)+','+y(v).toFixed(1);});
@@ -259,13 +271,18 @@ function areaChart(labels,values,color,fill){
   var svg='<path d="M'+pts[0]+' L'+pts.join(' L')+' L'+x(n-1).toFixed(1)+','+y(0)+' L'+x(0).toFixed(1)+','+y(0)+' Z" fill="'+fill+'"/>'
     +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round"/>'
     +'<line x1="'+PX+'" y1="'+y(0)+'" x2="'+(W-PX)+'" y2="'+y(0)+'" stroke="#ececea"/>';
+  lines.forEach(function(l){
+    svg+='<polyline points="'+l.values.map(function(v,i){return x(i).toFixed(1)+','+y(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+l.color+'" stroke-width="1.5" stroke-linejoin="round"/>';
+    l.values.forEach(function(v,i){svg+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="2" fill="'+l.color+'" stroke="#fff" stroke-width="1"><title>'+esc(l.label)+' '+esc(labels[i])+'：'+v+' 人</title></circle>';});
+  });
   values.forEach(function(v,i){
     svg+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="'+(top.indexOf(i)>=0?3.5:2)+'" fill="'+color+'" stroke="#fff" stroke-width="1.5"><title>'+esc(labels[i])+'：'+v+' 人</title></circle>';
-    if(top.indexOf(i)>=0) svg+='<text x="'+x(i).toFixed(1)+'" y="'+(y(v)-8).toFixed(1)+'" font-size="11" font-weight="600" fill="#2c2c2b" text-anchor="'+(i===n-1?'end':i===0?'start':'middle')+'">'+v+'</text>';
+    if(top.indexOf(i)>=0) svg+='<text x="'+x(i).toFixed(1)+'" y="'+(y(v)-8).toFixed(1)+'" font-size="11" font-weight="600" fill="#2c2c2b" text-anchor="'+(x(i)>W-24?'end':x(i)<24?'start':'middle')+'">'+v+'</text>';
     if((n-1-i)%every===0) svg+='<text x="'+x(i).toFixed(1)+'" y="'+(H-6)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+esc(labels[i])+'</text>';
   });
   // 寬度貼合容器（viewBox 等比縮放）；容器比 W 窄時才出現橫向捲動
-  return '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:'+W+'px;height:auto;display:block">'+svg+'</svg></div>';
+  return (lines.length?legend([ '全公司' ].concat(lines.map(function(l){return l.label;})),[color].concat(lines.map(function(l){return l.color;})),true):'')
+    +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><svg viewBox="0 0 '+W+' '+H+'" style="width:100%;min-width:'+W+'px;height:auto;display:block">'+svg+'</svg></div>';
 }
 /** 100% 比例條：每列等長，段寬＝占比；≥15% 的段印百分比。看的是結構不是規模——規模在右側數字。 */
 function propRows(order,units,key,ramp,segLabels){
@@ -278,12 +295,15 @@ function propRows(order,units,key,ramp,segLabels){
   }).join('');
 }
 /** 點圖：一列一個單位，點落在比率位置；淡線是 0→最大值的軌道。 */
+/** 啞鈴：實心點＝5 年內比率、空心點＝10 年內比率，兩點之間拉一段；兩點重合就只有實心點。 */
 function dotRows(rows,maxR,color){
   return rows.map(function(x){
-    var pct=Math.round(x.rate*100), left=(x.rate/maxR*100).toFixed(1);
+    var p5=Math.round(x.rate*100), p10=Math.round(x.rate10*100), l5=x.rate/maxR*100, l10=x.rate10/maxR*100;
     return '<div class="hrow"><div class="nm">'+esc(x.nm)+'</div>'
-      +'<div class="dtrk"><i style="left:'+left+'%;background:'+color+'"></i></div>'
-      +'<div class="cnt">'+pct+'%<u>（'+x.hit+'/'+x.count+'）</u></div></div>';
+      +'<div class="dtrk">'
+      +(l10>l5?'<b style="left:'+l5.toFixed(1)+'%;width:'+(l10-l5).toFixed(1)+'%;background:'+color+'"></b><i class="o" style="left:'+l10.toFixed(1)+'%;border-color:'+color+'"></i>':'')
+      +'<i style="left:'+l5.toFixed(1)+'%;background:'+color+'"></i></div>'
+      +'<div class="cnt">'+p5+'%'+(p10>p5?'<u>→'+p10+'%</u>':'')+'<u>（'+x.hit+(x.hit10>x.hit?'→'+x.hit10:'')+'/'+x.count+'）</u></div></div>';
   }).join('');
 }
 function legend(labels,colors,asLine){
@@ -319,16 +339,21 @@ function renderHr(r){
       +(s.noJoin?'<div class="foot">※ '+s.noJoin+' 人無入社日未計入</div>':'')+'</div>';
   // 2 年齡分佈：人口金字塔（左總公司、右工地），由年長到年輕
   var hqAge=s.agePairs&&s.agePairs.length?pairBins(s.agePairs,0,AGE_EDGES,'總公司'):null;
-  html+='<div class="card"><div class="sec-h"><b>② 全公司年齡分佈</b><small>左＝總公司、右＝工地（只含有生日者）；同一把尺</small></div>'
-      +legend(['總公司','工地'],[C_HQ,C_SITE])
-      +(hqAge?pyramid(s.ageBins.labels.slice().reverse(),hqAge.slice().reverse(),pairBins(s.agePairs,0,AGE_EDGES,'工地').reverse(),C_HQ,C_SITE)
+  // 平均年齡線的位置：年齡落在哪一段、段內偏多少（未滿25 視為 20–25、60以上視為 60–70）。列由上往下＝年長→年輕。
+  var ageY=function(a){var lo=[20,25,30,35,40,45,50,55,60],hi=[25,30,35,40,45,50,55,60,70],i=0;while(i<8&&a>=hi[i])i++;var f=Math.max(0,Math.min(1,(a-lo[i])/(hi[i]-lo[i])));return (8-i+(1-f))/9;};
+  var grpAvg=function(g){var xs=s.agePairs.filter(function(p){return p[2]===g;}).map(function(p){return p[0];});return xs.length?Math.round(xs.reduce(function(a,b){return a+b;},0)/xs.length*10)/10:null;};
+  var hqAvg=hqAge?grpAvg('總公司'):null, siteAvg=hqAge?grpAvg('工地'):null;
+  html+='<div class="card"><div class="sec-h"><b>② 全公司年齡分佈</b><small>左＝總公司、右＝工地（只含有生日者）；同一把尺；橫線＝各自平均年齡</small></div>'
+      +legend(['總公司'+(hqAvg!=null?'（均 '+hqAvg+' 歲）':''),'工地'+(siteAvg!=null?'（均 '+siteAvg+' 歲）':'')],[C_HQ,C_SITE])
+      +(hqAge?pyramid(s.ageBins.labels.slice().reverse(),hqAge.slice().reverse(),pairBins(s.agePairs,0,AGE_EDGES,'工地').reverse(),C_HQ,C_SITE,
+          [hqAvg!=null?{side:'l',y:ageY(hqAvg),text:'均 '+hqAvg,color:C_HQ}:null,siteAvg!=null?{side:'r',y:ageY(siteAvg),text:'均 '+siteAvg,color:C_SITE}:null].filter(Boolean))
              :colChart(s.ageBins,{ramp:SHADE.age}))
       +(s.noBirth?'<div class="foot">※ '+s.noBirth+' 人無生日未計入</div>':'')+'</div>';
   // 3 各單位人數：樹狀圖（面積＝人數）
   var hqN=s.unitOrder.filter(function(n){return s.units[n].group==='總公司';}).reduce(function(a,n){return a+s.units[n].count;},0);
-  html+='<div class="card"><div class="sec-h"><b>③ 各單位人數</b><small>面積＝人數；總公司 '+hqN+' 人、工地 '+(s.total-hqN)+' 人</small></div>'
+  html+='<div class="card"><div class="sec-h"><b>③ 各單位人數</b><small>面積＝人數、格內小字＝均齡・均資；總公司 '+hqN+' 人、工地 '+(s.total-hqN)+' 人</small></div>'
       +legend(['總公司','工地'],[C_HQ,C_SITE])
-      +treemap(byCount.map(function(nm){var u=s.units[nm];return {nm:nm,v:u.count,c:u.group==='總公司'?C_HQ:C_SITE};}),s.total,260)+'</div>';
+      +treemap(byCount.map(function(nm){var u=s.units[nm];return {nm:nm,v:u.count,c:u.group==='總公司'?C_HQ:C_SITE,sub:'均 '+u.avgAge+' 歲・'+u.avgTenure+' 年'};}),s.total,260)+'</div>';
   // 4 單位×年資（主題排序：平均年資高→低）
   var byTenure=s.unitOrder.slice().sort(function(a,b){return s.units[b].avgTenure-s.units[a].avgTenure;});
   html+='<div class="card"><div class="sec-h"><b>④ 各單位年資結構</b><small>依平均年資排序（資深→資淺）；格＝人數、色越深＝占該單位比例越高</small></div>'
@@ -342,8 +367,13 @@ function renderHr(r){
   if(jys.length){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
-    html+='<div class="card"><div class="sec-h"><b>⑥ 入社年度趨勢</b><small>每年新進人數（現仍在職者）；標出最高三年</small></div>'
-        +areaChart(trend.labels,trend.counts,'#2e7065','#e6efec')+'</div>';
+    html+='<div class="card"><div class="sec-h"><b>⑥ 入社年度趨勢</b><small>面積＝每年新進人數（現仍在職者），標最高三年；細線＝總公司／工地（由年資回推入社年，±1 年）</small></div>'
+        +areaChart(trend.labels,trend.counts,'#2e7065','#e6efec',(function(){
+          if(!s.agePairs||!s.agePairs.length) return [];
+          var nowY=new Date().getFullYear();
+          var byG=function(g){var o=trend.labels.map(function(){return 0;});s.agePairs.forEach(function(p){if(p[2]!==g)return;var k=nowY-Math.round(p[1])-y0;if(k>=0&&k<o.length)o[k]++;});return o;};
+          return [{label:'總公司',values:byG('總公司'),color:C_HQ},{label:'工地',values:byG('工地'),color:C_SITE}];
+        })())+'</div>';
   }
   // 7 單位健康矩陣：一點=一個單位（x=平均年齡 y=平均年資 大小=人數）；虛線=全公司平均、右上淡紅=雙高
   (function(){
@@ -374,34 +404,42 @@ function renderHr(r){
     var roles=Object.keys(s.roleCounts).sort(function(a,b){return s.roleCounts[b]-s.roleCounts[a];});
     var roleUnits={},maxRole=1;
     roles.forEach(function(k){roleUnits[k]={count:s.roleCounts[k],age:s.roleAge[k]||[0,0,0,0,0]};if(s.roleCounts[k]>maxRole)maxRole=s.roleCounts[k];});
-    html+='<div class="card"><div class="sec-h"><b>⑧ 職能×年齡結構</b><small>每列拉成 100%，看各職能的年齡比例；人數在右</small></div>'
+    // 參考列：全公司的五段年齡比例（由九段 ageBins 併成：<25+25-29 / 30-34+35-39 / … / 60+）
+    var ab=s.ageBins.counts, all5=[ab[0]+ab[1],ab[2]+ab[3],ab[4]+ab[5],ab[6]+ab[7],ab[8]];
+    roleUnits['全公司']={count:all5.reduce(function(a,b){return a+b;},0),age:all5};
+    html+='<div class="card"><div class="sec-h"><b>⑧ 職能×年齡結構</b><small>每列拉成 100%，看各職能的年齡比例；第一列「全公司」是對照；人數在右</small></div>'
         +legend(s.ageSegLabels,RAMP5)
+        +'<div class="refrow">'+propRows(['全公司'],roleUnits,'age',RAMP5,s.ageSegLabels)+'</div>'
         +propRows(roles,roleUnits,'age',RAMP5,s.ageSegLabels)
         +numTable(roles,roleUnits,'age',s.ageSegLabels)+'</div>';
   }
   // 9 未來退休曲線：每年將滿 65 的人數（由年齡推算·±1年）
   if(s.agePairs&&s.agePairs.length){
     var thisY=new Date().getFullYear();
-    var rc={labels:['已滿65'],counts:[0]};
-    for(var i2=0;i2<=10;i2++){rc.labels.push("'"+String(thisY+i2).slice(2));rc.counts.push(0);}
+    var rc={labels:['已滿65'],counts:[0]}, rcHq=[0], rcSite=[0];
+    for(var i2=0;i2<=10;i2++){rc.labels.push("'"+String(thisY+i2).slice(2));rc.counts.push(0);rcHq.push(0);rcSite.push(0);}
     s.agePairs.forEach(function(p){
-      var a2=p[0];
-      if(a2>=65)rc.counts[0]++;
-      else if(65-a2<=10)rc.counts[65-a2+1]++;
+      var a2=p[0], k=a2>=65?0:(65-a2<=10?65-a2+1:-1);
+      if(k<0) return; rc.counts[k]++; (p[2]==='總公司'?rcHq:rcSite)[k]++;
     });
-    html+='<div class="card"><div class="sec-h"><b>⑨ 未來退休曲線</b><small>柱＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；線＝累計退休人數</small></div>'
-        +colChart(rc,{ramp:SHADE.retire,lollipop:true,lines:[{label:'累計',color:'#763640',endLabel:true,
-          values:rc.counts.map(function(v,i,a){return a.slice(0,i+1).reduce(function(x,y){return x+y;},0);})}]})+'</div>';
+    var cum=function(a){return a.map(function(v,i){return a.slice(0,i+1).reduce(function(x,y){return x+y;},0);});};
+    html+='<div class="card"><div class="sec-h"><b>⑨ 未來退休曲線</b><small>點＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；線＝累計退休人數，分總公司／工地／合計</small></div>'
+        +(function(){var ch=cum(rcHq),cs=cum(rcSite),ca=cum(rc.counts),L=ch.length-1;
+          return colChart(rc,{ramp:SHADE.retire,lollipop:true,lines:[
+            {label:'總公司累計 '+ch[L],color:C_HQ,values:ch},
+            {label:'工地累計 '+cs[L],color:C_SITE,values:cs},
+            {label:'合計 '+ca[L],color:'#763640',endLabel:true,values:ca}]});})()+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
     var rows=s.unitOrder.map(function(nm){
-      var u=s.units[nm],hit=u.retire.now.length+u.retire.y5.length;
-      return {nm:nm,hit:hit,count:u.count,rate:hit/u.count};
-    }).filter(function(x){return x.hit>0;}).sort(function(a,b){return b.rate-a.rate;});
+      var u=s.units[nm],hit=u.retire.now.length+u.retire.y5.length,hit10=hit+u.retire.y10.length;
+      return {nm:nm,hit:hit,hit10:hit10,count:u.count,rate:hit/u.count,rate10:hit10/u.count};
+    }).filter(function(x){return x.hit10>0;}).sort(function(a,b){return (b.rate-a.rate)||(b.rate10-a.rate10);});
     if(rows.length){
-      var maxR=rows[0].rate;
-      html+='<div class="card"><div class="sec-h"><b>⑩ 退休衝擊率</b><small>5 年內退休（含已滿65）÷ 單位人數；比例越高越先被掏空</small></div>'
+      var maxR=Math.max.apply(null,rows.map(function(x){return x.rate10;}));
+      html+='<div class="card"><div class="sec-h"><b>⑩ 退休衝擊率</b><small>實心＝5 年內退休（含已滿65）÷ 單位人數，空心＝放寬到 10 年內；比例越高越先被掏空</small></div>'
+        +'<div class="legend"><span><i style="background:#763640;border-radius:50%"></i>5 年內</span><span><i style="border:2px solid #763640;border-radius:50%;background:#fff"></i>10 年內</span></div>'
         +dotRows(rows,maxR,'#763640')+'</div>';
     }
   })();
