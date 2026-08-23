@@ -249,13 +249,59 @@ test('fullMessageOf：沒有內容時給明確字樣', () => {
   assert.equal(V.fullMessageOf(b), '（無內容）');
 });
 
-test('cardHtml：主旨是可展開的，展開後看得到全文', () => {
+test('cardHtml：內容與名單合併成同一個下拉（2026-08-23）', () => {
   const long = '第一行\n第二行是全文才看得到的';
-  const b = V.groupBatches(H, [row({ 訊息內容: long })])[0];
+  const b = V.groupBatches(H, [
+    row({ 訊息內容: long, 對象姓名: '林淑芬' }),
+    row({ 訊息內容: long, 對象姓名: '陳建宏' }),
+  ]);
+  const html = V.cardHtml(b[0], []);
+  // 只有一個 <details>——兩個代表主旨那顆沒拆乾淨
+  assert.equal(html.split('<details').length - 1, 1);
+  // 同一個下拉裡同時有全文與名單
+  const inner = html.slice(html.indexOf('<details'));
+  assert.ok(inner.indexOf('class="fullmsg"') >= 0);
+  assert.ok(inner.indexOf('第二行是全文才看得到的') >= 0);
+  assert.ok(inner.indexOf('林淑芬') >= 0 && inner.indexOf('陳建宏') >= 0);
+});
+
+test('cardHtml：卡面不再放主旨那一小段（套版訊息第一行每則都一樣）', () => {
+  const b = V.groupBatches(H, [row({ 訊息內容: '林先生您好\n真正的內容在第二行' })])[0];
   const html = V.cardHtml(b, []);
-  assert.ok(html.indexOf('<details class="subj">') >= 0);
-  assert.ok(html.indexOf('class="fullmsg"') >= 0);
-  assert.ok(html.indexOf('第二行是全文才看得到的') >= 0);
+  assert.equal(b.subject, '林先生您好', '前提：subject 仍算得出來（搜尋索引要用）');
+  // ⚠️ 不可用「主旨文字有沒有出現」判斷——全文本來就含第一行，永遠會命中。
+  //    也不可用 indexOf('<details') 切出「卡面」再檢查：主旨那顆本身就是 details，
+  //    加回來時切點會跟著前移，這條就永遠綠（2026-08-23 突變測試當場抓到）。
+  assert.equal(html.indexOf('class="subject"'), -1, '主旨那一列不該存在');
+  assert.equal(html.indexOf('class="subj"'), -1, '主旨那顆下拉不該存在');
+});
+
+test('cardHtml：單人單則不印「1 人 1 則」——兩個數字恆為 1，說不出任何事', () => {
+  const b = V.groupBatches(H, [row({ 對象姓名: '林淑芬' })])[0];
+  const face = V.cardHtml(b, []).slice(0, V.cardHtml(b, []).indexOf('<details'));
+  assert.equal(b.rows.length, 1);
+  assert.equal(b.msgCount, 1, '前提：這批確實是 1 人 1 則');
+  assert.equal(face.indexOf('<u>人</u>'), -1);
+  assert.equal(face.indexOf('<u>則</u>'), -1);
+});
+
+test('cardHtml：多人批次要印人數——規模是這裡唯一看得出來的地方', () => {
+  const b = V.groupBatches(H, Array.from({ length: 137 }, (_, i) => row({ 對象姓名: 'N' + i })))[0];
+  const face = V.cardHtml(b, []);
+  assert.ok(face.indexOf('137<u>人</u>') >= 0);
+});
+
+test('cardHtml：則數只在與人數不同時才印（相等＝一人一則，是常態）', () => {
+  const same = V.groupBatches(H, [row({ 對象姓名: 'A' }), row({ 對象姓名: 'B' })])[0];
+  assert.equal(same.msgCount, 2);
+  assert.equal(V.cardHtml(same, []).indexOf('<u>則</u>'), -1);
+
+  const more = V.groupBatches(H, [
+    row({ 對象姓名: 'A', 訊息型別: 'text+image' }),
+    row({ 對象姓名: 'B', 訊息型別: 'text+image' }),
+  ])[0];
+  assert.equal(more.msgCount, 4);
+  assert.ok(V.cardHtml(more, []).indexOf('4<u>則</u>') >= 0, '有人收到不只一則＝該讓人看見的例外');
 });
 
 /* ── sinceWarning ────────────────────────────────────── */

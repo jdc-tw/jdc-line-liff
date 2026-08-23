@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>訊息紀錄</title>
+<title>LINE 訊息紀錄</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
   /* ═══════════════════════════════════════════════════════════════
@@ -44,7 +44,7 @@
   }
   .wrap { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
 
-  /* 標題列：訊息紀錄　○搜尋　……　清除本機快取（靠右）
+  /* 標題列：LINE 訊息紀錄　○搜尋　……　清除本機快取（靠右）
      固定在頂端（使用者 2026-08-22）——捲到第五個月還看得到自己在哪一頁、
      也還按得到搜尋。背景要不透明，否則捲動時卡片會透上來。 */
   .stickytop {
@@ -165,18 +165,10 @@
   .bar span { height: 100%; }
   .bar .ok { background: var(--g); } .bar .bad { background: var(--bad); } .bar .skip { background: #d8d8d5; }
 
-  /* 主旨點開＝看全文（第一個人收到的那則） */
-  details.subj { }
-  .subject {
-    font-size: 14.5px; color: var(--ink); cursor: pointer;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    list-style: none;
-  }
-  .subject::-webkit-details-marker { display: none; }
-  details.subj[open] > .subject { white-space: normal; color: var(--ink2); }
-  .subject:focus-visible { outline: 2px solid var(--b); outline-offset: 2px; border-radius: 2px; }
+  /* 訊息全文：在下拉裡，名單的上方。
+     2026-08-23 合併——卡面不再有主旨那一列（套版訊息的第一行每則都一樣，認不出批次）。 */
   .fullmsg {
-    margin-top: 6px; padding: 9px 11px; border-radius: 3px;
+    margin: 2px 0 10px; padding: 9px 11px; border-radius: 3px;
     background: #f7f7f5; border: 1px solid var(--ln);
     font-size: 13.5px; line-height: 1.7; color: var(--ink);
     white-space: pre-wrap; overflow-wrap: break-word;
@@ -263,10 +255,19 @@
   .tick.dim { opacity: .3; }
   .tick:focus-visible { outline: 2px solid var(--b); outline-offset: 3px; border-radius: 2px; }
 
+  /* 公司 logo：釘在左欄最上方、滑桿的上面（使用者 2026-08-23）。
+     這一頁原本沒有任何品牌標示，手機上滑起來認不出是哪個系統的看板。
+     ⚠️ 刻意**不放進 .rail**：滑桿在少於兩個刻度時整條 hidden，
+        擺進去會連 logo 一起消失。左欄的寬度已由 --rail-w 讓出來，兩者不會擠。
+     用 logo-mark.svg（方形標記）不用 logo-full.svg：左欄只有 74px，全名版會糊掉。 */
+  .brandmark { position: fixed; left: 12px; top: 14px; z-index: 21; width: 28px; }
+  .brandmark img { width: 100%; height: auto; display: block; }
+
   @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }
 
   @media (min-width: 768px) {
     :root { --rail-w: 84px; }
+    .brandmark { left: 16px; top: 20px; width: 34px; }
     body { font-size: 17px; }
     .wrap { max-width: 720px; padding: 32px 24px 80px; }
     h1 { font-size: 23px; }
@@ -275,12 +276,14 @@
 </head>
 <body>
 
+<div class="brandmark"><img src="assets/logo-mark.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
+
 <nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
 
 <div class="wrap">
   <div class="stickytop">
   <div class="topbar">
-    <h1>訊息紀錄</h1>
+    <h1>LINE 訊息紀錄</h1>
     <button class="sdot" id="sdot" type="button" aria-expanded="false"
             aria-controls="q" aria-label="搜尋"><span class="mag"></span></button>
     <span class="gap"></span>
@@ -289,7 +292,7 @@
 
   <div class="searchbar" id="searchbar">
     <input id="q" type="search" autocomplete="off" spellcheck="false" tabindex="-1"
-           placeholder="姓名・單位・主旨・分類・日期・批次・錯誤" aria-label="搜尋訊息紀錄">
+           placeholder="姓名・單位・內容・分類・日期・批次・錯誤" aria-label="搜尋 LINE 訊息紀錄">
   </div>
   </div>
   <div class="shint" id="shint"></div>

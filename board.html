@@ -125,7 +125,7 @@
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <div id="alertBar" class="alert-bar"></div>
-<div class="toplinks"><a id="msgLogLink" target="_blank" rel="noopener" hidden>訊息紀錄 →</a></div>
+<div class="toplinks"><a id="msgLogLink" target="_blank" rel="noopener" hidden>LINE 訊息紀錄 →</a></div>
 <div class="tabs">
   <button id="tabbtn-checkin" class="on" onclick="showTab('checkin')">新人報到</button>
   <button id="tabbtn-hr" onclick="showTab('hr')">人事異動</button>
@@ -254,7 +254,7 @@ function jsonp(action,params){
 var TOKEN=getToken();
 var CACHE_READY=cacheBootstrap(TOKEN);   // 開頁時解密該指紋的全部持久快取；cacheGet 在它 resolve 前都讀不到值
 
-// ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
+// ── LINE 訊息紀錄連結與未送出警語 ────────────────────────────────────────
 // ⚠️ 暫停對承辦人露出（2026-08-20 使用者指示）：功能完整保留，只是不接上。
 //    要上線把下面這個常數改成 true——**但不是只改這一個字就好**：
 //    `getUndelivered` 的呼叫點在首載批次之前、而且沒走 queueRead，
