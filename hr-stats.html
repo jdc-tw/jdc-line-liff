@@ -268,7 +268,7 @@ function shade(v,max,R){R=R||SHADE.tenure;
 function colChart(bins,opts){
   opts=opts||{}; var lines=opts.lines||[], ramp=opts.ramp;
   var H=opts.height||116, BAR=H-4;
-  var allv=bins.counts.concat([1]); lines.forEach(function(l){allv=allv.concat(l.values);});
+  var allv=bins.counts.concat([1]); if(!opts.rightAxis) lines.forEach(function(l){allv=allv.concat(l.values);});   // 右軸模式：線用自己的尺度，不拉大柱子的軸
   var max=Math.max.apply(null,allv), n=bins.labels.length;
   var html='<div class="cols" style="height:'+(H+34)+'px">'+bins.labels.map(function(lb,i){
     var h=Math.round(bins.counts[i]/max*BAR), c=shade(bins.counts[i],max,ramp);
@@ -283,7 +283,7 @@ function colChart(bins,opts){
     // opts.rightAxis：線不共用柱子的尺度，改用線自己的最大值（右側標 0／最大），畫成細虛線——
     // 2026-08-23 使用者要逐年與累計在同一張；累計比逐年大十倍，共軸會把逐年壓扁。
     var lmax=opts.rightAxis?Math.max.apply(null,[].concat.apply([1],lines.map(function(l){return l.values;}))):max;
-    html+='<svg class="ol" height="'+H+'" aria-hidden="true">'+(opts.rightAxis?'<text x="100%" y="'+(H-lmax/lmax*BAR+4)+'" font-size="9.5" fill="#9a9a96" text-anchor="end">'+lmax+'</text>':'')+lines.map(function(l){
+    html+='<svg class="ol" height="'+H+'" aria-hidden="true">'+lines.map(function(l){
       var pts=l.values.map(function(v,i){return [((i+.5)/n*100).toFixed(2)+'%',(H-v/lmax*BAR).toFixed(1)];});
       if(opts.skipFirst) pts=pts.slice(1);   // ⑮：累計線從第二格起畫，第一格「已滿 65」只留棒棒糖（2026-08-23 使用者：起點跟合計重疊）
       var seg='';
@@ -291,7 +291,8 @@ function colChart(bins,opts){
       var dots=opts.rightAxis?'':pts.map(function(q){return '<circle cx="'+q[0]+'" cy="'+q[1]+'" r="2.5" fill="'+l.color+'" stroke="#fff" stroke-width="1"/>';}).join('');
       // 末端只標一個值（選擇性直接標示，不每點都標）；疊在柱子數字上方時往上讓 4px
       var e=pts[pts.length-1], last=l.values[l.values.length-1];
-      var tag=l.endLabel?'<text x="'+e[0]+'" y="'+(parseFloat(e[1])-7)+'" font-size="11" fill="'+l.color+'" text-anchor="end" font-weight="600">'+esc(String(last))+'</text>':'';
+      var tag=l.endLabel?'<text x="'+e[0]+'" y="'+(parseFloat(e[1])-7)+'" font-size="11" fill="'+l.color+'" text-anchor="end" font-weight="600">'+esc((l.endText||'')+String(last))+'</text>':'';
+      if(l.labelEvery){var o2=opts.skipFirst?1:0;tag=pts.map(function(q,i){var k=i+o2;return (k%l.labelEvery===1&&k<l.values.length-1)?'<text x="'+q[0]+'" y="'+(parseFloat(q[1])-5)+'" font-size="9.5" fill="#9a9a96" text-anchor="middle">'+esc(String(l.values[k]))+'</text>':'';}).join('')+tag;}
       // labelAll：每個點上方標值（灰色小字）——⑮ 合計線（2026-08-23 使用者）
       if(l.labelAll){var o=opts.skipFirst?1:0;tag=pts.map(function(q,i){return '<text x="'+q[0]+'" y="'+(parseFloat(q[1])-5)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+esc(String(l.values[i+o]))+'</text>';}).join('');}
       return seg+dots+tag;
@@ -781,16 +782,11 @@ function renderHr(r){
       if(k<0) return; rc.counts[k]++; (p[2]==='總公司'?rcHq:rcSite)[k]++;
     });
     var cum=function(a){return a.map(function(v,i){return a.slice(0,i+1).reduce(function(x,y){return x+y;},0);});};
-    html+='<div class="card"><div class="sec-h"><b>⑮ 未來退休曲線</b><small>柱＝每年將滿 65 歲的人數（依年齡推算·誤差±1年），藍＝總公司、灰＝工地；柱頂＝當年合計；最下一列灰字＝累計（含已滿 65）</small></div>'
-        +(function(){var ca=cum(rc.counts),max=Math.max.apply(null,rc.counts.concat([1])),H=200;
-          // 2026-08-23 重做：每年一根堆疊柱（總公司藍／工地灰）、柱頂標當年人數、柱下一列灰字＝累計。不畫線、不用右軸
-          return legend(['總公司','工地'],[C_HQ,'#8f9aa6'])+'<div class="stk" style="height:'+(H+52)+'px">'+rc.labels.map(function(lb,i){
-            var hq=rcHq[i],st=rcSite[i],tot=rc.counts[i],hh=Math.round(hq/max*H),hs=Math.round(st/max*H);
-            return '<div class="col"><div class="n">'+(tot||'')+'</div><div class="bars" style="height:'+H+'px">'
-              +'<i style="height:'+hh+'px;background:'+C_HQ+'" data-tip="'+esc(lb)+'・總公司：'+hq+' 人"></i>'
-              +'<i style="height:'+hs+'px;background:#8f9aa6" data-tip="'+esc(lb)+'・工地：'+st+' 人"></i></div>'
-              +'<div class="lb">'+esc(lb)+'</div><div class="cu" data-tip="至 '+esc(lb)+' 累計 '+ca[i]+' 人">'+ca[i]+'</div></div>';}).join('')
-            +'</div><div class="foot">最下一列＝累計退休人數（含已滿 65）</div>';})()+'</div>';
+    html+='<div class="card"><div class="sec-h"><b>⑮ 未來退休曲線</b><small>點＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；灰虛線＝累計退休人數（右軸，含已滿 65，從 \'26 起畫）；滑過看各年數字</small></div>'
+        +(function(){var ca=cum(rc.counts);
+          // 2026-08-23 三選一使用者選 A：逐年玫瑰棒棒糖＋累計灰虛線（右軸、從 '26 起畫、每兩年標數字、末端標「累計 N」）
+          return colChart(rc,{ramp:SHADE.retire,lollipop:true,rightAxis:true,height:220,skipFirst:true,lines:[
+            {label:'累計（含已滿 65）',color:'#6b6b68',labelEvery:2,endLabel:true,endText:'累計 ',values:ca}]});})()+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
