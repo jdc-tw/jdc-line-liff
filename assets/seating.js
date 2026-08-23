@@ -497,9 +497,57 @@ function buildSigninPages(guests, perCol) {
   return pages;
 }
 
+/**
+ * 全員桌次名單 AOA（現場查人用・2026-08-23 使用者拍板的第三份下載）。
+ * 一席一列、五欄：單位／姓名／職稱／桌次／葷素。
+ *
+ * 廠商列的填法由使用者定：單位一律寫「廠商」、姓名寫廠商名稱、職稱留空。
+ * 一家多席就是多列相同資料——看起來像重複，但人數才跟座位表對得起來，
+ * 而現場是拿廠商名稱去查桌號，重複列不影響查得到。
+ *
+ * 排序：同仁全部在前（單位照 unitOrder，單位內走 sortSeats＝與正式座位表同一支職稱位階），
+ * 廠商在後（依 ownerOrder，同一負責人內維持原順序）。
+ * 未排桌的人照收、桌次欄寫「未排桌」：現場查不到人，比欄位空白更糟。
+ *
+ * @param unitOrder 單位欄序，取自 groupSeatCategories（三份檔共用，順序才不會漂）
+ * @param ownerOrder 負責人員順序，取自 guestOwnerOrder
+ */
+function buildAttendeeAoa(seats, ranks, unitOrder, ownerOrder) {
+  var aoa = [['單位', '姓名', '職稱', '桌次', '葷素']];
+  var byUnit = {}, unitsSeen = [], byOwner = {}, ownersSeen = [];
+  (seats || []).forEach(function (s) {
+    if (s.kind === 'emp') {
+      var u = String(s.unit || '').trim() || '（未填單位）';
+      if (!byUnit[u]) { byUnit[u] = []; unitsSeen.push(u); }
+      byUnit[u].push(s);
+    } else {
+      var o = String(s.unit || '').trim() || '其他';   // 來賓席位的 unit 存的是我方負責人員
+      if (!byOwner[o]) { byOwner[o] = []; ownersSeen.push(o); }
+      byOwner[o].push(s);
+    }
+  });
+  // 想要的順序優先，沒被列到的照出現順序補在後面（與 groupSeatCategories 的 unitOrder 同規則）
+  var keysInOrder_ = function (want, seen) {
+    var out = [];
+    (want || []).forEach(function (k) { if (seen.indexOf(k) >= 0 && out.indexOf(k) < 0) out.push(k); });
+    seen.forEach(function (k) { if (out.indexOf(k) < 0) out.push(k); });
+    return out;
+  };
+  var push_ = function (unit, title, s) {
+    aoa.push([unit, s.name, title, String(s.table || '') || '未排桌', s.veg ? '素' : '葷']);
+  };
+  keysInOrder_(unitOrder, unitsSeen).forEach(function (u) {
+    sortSeats(byUnit[u], ranks || {}).forEach(function (s) { push_(u, String(s.title || ''), s); });
+  });
+  keysInOrder_(ownerOrder, ownersSeen).forEach(function (o) {
+    byOwner[o].forEach(function (s) { push_('廠商', '', s); });
+  });
+  return aoa;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
-    buildSigninPages, SIGNIN_ROWS, buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
+    buildSigninPages, SIGNIN_ROWS, buildAttendeeAoa, buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats, buildFormalAoa,
                      pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
                      groupSeatCategories, expandGuestRow, vegSummary,
                      countNonEmpty_, SEAT_ROWS, TABLE_COLS };

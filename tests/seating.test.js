@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const { buildSeatingAoa, expandGuests, parseSeatingUpload, sortSeats,
         buildFormalAoa, pastelPalette, guestGradient, categoryPalette, guestOwnerOrder,
         groupSeatCategories, expandGuestRow, vegSummary,
-        buildSigninPages, SIGNIN_ROWS,
+        buildSigninPages, SIGNIN_ROWS, buildAttendeeAoa,
         SEAT_ROWS, TABLE_COLS } = require('../assets/seating.js');
 
 /** 十六進位色 → {明度, 彩度, 是否純灰}，供「灰階 vs 彩色」與漸層順序的斷言用。 */
@@ -628,4 +628,109 @@ test('buildSigninPages：廠商名與聯絡人都空白也不丟掉——列出�
 
 test('buildSigninPages：無名但 0 席，一樣不列（0 人不列的規則優先）', () => {
   assert.deepEqual(buildSigninPages([{ _row: 2, owner: 'a', name: '', contact: '', seatNo: 0, table: '' }]), []);
+});
+
+// ── 全員桌次名單（現場查人用）─────────────────────────────────────────────
+// 2026-08-23 使用者要的第三份下載：同仁＋廠商一席一列，五欄（單位／姓名／職稱／桌次／葷素）。
+// 廠商欄位填法由使用者拍板：單位一律寫「廠商」、姓名寫廠商名稱、職稱留空。
+const ATT_RANKS = { 支店長: 1, 部長: 2, 副理: 3, 主任: 4 };
+
+test('buildAttendeeAoa：表頭五欄', () => {
+  const aoa = buildAttendeeAoa([], ATT_RANKS, [], []);
+  assert.deepEqual(aoa[0], ['單位', '姓名', '職稱', '桌次', '葷素']);
+});
+
+test('buildAttendeeAoa：同仁列出單位/姓名/職稱，廠商列單位固定「廠商」且職稱留空', () => {
+  const seats = [
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4' },
+    { kind: 'emp', name: '甲', unit: '管理部', title: '主任', table: '1' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, ['管理部'], ['王小明']);
+  assert.deepEqual(aoa[1], ['管理部', '甲', '主任', '1', '葷']);
+  assert.deepEqual(aoa[2], ['廠商', '千容營造', '', '4', '葷']);
+});
+
+test('buildAttendeeAoa：同仁全部排在廠商前面', () => {
+  const seats = [
+    { kind: 'guest', name: '大同機電', unit: '王小明', table: '5' },
+    { kind: 'emp', name: '甲', unit: '管理部', title: '主任', table: '1' },
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4' },
+    { kind: 'emp', name: '乙', unit: '施工部', title: '主任', table: '2' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, ['管理部', '施工部'], ['王小明']);
+  assert.deepEqual(aoa.slice(1).map((r) => r[0]), ['管理部', '施工部', '廠商', '廠商']);
+});
+
+test('buildAttendeeAoa：單位照 unitOrder，沒列到的單位補在後面', () => {
+  const seats = [
+    { kind: 'emp', name: '丙', unit: '主檔沒有的單位', title: '主任', table: '3' },
+    { kind: 'emp', name: '甲', unit: '施工部', title: '主任', table: '1' },
+    { kind: 'emp', name: '乙', unit: '管理部', title: '主任', table: '2' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, ['管理部', '施工部'], []);
+  assert.deepEqual(aoa.slice(1).map((r) => r[0]), ['管理部', '施工部', '主檔沒有的單位']);
+});
+
+test('buildAttendeeAoa：同一單位內依職稱位階（與正式座位表同一支 sortSeats）', () => {
+  const seats = [
+    { kind: 'emp', name: '丙', unit: '管理部', title: '主任', table: '1' },
+    { kind: 'emp', name: '甲', unit: '管理部', title: '支店長', table: '1' },
+    { kind: 'emp', name: '丁', unit: '管理部', title: '沒登錄的職稱', table: '1' },
+    { kind: 'emp', name: '乙', unit: '管理部', title: '部長', table: '1' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, ['管理部'], []);
+  assert.deepEqual(aoa.slice(1).map((r) => r[1]), ['甲', '乙', '丙', '丁']);
+});
+
+// 同一負責人內刻意不排序：JS 字串比較中文是照 Unicode 碼位（丙 U+4E19 會排在 甲 U+7532 前），
+// 那不是任何人認得的順序。維持原順序＝與來賓名單／排位用檔／正式座位表同一把尺，
+// 而同一家廠商的席位本來就由 expandGuestRow 產成相鄰的幾列。
+test('buildAttendeeAoa：廠商依負責人員順序，同一負責人內維持原順序', () => {
+  const seats = [
+    { kind: 'guest', name: '乙營造', unit: '李大同', table: '6' },
+    { kind: 'guest', name: '丙機電', unit: '王小明', table: '5' },
+    { kind: 'guest', name: '甲工程', unit: '王小明', table: '4' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, [], ['王小明', '李大同']);
+  assert.deepEqual(aoa.slice(1).map((r) => r[1]), ['丙機電', '甲工程', '乙營造']);
+});
+
+test('buildAttendeeAoa：未排桌的人照收，桌次欄寫「未排桌」', () => {
+  const seats = [
+    { kind: 'emp', name: '甲', unit: '管理部', title: '主任', table: '' },
+    { kind: 'guest', name: '千容營造', unit: '王小明' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, ['管理部'], ['王小明']);
+  assert.deepEqual(aoa.slice(1).map((r) => r[3]), ['未排桌', '未排桌']);
+});
+
+test('buildAttendeeAoa：veg 為真寫「素」，其餘一律「葷」', () => {
+  const seats = [
+    { kind: 'emp', name: '甲', unit: '管理部', title: '主任', table: '1', veg: true },
+    { kind: 'emp', name: '乙', unit: '管理部', title: '主任', table: '1', veg: false },
+    { kind: 'emp', name: '丙', unit: '管理部', title: '主任', table: '1' },
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4', veg: true },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, ['管理部'], ['王小明']);
+  assert.deepEqual(aoa.slice(1).map((r) => r[4]), ['素', '葷', '葷', '素']);
+});
+
+test('buildAttendeeAoa：一家廠商多席就是多列（人數與席位數一致）', () => {
+  const seats = [
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4' },
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4' },
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4', veg: true },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, [], ['王小明']);
+  assert.equal(aoa.length, 4);
+  assert.deepEqual(aoa.slice(1).map((r) => r[4]), ['葷', '葷', '素']);
+});
+
+test('buildAttendeeAoa：沒填單位的同仁歸「（未填單位）」，不會混進廠商區', () => {
+  const seats = [
+    { kind: 'emp', name: '甲', unit: '', title: '主任', table: '1' },
+    { kind: 'guest', name: '千容營造', unit: '王小明', table: '4' },
+  ];
+  const aoa = buildAttendeeAoa(seats, ATT_RANKS, [], ['王小明']);
+  assert.deepEqual(aoa.slice(1).map((r) => r[0]), ['（未填單位）', '廠商']);
 });

@@ -341,9 +341,7 @@
 
   <div class="card">
     <h2>來賓名單<span id="g-sum"></span></h2>
-    <div class="btnrow"><button class="btn" onclick="document.getElementById('g-file').click()">上傳</button>
-      <button class="btn" onclick="dlGuestFile()">下載</button>
-      <button class="btn" onclick="dlSignin()">簽到表</button></div>
+    <div class="btnrow"><button class="btn" onclick="document.getElementById('g-file').click()">上傳</button></div>
     <input type="file" id="g-file" accept=".xlsx,.xls" style="display:none" onchange="upGuests(this)">
     <div id="gl-msg" class="msg"></div>
   </div>
@@ -361,10 +359,20 @@
     <div id="unseated-row"></div>
     <div id="seat-board"><div class="empty">載入中…</div></div>
     <div id="seat-detail"></div>
-    <div class="btnrow"><button class="btn" onclick="dlFormal()">正式座位表</button>
-      <button class="btn" id="pub-btn" onclick="togglePublish()">發佈桌次</button>
+    <div class="btnrow"><button class="btn" id="pub-btn" onclick="togglePublish()">發佈桌次</button>
       <button class="btn" onclick="openArrival()">進場人數</button></div>
     <div id="sm-msg" class="msg"></div>
+  </div>
+
+  <!-- 下載（2026-08-23 使用者拍板）：三份成果檔＋來賓簽到表收進一個下拉。
+       選項由 DL_MENU 產生，標籤與處理函式只有一份，不會兩邊漂。
+       「排位用檔」不在這裡——那是排位**前**的工具檔，留在座位表卡才看得出先後。 -->
+  <div class="card">
+    <h2>下載</h2>
+    <div class="fld" style="margin-bottom:10px">
+      <select id="dl-pick" style="font-size:15px"></select></div>
+    <div class="btnrow"><button class="btn btn-pri2" style="flex:1" onclick="dlPick()">下載</button></div>
+    <div id="dl-msg" class="msg"></div>
   </div>
 
   <!-- ⇩ 以下四張卡已於 2026-08-16 搬走：掃描站管理／報到碼通知／員工 QR → 「報到」分頁，
@@ -1832,13 +1840,14 @@ function upSeating(input){
 }
 
 // ── 下載 ───────────────────────────────────────────────────────────────
-function dlGuestFile(){
-  if(!actId()){setMsg('gl-msg','請先選活動','err');return;}
-  setMsg('gl-msg','產生中…','');
+function dlGuestFile(msgId){
+  var M=msgId||'gl-msg';
+  if(!actId()){setMsg(M,'請先選活動','err');return;}
+  setMsg(M,'產生中…','');
   Promise.all([__rdlXlsx(),jsonp('listGuests',{token:q('t'),actId:actId()})]).then(function(rs){
     var r=rs[1];
-    if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'載入失敗','err');return;}
-    if(!r.rows.length){setMsg('gl-msg','此活動沒有來賓資料','err');return;}
+    if(!r||!r.ok){setMsg(M,(r&&r.msg)||'載入失敗','err');return;}
+    if(!r.rows.length){setMsg(M,'此活動沒有來賓資料','err');return;}
     var agg={},order=[];
     r.rows.forEach(function(g){
       var k=g.owner+'|'+g.name;
@@ -1850,8 +1859,8 @@ function dlGuestFile(){
     order.forEach(function(k){var g=agg[k];
       aoa.push([g.owner,g.name,g.seats,g.type,g.fullName,g.contact,g.phone,g.note,g.tables.join('、')]);});
     writeSeatXlsx_(aoa,'來賓名單_'+(SB?SB.actName:actId()),'來賓名單',{leftAlign:['公司全名','聯繫電話']});
-    setMsg('gl-msg','已下載','ok');
-  }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
+    setMsg(M,'已下載','ok');
+  }).catch(function(e){setMsg(M,String(e&&e.message||e),'err');});
 }
 /**
  * 兩支座位下載共用：取選項主檔（決定單位欄序）→ 交給 groupSeatCategories 分組排序。
@@ -1878,19 +1887,20 @@ function dlSeatingFile(){
     });
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
 }
-function dlFormal(){
-  if(!SB){setMsg('sm-msg','請先選活動','err');return;}
-  if(!SB.seats.some(function(s){return String(s.table||'');})){setMsg('sm-msg','還沒有人排桌','err');return;}
-  setMsg('sm-msg','產生中…','');
+function dlFormal(msgId){
+  var M=msgId||'sm-msg';
+  if(!SB){setMsg(M,'請先選活動','err');return;}
+  if(!SB.seats.some(function(s){return String(s.table||'');})){setMsg(M,'還沒有人排桌','err');return;}
+  setMsg(M,'產生中…','');
   Promise.all([__rdlXlsx(),seatCategories_()]).then(function(rs){
     // 每格上該員所屬單位／負責人的底色，與排位用檔分類欄同色
     var r=buildFormalAoa(SB.seats,SB.ranks||{},seatPalette_(rs[1]));
     // 正式座位表版面不同（首列即表頭）→ 凍 A 欄＋首列
     return writeSeatXlsx_(r.aoa,'正式座位表_'+SB.actName,'正式座位表',
       {redCells:r.guestCells,fills:r.fills,boldLastRow:true,freeze:'B2'}).then(function(){
-      setMsg('sm-msg','已下載','ok');
+      setMsg(M,'已下載','ok');
     });
-  }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
+  }).catch(function(e){setMsg(M,String(e&&e.message||e),'err');});
 }
 /** 黑體＋格線＋置中；opts.redCells=[[r,c]] 上紅字、boldLastRow 末列粗體。 */
 function writeSeatXlsx_(aoa,fname,sheetName,opts){
@@ -1943,6 +1953,48 @@ function __dlXlsxBlob(buf,fullName){
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fullName;
   document.body.appendChild(a);a.click();
   setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},0);
+}
+
+// ── 全員桌次名單 ───────────────────────────────────────────────────────
+// 2026-08-23 使用者要的第三份下載：現場查人用，同仁＋廠商一席一列。
+// 單位欄序走 seatCategories_()（與排位用檔、正式座位表同一支），三份檔的單位順序才不會漂。
+function dlAttendees(msgId){
+  var M=msgId||'dl-msg';
+  if(!SB){setMsg(M,'請先選活動','err');return;}
+  if(!SB.seats.length){setMsg(M,'此活動還沒有出席名單','err');return;}
+  setMsg(M,'產生中…','');
+  Promise.all([__rdlXlsx(),seatCategories_()]).then(function(rs){
+    var g=rs[1];
+    var aoa=buildAttendeeAoa(SB.seats,SB.ranks||{},g.unitOrder,guestOwnerOrder(g.owners,g.guestsByOwner));
+    return writeSeatXlsx_(aoa,'全員桌次名單_'+SB.actName,'全員桌次名單',{freeze:'A2'}).then(function(){
+      var no=SB.seats.filter(function(x){return !String(x.table||'');}).length;
+      setMsg(M,'已下載（同仁 '+g.empCount+' 人＋廠商 '+g.guestSeats+' 席'
+        +(no?'，其中 '+no+' 人未排桌':'')+'）',no?'err':'ok');
+    });
+  }).catch(function(e){setMsg(M,String(e&&e.message||e),'err');});
+}
+
+// ── 下載選單 ───────────────────────────────────────────────────────────
+// 2026-08-23 使用者拍板：三份成果檔＋來賓簽到表收進一個下拉，訊息統一印在下拉旁。
+// 「排位用檔」刻意留在座位表卡——它是排位**前**用的工具檔，混進成果檔選單會看不出先後。
+var DL_MENU = [
+  {label:'全員桌次名單', run:dlAttendees},
+  {label:'正式座位表',   run:dlFormal},
+  {label:'來賓名單',     run:dlGuestFile},
+  {label:'來賓簽到表',   run:dlSignin}
+];
+/** 下拉選項由 DL_MENU 產生：標籤與處理函式綁在同一筆，改一邊不會忘了另一邊。 */
+function dlMenuInit(){
+  var sel=document.getElementById('dl-pick');
+  if(!sel)return;
+  sel.innerHTML=DL_MENU.map(function(it,i){
+    return '<option value="'+i+'">'+esc(it.label)+'</option>';}).join('');
+}
+function dlPick(){
+  var i=Number(document.getElementById('dl-pick').value);
+  var item=DL_MENU[i];
+  if(!item){setMsg('dl-msg','請選擇要下載的檔案','err');return;}
+  item.run('dl-msg');
 }
 
 // ── 來賓簽到表 ─────────────────────────────────────────────────────────
@@ -2028,14 +2080,15 @@ function writeSigninXlsx_(pages,actName){
 }
 
 /** 「來賓名單」卡的「簽到表」鈕：讀來賓名單 → 分頁 → 產檔。參加人數 0 的廠商不列。 */
-function dlSignin(){
-  if(!actId()){setMsg('gl-msg','請先選活動','err');return;}
-  setMsg('gl-msg','產生中…','');
+function dlSignin(msgId){
+  var M=msgId||'gl-msg';
+  if(!actId()){setMsg(M,'請先選活動','err');return;}
+  setMsg(M,'產生中…','');
   Promise.all([__rdlXlsx(),jsonp('listGuests',{token:q('t'),actId:actId()})]).then(function(rs){
     var r=rs[1];
-    if(!r||!r.ok){setMsg('gl-msg',(r&&r.msg)||'載入失敗','err');return;}
+    if(!r||!r.ok){setMsg(M,(r&&r.msg)||'載入失敗','err');return;}
     var pages=buildSigninPages(r.rows||[]);
-    if(!pages.length){setMsg('gl-msg','此活動沒有出席的廠商（參加人數都是 0，或還沒有來賓資料）','err');return;}
+    if(!pages.length){setMsg(M,'此活動沒有出席的廠商（參加人數都是 0，或還沒有來賓資料）','err');return;}
     // 沒有廠商名稱的列：照樣印（姓名留白），但一定要講出來——
     // 靜默丟掉或靜默留白，都是現場點不到名才發現。提示裡帶聯絡人，方便回名單補。
     var all=pages.reduce(function(a,p){return a.concat(p.left,p.right);},[]);
@@ -2045,9 +2098,9 @@ function dlSignin(){
       if(un.length)msg+='　⚠️ 第 '+un.map(function(e){
         return e.no+(e.who?'（聯絡人 '+e.who+'）':'');}).join('、')
         +' 沒有廠商名稱，姓名欄是空的——請回來賓名單補上再產一次';
-      setMsg('gl-msg',msg,un.length?'err':'ok');
+      setMsg(M,msg,un.length?'err':'ok');
     });
-  }).catch(function(e){setMsg('gl-msg',String(e&&e.message||e),'err');});
+  }).catch(function(e){setMsg(M,String(e&&e.message||e),'err');});
 }
 
 // ── QR ─────────────────────────────────────────────────────────────────
@@ -2431,6 +2484,7 @@ loadStats(q('act'));
   var ta=document.getElementById(p[0]),mi=document.getElementById(p[1]);
   if(ta&&mi)ta.addEventListener('scroll',function(){mi.scrollTop=ta.scrollTop;});
 });
+dlMenuInit();
 rosterDlInit({ jsonp: jsonp, token: q('t'), leaversId: 's-dl-leavers',
   msg: function (t, ty) { setMsg('s-dl-msg', t, ty === 'info' ? '' : ty); } });
 </script></body></html>
