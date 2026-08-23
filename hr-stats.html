@@ -127,6 +127,7 @@
   .rl td{padding:5px 8px;border-bottom:1px solid #f4f4f2;vertical-align:middle}
   .rl tr.grp td{border-top:1px solid var(--ln)}
   .rl .pn{font-weight:600;color:var(--ink)}
+  .rl .ag{font-variant-numeric:tabular-nums;color:var(--ink2);white-space:nowrap}
   .rl .lock{font-weight:400;color:var(--ink3);font-size:12px}
   .chip{display:inline-block;font-size:11px;line-height:1.7;padding:0 7px;border-radius:2px;color:var(--ink);white-space:nowrap}
   /* 棒棒糖（新人比） */
@@ -713,16 +714,17 @@ function renderHr(r){
   var retRows=[];
   // 五桶（2026-08-23 使用者：五年內再切 1／3 年，急迫性差很多）。舊後端沒有 y1/y3 時退回三桶
   var RK=[['now',0],['y1',1],['y3',2],['y5',3],['y10',4]];
-  s.unitOrder.forEach(function(nm){var R=s.units[nm].retire;
-    RK.forEach(function(kk){(R[kk[0]]||[]).forEach(function(n){retRows.push({k:kk[1],u:nm,n:n});});});});
-  retRows.sort(function(a,b){return a.k-b.k||s.unitOrder.indexOf(a.u)-s.unitOrder.indexOf(b.u);});
+  s.unitOrder.forEach(function(nm){var R=s.units[nm].retire,A=s.units[nm].retireAge||{};
+    RK.forEach(function(kk){(R[kk[0]]||[]).forEach(function(n,i){retRows.push({k:kk[1],u:nm,n:n,a:(A[kk[0]]||[])[i]});});});});
+  // 類別急迫→緩，同類別內年齡高→低（2026-08-23 使用者）；年齡相同再依單位順序
+  retRows.sort(function(a,b){return a.k-b.k||((b.a||0)-(a.a||0))||s.unitOrder.indexOf(a.u)-s.unitOrder.indexOf(b.u);});
   var KLBL=['已滿 65','1 年內','3 年內','5 年內','10 年內'];
   var KCOL=['#9c4a6e','#b95f85','#c98aa8','#d9b3c6','#eed3df'];   // 急迫→緩：深→淺
   html+='<div class="card"><div class="sec-h"><b>⑰ 退休預警名單</b><small>已滿 65／1 年內（64 歲）／3 年內（62–63）／5 年內（60–61）／10 年內（55–59）；共 '+retRows.length+' 人</small></div>';
   if(!retRows.length) html+='<div class="empty" style="padding:16px 0">目前沒有 55 歲以上的在職同仁</div>';
-  else html+='<table class="rl"><tr><th>類別</th><th>單位</th><th>姓名</th></tr>'+retRows.map(function(r,i){
+  else html+='<table class="rl"><tr><th>類別</th><th>年齡</th><th>單位</th><th>姓名</th></tr>'+retRows.map(function(r,i){
     var first=i===0||retRows[i-1].k!==r.k;
-    return '<tr'+(first?' class="grp"':'')+'><td><span class="chip" style="background:'+KCOL[r.k]+(r.k<=1?';color:#fff':'')+'">'+KLBL[r.k]+'</span></td><td>'+esc(r.u)+'</td><td class="pn">'+(s.pub?'<span class="lock">需權限，載入中…</span>':esc(r.n))+'</td></tr>';
+    return '<tr'+(first?' class="grp"':'')+'><td><span class="chip" style="background:'+KCOL[r.k]+(r.k<=1?';color:#fff':'')+'">'+KLBL[r.k]+'</span></td><td class="ag">'+(r.a!=null?r.a+' 歲':'')+'</td><td>'+esc(r.u)+'</td><td class="pn">'+(s.pub?'<span class="lock">需權限，載入中…</span>':esc(r.n))+'</td></tr>';
   }).join('')+'</table>';
   html+='</div>';
   main.innerHTML=html;
