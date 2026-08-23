@@ -857,6 +857,12 @@ cacheBootstrap(TOKEN).then(function () {
   <button id="vyes">會穿透</button>
   <button id="vno">沒穿透</button>
   <button id="vback">上一步</button>
+  <hr style="border:0;border-top:1px solid #ececea;margin:8px 0">
+  <b>頁面長度</b>
+  <div class="stepline" id="lnow"></div>
+  <button data-x="1">原樣</button>
+  <button data-x="5">內容 ×5</button>
+  <button data-x="10">內容 ×10</button>
   <div class="st" id="vst"></div>
 </div>
 <script>
@@ -909,6 +915,28 @@ cacheBootstrap(TOKEN).then(function () {
     if (idx === 0) return; idx--; ans.length = idx; apply(V[idx][0]); paint();
   });
   apply(V[0][0]); paint();
+
+  /* ── 頁面長度實驗（2026-08-23）──
+     使用者實測：主頁（真實紀錄、批數多）穿透，這份診斷頁（6 批假資料）不穿透，
+     而兩份的 CSS 完全一樣。差別只剩**資料量／頁面高度**。
+     這也解釋了為什麼我先前做的每個乾淨實驗頁都不穿透——它們都太短。
+     這裡把卡片複製 N 份把頁面拉長，看穿透會不會出現。 */
+  var list = document.getElementById('list');
+  var orig = list.innerHTML;
+  function setX(n) {
+    list.innerHTML = n <= 1 ? orig : new Array(n + 1).join(orig);
+    document.getElementById('lnow').innerHTML =
+      '目前 ×' + n + '　卡片 <b>' + list.querySelectorAll('.card').length + '</b> 張'
+      + '　頁高 <b>' + document.documentElement.scrollHeight + '</b>px';
+    document.querySelectorAll('#dctl button[data-x]').forEach(function (x) {
+      x.className = (+x.dataset.x === n) ? 'on' : '';
+    });
+    window.scrollTo(0, 0);
+  }
+  [].slice.call(document.querySelectorAll('#dctl button[data-x]')).forEach(function (bt) {
+    bt.addEventListener('click', function () { setX(+bt.dataset.x); });
+  });
+  setX(1);
 })();
 </script>
 </body>
