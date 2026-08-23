@@ -66,27 +66,71 @@ test('總燈：有失敗就紅；只有略過是灰；全成功才綠', () => {
   assert.equal(V.lampOf({ ok: 3, bad: 0, skip: 0 }), 'ok');
 });
 
-/* ── subjectOf ───────────────────────────────────────── */
+/* ── gistOf（卡面摘要）─────────────────────────────── */
 
-test('subjectOf：紀錄表沒有主旨欄，取訊息內容第一行', () => {
-  assert.equal(V.subjectOf('第一行\n第二行\n第三行', 'text'), '第一行');
+test('gistOf：跳過稱呼行，取第一行真正有內容的字', () => {
+  assert.equal(V.gistOf('林俊宏 您好：\n\n您 8/18 的補登申請已核准。', 'text'),
+    '您 8/18 的補登申請已核准。');
 });
 
-test('subjectOf：超過 60 字截斷並加省略號', () => {
-  const long = '字'.repeat(80);
-  const got = V.subjectOf(long, 'text');
-  assert.equal(got.length, 61);
+test('gistOf：沒有稱呼行時就取第一行（不做多餘的判讀）', () => {
+  assert.equal(V.gistOf('【系統維護通知】\n本週六停機', 'text'), '【系統維護通知】');
+});
+
+test('gistOf：整段都是稱呼行時保留最後一行，不留白', () => {
+  // 留白會讓人以為這批沒有內容——寧可顯示「您好」
+  assert.equal(V.gistOf('您好', 'text'), '您好');
+  assert.equal(V.gistOf('林俊宏 您好：\n您好，', 'text'), '您好，');
+});
+
+test('gistOf：「含有您好」的正文不可以被當成稱呼行吃掉', () => {
+  const body = '如有問題請洽工務管理組，我們會盡快回覆您好嗎';
+  assert.ok(body.length <= 40, '前提：這句沒到 40 字上限，不會被截斷');
+  assert.equal(V.gistOf('林俊宏 您好：\n' + body, 'text'), body);
+});
+
+test('gistOf：稱呼行的認定只看「開頭很短又以您好收尾」', () => {
+  assert.equal(V.gistOf('您好\n真正的內容', 'text'), '真正的內容');
+  assert.equal(V.gistOf('您好，\n真正的內容', 'text'), '真正的內容');
+  assert.equal(V.gistOf('黃淑芬 您好\n真正的內容', 'text'), '真正的內容');
+  // 開頭超過 12 字就不是稱呼，照原樣留著
+  const long = '這一行很長而且結尾剛好也是您好';
+  assert.equal(V.gistOf(long + '\n第二行', 'text'), long);
+});
+
+test('gistOf：多則訊息存成 JSON 時，把裡面的文字挖出來（不顯示型別也不顯示 JSON）', () => {
+  const payload = JSON.stringify([
+    { type: 'text', text: '林俊宏 您好：\n您今年服務屆滿 15 年。' },
+    { type: 'image', originalContentUrl: 'https://x/a.jpg' },
+  ]);
+  assert.equal(V.gistOf(payload, 'text+image'), '您今年服務屆滿 15 年。');
+});
+
+test('gistOf：JSON 裡沒有文字（純圖、flex）就退回顯示型別', () => {
+  assert.equal(V.gistOf('[{"type":"image"},{"type":"image"}]', 'image+image'), '（image+image）');
+  assert.equal(V.gistOf('{"type":"flex","contents":{}}', 'flex'), '（flex）');
+});
+
+test('gistOf：JSON 壞掉（截斷）不可以爆掉，退回顯示型別', () => {
+  assert.equal(V.gistOf('[{"type":"text","text":"被截斷了', 'text'), '（text）');
+});
+
+test('textInPayload：只認 type 為 text 且真的有 text 的那一則', () => {
+  assert.equal(V.textInPayload('[{"type":"text","text":""},{"type":"text","text":"第二則"}]'), '第二則');
+  assert.equal(V.textInPayload('[{"type":"image"}]'), null);
+  assert.equal(V.textInPayload('不是 JSON'), null);
+});
+
+test('gistOf：空內容給明確字樣，不留白', () => {
+  assert.equal(V.gistOf('', 'text'), '（無內容）');
+  assert.equal(V.gistOf('   ', 'text'), '（無內容）');
+});
+
+test('gistOf：40 字上限是防呆，真正的截斷交給 CSS', () => {
+  const long = '中' .repeat(60);
+  const got = V.gistOf('您好：\n' + long, 'text');
+  assert.equal(got.length, 41);
   assert.ok(got.endsWith('…'));
-});
-
-test('subjectOf：多則訊息被 hub 存成 JSON，顯示型別比顯示 JSON 有用', () => {
-  assert.equal(V.subjectOf('[{"type":"text"},{"type":"image"}]', 'text+image'), '（text+image）');
-  assert.equal(V.subjectOf('{"type":"flex"}', 'flex'), '（flex）');
-});
-
-test('subjectOf：空內容給明確字樣，不留白', () => {
-  assert.equal(V.subjectOf('', 'text'), '（無內容）');
-  assert.equal(V.subjectOf('   ', 'text'), '（無內容）');
 });
 
 /* ── 則數 ────────────────────────────────────────────── */
@@ -148,7 +192,7 @@ test('groupBatches：依欄名對位，欄序調動不會靜默錯位', () => {
   const b = V.groupBatches(shuffled, [r])[0];
   assert.equal(b.categoryLabel, '綁定成功');
   assert.equal(b.rows[0].name, '林淑芬');
-  assert.equal(b.subject, '綁定成功');
+  assert.equal(b.gist, '綁定成功');
 });
 
 /* ── 月份分段與滑桿 ──────────────────────────────────── */
@@ -240,7 +284,7 @@ test('手動發送的兩個代號翻成中文，不留英文代號在畫面上',
 test('fullMessageOf：取第一個人收到的完整內文，不是截斷的主旨', () => {
   const long = '開頭。' + '中段'.repeat(40) + '結尾在很後面。';
   const b = V.groupBatches(H, [row({ 訊息內容: long })])[0];
-  assert.notEqual(b.subject, long, '前提：主旨確實被截斷了');
+  assert.notEqual(b.gist, long, '前提：卡面摘要確實被截斷了');
   assert.equal(V.fullMessageOf(b), long);
 });
 
@@ -265,43 +309,40 @@ test('cardHtml：內容與名單合併成同一個下拉（2026-08-23）', () =>
   assert.ok(inner.indexOf('林淑芬') >= 0 && inner.indexOf('陳建宏') >= 0);
 });
 
-test('cardHtml：卡面不再放主旨那一小段（套版訊息第一行每則都一樣）', () => {
+test('cardHtml：卡面第三列是摘要，不是「○○您好」那一行', () => {
   const b = V.groupBatches(H, [row({ 訊息內容: '林先生您好\n真正的內容在第二行' })])[0];
   const html = V.cardHtml(b, []);
-  assert.equal(b.subject, '林先生您好', '前提：subject 仍算得出來（搜尋索引要用）');
-  // ⚠️ 不可用「主旨文字有沒有出現」判斷——全文本來就含第一行，永遠會命中。
-  //    也不可用 indexOf('<details') 切出「卡面」再檢查：主旨那顆本身就是 details，
-  //    加回來時切點會跟著前移，這條就永遠綠（2026-08-23 突變測試當場抓到）。
-  assert.equal(html.indexOf('class="subject"'), -1, '主旨那一列不該存在');
-  assert.equal(html.indexOf('class="subj"'), -1, '主旨那顆下拉不該存在');
+  // ⚠️ 不可以用 indexOf('class="gist"') 之後的整段來檢查——那一段還含著下拉裡的
+  //    全文，而全文本來就有稱呼行，這條就永遠綠（同型假測試 8/23 已犯過一次）。
+  const m = html.match(/<div class="gist">([\s\S]*?)<\/div>/);
+  assert.ok(m, '卡面要有摘要那一列');
+  assert.equal(m[1], '真正的內容在第二行');
 });
 
-test('cardHtml：單人單則不印「1 人 1 則」——兩個數字恆為 1，說不出任何事', () => {
+test('cardHtml：單人批次照樣印「1 人 1 則」（2026-08-23 使用者否決隱藏）', () => {
+  // 曾經改成單人不畫那一列，理由是兩個數字恆為 1。使用者當場否決：
+  // 他問的是那一列在呈現什麼，不是要拿掉——問題出在卡面沒有內容摘要。
   const b = V.groupBatches(H, [row({ 對象姓名: '林淑芬' })])[0];
-  const face = V.cardHtml(b, []).slice(0, V.cardHtml(b, []).indexOf('<details'));
-  assert.equal(b.rows.length, 1);
-  assert.equal(b.msgCount, 1, '前提：這批確實是 1 人 1 則');
-  assert.equal(face.indexOf('<u>人</u>'), -1);
-  assert.equal(face.indexOf('<u>則</u>'), -1);
+  const html = V.cardHtml(b, []);
+  assert.ok(html.indexOf('1<u>人</u>') >= 0);
+  assert.ok(html.indexOf('1<u>則</u>') >= 0);
 });
 
-test('cardHtml：多人批次要印人數——規模是這裡唯一看得出來的地方', () => {
+test('cardHtml：多人批次印人數與則數', () => {
   const b = V.groupBatches(H, Array.from({ length: 137 }, (_, i) => row({ 對象姓名: 'N' + i })))[0];
-  const face = V.cardHtml(b, []);
-  assert.ok(face.indexOf('137<u>人</u>') >= 0);
+  const html = V.cardHtml(b, []);
+  assert.ok(html.indexOf('137<u>人</u>') >= 0);
+  assert.ok(html.indexOf('137<u>則</u>') >= 0);
 });
 
-test('cardHtml：則數只在與人數不同時才印（相等＝一人一則，是常態）', () => {
-  const same = V.groupBatches(H, [row({ 對象姓名: 'A' }), row({ 對象姓名: 'B' })])[0];
-  assert.equal(same.msgCount, 2);
-  assert.equal(V.cardHtml(same, []).indexOf('<u>則</u>'), -1);
-
-  const more = V.groupBatches(H, [
+test('cardHtml：一人收到多則時，則數大於人數', () => {
+  const b = V.groupBatches(H, [
     row({ 對象姓名: 'A', 訊息型別: 'text+image' }),
     row({ 對象姓名: 'B', 訊息型別: 'text+image' }),
   ])[0];
-  assert.equal(more.msgCount, 4);
-  assert.ok(V.cardHtml(more, []).indexOf('4<u>則</u>') >= 0, '有人收到不只一則＝該讓人看見的例外');
+  const html = V.cardHtml(b, []);
+  assert.ok(html.indexOf('2<u>人</u>') >= 0);
+  assert.ok(html.indexOf('4<u>則</u>') >= 0);
 });
 
 /* ── sinceWarning ────────────────────────────────────── */

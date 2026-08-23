@@ -139,15 +139,15 @@ test('多個詞 AND：分屬不同批次的兩個詞 → 0 筆', () => {
 
 /* ── 相關性排序 ──────────────────────────────────────── */
 
-test('主旨命中排在批次號命中前面（欄位有輕重）', () => {
+test('摘要命中排在批次號命中前面（欄位有輕重）', () => {
   const rows = [
-    row({ 批次: 'subject-hit', 訊息內容: '秋季家庭日通知', 對象姓名: 'A' }),
+    row({ 批次: 'gist-hit', 訊息內容: '秋季家庭日通知', 對象姓名: 'A' }),
     row({ 批次: '家庭日-20260819', 訊息內容: '一般通知', 對象姓名: 'B' }),
   ];
   const idx = S.buildIndex(V.groupBatches(H, rows));
   const r = S.search(idx, '家庭日');
   assert.equal(r.list.length, 2);
-  assert.equal(r.list[0].batchId, 'subject-hit');
+  assert.equal(r.list[0].batchId, 'gist-hit');
 });
 
 test('同分時新的排在上面', () => {
@@ -182,7 +182,7 @@ test('hasCJK：中文 true、純英數 false', () => {
 
 test('indexBatch：整份資料都進得來，含人數與則數這種數字', () => {
   const ix = S.indexBatch(BATCHES[0]);
-  assert.ok(ix.subject.length > 0);
+  assert.ok(ix.gist.length > 0);
   assert.ok(ix.name.length > 0);
   assert.ok(ix.num.indexOf('1') >= 0, '一人一則的批次，人數 1 要在索引裡');
 });
@@ -223,9 +223,9 @@ test('12 欄全覆蓋：錯誤', () => { assert.equal(hit('Invalid'), 1); });
 test('12 欄全覆蓋：批次號', () => { assert.equal(hit('20260821091200'), 1); });
 test('12 欄全覆蓋：發送時間', () => { assert.equal(hit('08-21'), 1); });
 
-test('12 欄全覆蓋：訊息內容要收完整的，不是只收畫面上那 60 字的主旨', () => {
-  // 這個詞落在第 60 字之後，只索引主旨的話一定搜不到
-  assert.equal(FULL[0].subject.indexOf('紀念品'), -1, '前提：主旨確實截斷在那個詞之前');
+test('12 欄全覆蓋：訊息內容要收完整的，不是只收畫面上那一行摘要', () => {
+  // 這個詞落在摘要的長度上限之後，只索引摘要的話一定搜不到
+  assert.equal(FULL[0].gist.indexOf('紀念品'), -1, '前提：摘要確實截斷在那個詞之前');
   assert.equal(hit('紀念品'), 1);
 });
 
