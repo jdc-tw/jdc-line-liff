@@ -22,8 +22,12 @@
     font-family: -apple-system, "Noto Sans TC", sans-serif;
     background: #fbfbfa; color: #2c2c2b;
   }
-  /* 內容最上面放一條**很鮮豔**的橫幅。捲動時如果狀態列後面出現這個顏色，
-     就代表這個組合仍然穿透——比讀文字快得多。 */
+  /* ⚠️ 判讀用的顏色要鋪滿**整個捲動區**，不能只放一條橫幅。
+     2026-08-23 第一版就是只放一條，使用者四種組合全回「沒穿透」——
+     但那不是四種都有效，是**那一條只在捲過狀態列那 62px 的瞬間才可見**，
+     其餘填充列跟底色同色、穿透了也看不出來。
+     messages.html 看得出來是因為它的卡片是白的、與底色不同，整片內容都是證據。
+     所以這裡把每一列都塗成桃紅：只要穿透，狀態列後面一定會有顏色。 */
   .flag {
     background: #d81b60; color: #fff; font-weight: 700; font-size: 15px;
     padding: 14px 16px; line-height: 1.5;
@@ -45,7 +49,11 @@
     padding: 10px 16px; line-height: 1.6; border-bottom: 1px solid #ececea;
   }
   .now b { font-size: 15px; }
-  .row { padding: 13px 16px; border-bottom: 1px solid #ececea; font-size: 15px; }
+  .row {
+    padding: 13px 16px; font-size: 15px;
+    background: #d81b60; color: #fff; border-bottom: 1px solid #f06292;
+  }
+  .row:nth-child(even) { background: #ad1457; }
 
   /* ── 模式二：捲動發生在內部容器，body 不捲 ──
      推論：body 捲動時 Safari 把整份文件的圖層畫到可視區之外（也就是狀態列那 62px）；
@@ -66,7 +74,7 @@
     </div>
   </div>
   <div class="now" id="now"></div>
-  <div class="flag">↑ 往上捲。<b>狀態列後面如果出現這個桃紅色</b>，代表這個組合還是會穿透。</div>
+  <div class="flag">↓ 底下整片都是桃紅色。往上捲，<b>狀態列後面只要看到桃紅就是還會穿透</b>；維持灰白就是這個組合有效。</div>
   <div id="fill"></div>
 </div>
 <script>
@@ -102,7 +110,7 @@
   document.getElementById('b2').addEventListener('click', function () { set(true); });
 
   var rows = '';
-  for (var i = 1; i <= 40; i++) rows += '<div class="row">填充列 ' + i + '　往上捲，看狀態列後面</div>';
+  for (var i = 1; i <= 40; i++) rows += '<div class="row">填充列 ' + i + '　狀態列後面有沒有桃紅色？</div>';
   document.getElementById('fill').innerHTML = rows;
   paint();
 })();
