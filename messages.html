@@ -110,6 +110,30 @@
        改用元素本體的 box-shadow：那是自身繪製，不是另一個盒子，Safari 穩定得多。 */
     box-shadow: 0 -50vmax 0 50vmax var(--bg);
   }
+  /* 🔑 狀態列那一帶的遮罩：**一個實體元素**，不是陰影也不是偽元素。
+     2026-08-23 這是第三種寫法，前兩種都在 iPhone standalone 上沒被畫出來：
+       ① `.stickytop::before`（偽元素往上鋪 100vh）——Chromium 有完整對照組證明有效，真機無效
+       ② `.stickytop` 的 `box-shadow: 0 -50vmax 0 50vmax`——同上，真機無效
+     兩次的共通點是「依附在 sticky 元素上、畫在它的邊界之外」。
+     Safari 捲動時會把 sticky 元素提升到合成層，超出邊界的繪製就不保證了。
+     實體元素沒有這個問題：它自己就是一個盒子，一定會被畫。
+     ⚠️ 這一版**必須配 viewport-fit=cover**——沒有 cover 時 --sat 是 0、高度 0，
+        而且 fixed 的 top:0 也到不了螢幕頂端。兩者是一組，不可只留一個。
+     ⚠️ z-index 32 要高於 .stickytop(30) 與 .brandmark(31)：它只佔 0～--sat，
+        logo 在 14px+--sat 以下，不會被壓到。 */
+  .topmask {
+    /* ⚠️ 從 -–sat 蓋到 +--sat（高度兩倍），**刻意涵蓋兩種可能**：
+       · 若 viewport-fit=cover 生效，fixed 的 top:0 ＝ 螢幕頂端
+         ⇒ 負的那一半落在螢幕外（無害），0～--sat 正好蓋住狀態列。
+       · 若 cover 沒生效（舊系統／被 manifest 覆蓋），fixed 的 top:0 在安全區內
+         ⇒ -–sat～0 才是狀態列，正好蓋住；0～--sat 蓋到的是標題列上緣的空白，也無害。
+       這個寫法來自 StackOverflow 61735881 的解法（`top:-80px` 的負值定位），
+       差別是那邊寫死 80px，這裡吃 --sat 所以在沒有安全區的裝置上高度是 0、完全不存在。 */
+    position: fixed; top: calc(-1 * var(--sat)); left: 0; right: 0;
+    height: calc(var(--sat) * 2);
+    background: var(--bg); z-index: 32;
+  }
+
   /* 🔑 分隔線才是這次真正修好問題的那一條。卡片是白的、頁面底是 #fbfbfa，
      兩色太近，沒有線就看不出「標題列到哪裡為止」，捲動時卡片邊界從標題下方穿過，
      看起來就像背景在標題後面滑。線也要滿版，理由同上。 */
@@ -383,6 +407,7 @@
 </head>
 <body>
 
+<div class="topmask" aria-hidden="true"></div>
 <div class="brandmark"><img src="assets/logo-mark.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 
 <nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
