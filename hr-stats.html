@@ -40,7 +40,7 @@
   .cols{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px;position:relative}
   .cols .ol{position:absolute;left:0;right:0;top:16px;width:100%;pointer-events:none;overflow:visible}
   .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-  .col .bar{width:100%;max-width:46px;background:#346b84;border-radius:3px 3px 0 0;min-height:2px}
+  .col .bar{width:100%;max-width:46px;background:#46617a;border-radius:3px 3px 0 0;min-height:2px}
   .col .n{font-size:12px;line-height:16px;height:16px;color:var(--ink);font-variant-numeric:tabular-nums}
   .col .lb{font-size:10.5px;line-height:18px;height:18px;color:var(--ink3);white-space:nowrap}
   /* 橫條 */
@@ -135,21 +135,21 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 //   （彩度下限 0.10 是驗證器硬門檻——messages.html 徽章的 0.05 在色塊上會讀成灰）。
 // 序列段＝同一色相（230）只動明度 L .78→.38，每階差 0.10；不是彩虹。
 // 紅只留給退休預警（訊息紀錄表的規則：紅＝例外與注意）。
-// 2026-08-23 第二版（使用者：「顏色可以多幾個，但低調點」）：
-//   一個主題一個色相、彩度全壓到 0.06–0.08（OKLCH）：年資＝藍灰 230、年齡＝紫灰 300、
-//   入社＝青灰 180、退休＝紅褐 12（紅仍只給退休）。總公司／工地＝230／65。
-//   ⚠️ 彩度 0.08 低於 validate_palette 的 0.10 門檻（會報「讀起來像灰」），刻意為之：
-//   CVD 分離 ΔE 13.2、正常視覺 15.9 都 PASS，靠圖例＋每柱數字當第二編碼。
-var C_HQ='#236682', C_SITE='#7d5329';
-var RAMP4=['#84b3ca','#608da4','#3d6a7f','#1a485c'];                  // 年資段（藍灰）
-var RAMP5=['#b7a9d2','#988ab2','#7a6d93','#5d5075','#423658'];        // 年齡段（紫灰）
-var C_RET=['#763640','#a8636c','#dd939c'];                             // 已滿65 / 5年內 / 10年內
-// 柱狀圖「數值越大越深」的四階，依主題換色相。最淺階從 L.64 起（不用 L.78）——
-// ⑥ 入社趨勢一年只有 1～3 人的柱子會落在最淺階，白卡上 L.78 幾乎看不見（對照圖抓到）。
-var SHADE={tenure:['#5e94af','#437993','#285f78','#0c4960'],
-           age:['#9283b1','#786895','#5e4f79','#483962'],
-           join:['#599a8e','#3e7f73','#216559','#004e44'],
-           retire:['#b7787f','#9a5d65','#7e444c','#662e37']};
+// 2026-08-23 第三版（使用者：「我比較喜歡訊息紀錄用到的顏色」）：
+//   色碼直接取 messages.html 的 --t1…--t7／--r-dim／--b，不再自己算；
+//   深淺階只在同一色相上調明度。對應：總公司＝--t2、工地＝--t6、
+//   年資＝--t4/--t5/--b 石板藍、年齡＝--t1 紫灰、入社＝--t3 青灰、退休＝--r-dim（紅只給退休）。
+//   ⚠️ 這組彩度 0.05–0.08，低於 validate_palette 的 0.10 門檻——使用者拍板接受，
+//   靠圖例＋數字標籤當第二編碼；綠（--g）按訊息紀錄表規則保留給「正常」，這頁不用。
+var C_HQ='#3d6b7d', C_SITE='#7d6244';
+var RAMP4=['#c5cfdb','#6d7f94','#46617a','#2f4858'];                  // 年資段（--t5/--t4/--b）
+var RAMP5=['#d9d3e6','#b3a9cc','#8a7cae','#5d5182','#3f3659'];        // 年齡段（--t1）
+var C_RET=['#8f3040','#b5707c','#dcb0b8'];                             // 已滿65 / 5年內 / 10年內（--r-dim）
+// 柱狀圖「數值越大越深」的四階。最淺階從 L≈0.6 起——⑥ 一年 1～3 人的柱子才看得見。
+var SHADE={tenure:['#6d7f94','#5a6f86','#46617a','#2f4858'],
+           age:['#8a7cae','#7468a0','#5d5182','#48406a'],
+           join:['#5b8794','#4c7a88','#3d6b7d','#2e5262'],
+           retire:['#b07a85','#9f5a68','#8f3040','#6e2533']};
 // 直方圖依值深淺（越多越深＝量感一眼可比）
 function shade(v,max,R){R=R||SHADE.tenure;
   return R[Math.min(R.length-1,Math.floor(v/Math.max(max,1)*(R.length-0.01)))];}
@@ -368,7 +368,7 @@ function renderHr(r){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
     html+='<div class="card"><div class="sec-h"><b>⑥ 入社年度趨勢</b><small>面積＝每年新進人數（現仍在職者），標最高三年；細線＝總公司／工地（由年資回推入社年，±1 年）</small></div>'
-        +areaChart(trend.labels,trend.counts,'#2e7065','#e6efec',(function(){
+        +areaChart(trend.labels,trend.counts,'#3d6b7d','#e9f1f4',(function(){
           if(!s.agePairs||!s.agePairs.length) return [];
           var nowY=new Date().getFullYear();
           var byG=function(g){var o=trend.labels.map(function(){return 0;});s.agePairs.forEach(function(p){if(p[2]!==g)return;var k=nowY-Math.round(p[1])-y0;if(k>=0&&k<o.length)o[k]++;});return o;};
@@ -428,7 +428,7 @@ function renderHr(r){
           return colChart(rc,{ramp:SHADE.retire,lollipop:true,lines:[
             {label:'總公司累計 '+ch[L],color:C_HQ,values:ch},
             {label:'工地累計 '+cs[L],color:C_SITE,values:cs},
-            {label:'合計 '+ca[L],color:'#763640',endLabel:true,values:ca}]});})()+'</div>';
+            {label:'合計 '+ca[L],color:'#8f3040',endLabel:true,values:ca}]});})()+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
@@ -439,8 +439,8 @@ function renderHr(r){
     if(rows.length){
       var maxR=Math.max.apply(null,rows.map(function(x){return x.rate10;}));
       html+='<div class="card"><div class="sec-h"><b>⑩ 退休衝擊率</b><small>實心＝5 年內退休（含已滿65）÷ 單位人數，空心＝放寬到 10 年內；比例越高越先被掏空</small></div>'
-        +'<div class="legend"><span><i style="background:#763640;border-radius:50%"></i>5 年內</span><span><i style="border:2px solid #763640;border-radius:50%;background:#fff"></i>10 年內</span></div>'
-        +dotRows(rows,maxR,'#763640')+'</div>';
+        +'<div class="legend"><span><i style="background:#8f3040;border-radius:50%"></i>5 年內</span><span><i style="border:2px solid #8f3040;border-radius:50%;background:#fff"></i>10 年內</span></div>'
+        +dotRows(rows,maxR,'#8f3040')+'</div>';
     }
   })();
   // 11 退休預警名單
