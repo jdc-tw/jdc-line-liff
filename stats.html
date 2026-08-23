@@ -431,6 +431,8 @@
     <div class="scope" style="margin-top:14px">
       <span style="font-size:12.5px;color:var(--ink2)">發送日</span>
       <input type="date" id="bc-date" style="flex:1;font-size:13.5px;padding:7px 10px">
+      <!-- 時間（2026-08-24 加）。預設 16:00＝使用者拍板 -->
+      <input type="time" id="bc-time" value="16:00" style="font-size:13.5px;padding:7px 10px">
       <button class="btn" id="bc-sched" onclick="bcSchedule()">預約</button></div>
     <!-- 發送給全部在補發之上（2026-08-16 使用者要求）：它是這張卡的主要動作，
          補發是事後補救。順序照「先做的在上面」。 -->
@@ -1357,7 +1359,7 @@ var _previewUsed=false;      // 存過範本／改過預約之後標成 true，�
  */
 function bcInvalidate(){
   _previewUsed=true;
-  clearDirty('bc-tpl');clearDirty('bc-date');
+  clearDirty('bc-tpl');clearDirty('bc-date');clearDirty('bc-time');
   return cacheDrop(q('t'),N.preview(ckActId()));
 }
 // ⚠️ 收下 SECOND 的 previewPassBroadcast 那段 `SECOND.then(...)` 不在這裡，在檔尾 SECOND 賦值之後。
@@ -1513,31 +1515,37 @@ function bcTplReset(){
  */
 function bcRenderSched(r){
   var tag=document.getElementById('bc-tag'),cnt=document.getElementById('bc-cnt'),
-      dt=document.getElementById('bc-date'),bt=document.getElementById('bc-sched');
+      dt=document.getElementById('bc-date'),ti=document.getElementById('bc-time'),
+      bt=document.getElementById('bc-sched');
   cnt.innerHTML=r.willSend?'<span class="tag">'+r.willSend+' 則</span>':'';
   var sc=r.schedule;
   // 狀態寫在按鈕上（2026-08-16 使用者：「預約狀態應該要顯示在按鈕上，改變按鈕文字」）。
   // 標題旁不再重複掛一顆狀態標籤——那顆只留「N 則」。
   tag.innerHTML='';
-  // 日期欄同樣兩段繪製，同樣只在使用者沒動過時才寫（見 renderPreview 開頭的說明）。
+  // 日期／時間欄同樣兩段繪製，同樣只在使用者沒動過時才寫（見 renderPreview 開頭的說明）。
   var setDate=function(v){if(!isDirty('bc-date'))dt.value=v;};
+  var setTime=function(v){if(!isDirty('bc-time'))ti.value=v;};
+  // 舊預約沒有 time 欄位＝當年每日 09:00 掃描的時代，顯示 09:00 最貼近事實
+  var scTime=sc?(sc.time||'09:00'):'';
   if(sc&&sc.status==='sent'){
-    setDate(sc.date);dt.disabled=true;
+    setDate(sc.date);setTime(scTime);dt.disabled=true;ti.disabled=true;
     bt.textContent='已於 '+String(sc.sentAt||sc.date).slice(5,10)+' 發送';bt.disabled=true;
     bcLockTpl(true,'已發送，內容不再變動。');
   }else if(sc&&sc.status==='failed'){
-    setDate(sc.date);dt.disabled=false;
+    setDate(sc.date);setTime(scTime);dt.disabled=false;ti.disabled=false;
     bt.textContent='預約失敗，重新預約';bt.disabled=false;
     bcLockTpl(false);
   }else if(sc){
-    setDate(sc.date);dt.disabled=true;
-    bt.textContent='已預約 '+String(sc.date).slice(5)+'，點此取消';bt.disabled=false;
+    setDate(sc.date);setTime(scTime);dt.disabled=true;ti.disabled=true;
+    bt.textContent='已預約 '+String(sc.date).slice(5)+(sc.time?' '+sc.time:'')+'，點此取消';bt.disabled=false;
     // 有預約＝內容鎖定（使用者拍板的機制，取代原本的「已改但沒重新預約」警語）。
     // 後端 savePassTemplate 也會擋，這裡鎖的是畫面，兩層都有。
     bcLockTpl(true,'已預約，內容鎖定中。要修改請先取消預約。');
   }else{
     setDate(dt.value||r.defaultDate||'');
-    dt.disabled=false;bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl&&r.hasDate!==false);
+    setTime(ti.value||'16:00');   // 預設 16:00（2026-08-24 使用者拍板）
+    dt.disabled=false;ti.disabled=false;
+    bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl&&r.hasDate!==false);
     bcLockTpl(false);
   }
   BC_SCHED=sc||null;
@@ -1558,7 +1566,7 @@ function bcLockTpl(on,why){
 var BC_SCHED=null;
 function bcSchedule(){
   if(BC_SCHED&&BC_SCHED.status==='scheduled'){
-    if(!confirm('取消 '+BC_SCHED.date+' 的預約發送？'))return;
+    if(!confirm('取消 '+BC_SCHED.date+(BC_SCHED.time?' '+BC_SCHED.time:'')+' 的預約發送？'))return;
     jsonp('cancelPassSchedule',{token:q('t'),actId:ckActId()}).then(function(r){
       if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'取消失敗','err');return;}
       bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
@@ -1568,14 +1576,16 @@ function bcSchedule(){
   }
   var d=document.getElementById('bc-date').value;
   if(!d){setMsg('bc-msg','請先選發送日','err');return;}
+  // 時間欄有預設值，正常不會空；被清空就退回預設，不讓預約缺時間
+  var tm=document.getElementById('bc-time').value||'16:00';
   // 預約＝把「要不要送」交給時間。確認框要把這件事講明白
-  if(!confirm('預約在 '+d+' 自動發送給 '+(BC?BC.willSend:'?')+' 位同仁？\n\n'
-      +'到了那天系統會自己送出，不需要有人按按鈕。\n送出後收不回來。'))return;
-  jsonp('schedulePassBroadcast',{token:q('t'),actId:ckActId(),date:d,
+  if(!confirm('預約在 '+d+' '+tm+' 自動發送給 '+(BC?BC.willSend:'?')+' 位同仁？\n\n'
+      +'到了那個時間系統會自己送出，不需要有人按按鈕。\n送出後收不回來。'))return;
+  jsonp('schedulePassBroadcast',{token:q('t'),actId:ckActId(),date:d,time:tm,
     tpl:document.getElementById('bc-tpl').value||''}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'預約失敗','err');return;}
     bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
-    setMsg('bc-msg','已預約 '+d+' 自動發送。','ok');bcPreview();
+    setMsg('bc-msg','已預約 '+d+' '+tm+' 自動發送。','ok');bcPreview();
   });
 }
 /** 存範本（2026-08-16 補：原本改了根本沒存，重新整理就變回預設，而畫面沒講）。 */
@@ -1596,7 +1606,7 @@ function renderPreview(r){
   // 重繪不得覆寫使用者已經表達的輸入，但**沒動過就要覆寫**，否則畫面會永遠停在
   // 七天前那份範本，而伺服器上早就換了一份——且完全沒有徵兆。
   // 原本的護欄是 `if(!tplEl.value)`，它防得住覆寫、防不住這種「該更新卻不更新」。
-  watchDirty('bc-tpl');watchDirty('bc-date');
+  watchDirty('bc-tpl');watchDirty('bc-date');watchDirty('bc-time');
   if(!isDirty('bc-tpl'))tplEl.value=r.template;
   document.getElementById('bc-edit').style.display='block';
   renderPhs('bc','bc-phs','bc-tpl');

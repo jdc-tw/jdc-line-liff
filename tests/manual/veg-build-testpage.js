@@ -109,6 +109,9 @@ const stub = `<script>
   // 驗 surfaceErr() 有沒有把原因撈出來——這是唯一能證明它有效的情境。
   var _sc = new URLSearchParams(location.search).get('sched');
   if (_sc === 'on') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
+    { schedule: { date: '2026-08-27', time: '16:00', status: 'scheduled', by: '洪炫佑' } });
+  // ?sched=old → 加時間功能（2026-08-24）之前存的預約：沒有 time 欄位，畫面該顯示 09:00（當年每日掃描時刻）
+  if (_sc === 'old') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' } });
   if (_sc === 'nodate') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { hasDate: false, eventDate: '' });
@@ -127,6 +130,22 @@ const stub = `<script>
     action = decodeURIComponent(action);
     window.__vegCalls.push(action);
     var body = R[action] || { ok: true };
+    // batch 動態組裝（2026-08-24 修 fixture 腐爛）：報到分頁 8/23 起把子查詢打包成
+    // action=batch&list=[{a,p}...]，固定的 R.batch 內容跟不上 list 的變化——
+    // 改成拆開 list、逐項用 R 裡的單項回應組回去，固定內容只當 fallback。
+    var lm = u.match(/[?&]list=([^&]*)/);
+    if (action === 'batch' && lm) {
+      try {
+        var results = {};
+        JSON.parse(decodeURIComponent(lm[1])).forEach(function (it) {
+          // 先找單項回應，再退回舊固定 batch 內容（getActivityStats 只活在那裡，
+          // 給它 {ok:true} 空殼會讓 renderStats 讀 undefined 崩潰）
+          results[it.a] = R[it.a] || (R.batch && R.batch.results && R.batch.results[it.a]) || { ok: true };
+          window.__vegCalls.push('batch:' + it.a);
+        });
+        body = { ok: true, results: results };
+      } catch (e) { /* 解析失敗就退回固定 R.batch */ }
+    }
     return Promise.resolve({ text: function () { return Promise.resolve('cb(' + JSON.stringify(body) + ')'); } });
   };
 })();
