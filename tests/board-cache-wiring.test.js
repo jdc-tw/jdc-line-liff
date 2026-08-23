@@ -114,7 +114,10 @@ function runBundle({ tpl, previewCached, secondDone, previewSlice }) {
     _previewUsed: false,
     renderStations: () => {},
     renderPreview: (r) => { rendered.push(r); },
-    queueRead: BC.queueRead,
+    // ⚠️ 不用真的 BC.queueRead：本例的 jsonp 是「永不 resolve」，串進共用的 GAS_TAIL
+    // 之後，同檔案後面任何走 queueRead 的測試都會永遠排在它後面（實測整支掛住 2 分鐘）。
+    // 這裡要驗的是「快取有沒有在等第二發之前就畫」，跟佇列無關。
+    queueRead: (fn) => Promise.resolve().then(fn),
     q: () => 'tok',
     jsonp: () => new Promise(() => {}),
     setMsg: () => {},
@@ -220,4 +223,104 @@ test('bcInvalidate：cacheDrop／N.preview／clearDirty 在頁面的作用域裡
   assert.equal(vm.runInContext('cacheGet(N.preview("A"))', ctx), null, '失效後不該再讀得到');
   assert.equal(ctx._previewUsed, true, '記憶體那份切片也要標成用過');
   assert.equal(vm.runInContext('isDirty("bc-tpl")', ctx), false);
+});
+
+// ── ⑤ 分頁不再 gate 在活動清單的網路往返上 ───────────────────────────────
+// 2026-08-23 真瀏覽器實測抓到的：桌次與報到兩個分頁原本等 pick('listActivities')，
+// 也就是第一發批次。batch 83→3626ms、報到區塊出現於 3637ms——卡的不是自己的資料。
+// 改用 withActivities（快取先給、網路再給）之後量到 105ms。
+function makeWithActivities({ cached, net, netOk = true }) {
+  const calls = [];
+  const ctx = {
+    console, Promise, String, JSON,
+    CACHE_READY: Promise.resolve(),
+    cacheGet: (name) => (name === 'listActivities' && cached
+      ? { value: { ok: true, rows: cached } } : null),
+    N: BC.N,
+    queueRead: (fn) => { calls.push('queueRead'); return Promise.resolve().then(fn); },
+    q: () => 'tok',
+    jsonp: () => { calls.push('jsonp'); return Promise.resolve({ ok: netOk, rows: net }); },
+    pick: () => { calls.push('pick'); return Promise.resolve(netOk ? { ok: true, rows: net } : { ok: false }); },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(grab('withActivities'), ctx, { filename: 'stats.html-withActivities' });
+  return { ctx, calls };
+}
+
+test('withActivities：有快取 → 先給快取那一份，網路回來再給一次', async () => {
+  const { ctx } = makeWithActivities({ cached: [{ id: 'old' }], net: [{ id: 'new' }] });
+  const seen = [];
+  await ctx.withActivities((r, fromCache) => seen.push({ rows: r.rows, fromCache }));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(seen.length, 2);
+  assert.deepEqual(seen[0], { rows: [{ id: 'old' }], fromCache: true });
+  assert.deepEqual(seen[1], { rows: [{ id: 'new' }], fromCache: false });
+});
+
+test('withActivities：沒快取 → 只有網路那一段（維持原行為）', async () => {
+  const { ctx } = makeWithActivities({ cached: null, net: [{ id: 'new' }] });
+  const seen = [];
+  await ctx.withActivities((r, fromCache) => seen.push(fromCache));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(seen, [false]);
+});
+
+test('withActivities：快取已經上過畫面、網路失敗 → 第三個參數要說「已經有畫面了」', async () => {
+  // 呼叫端靠它決定「要不要把畫面換成載入失敗」。少了它，暫時斷線會把好好的舊資料抹掉。
+  const { ctx } = makeWithActivities({ cached: [{ id: 'old' }], net: null, netOk: false });
+  const seen = [];
+  await ctx.withActivities((r, fromCache, served) => seen.push({ ok: !!(r && r.ok), fromCache, served }));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(seen[0], { ok: true, fromCache: true, served: false });
+  assert.deepEqual(seen[1], { ok: false, fromCache: false, served: true });
+});
+
+// ── ⑥ 兩段供給不得挪動使用者已選的場次 ───────────────────────────────────
+function runFillActSelect({ before, rows, withName }) {
+  const opts = [];
+  const sel = {
+    value: before,
+    get options() { return opts; },
+    set innerHTML(html) {
+      opts.length = 0;
+      const re = /<option value="([^"]*)"([^>]*)>/g;
+      let m;
+      while ((m = re.exec(html)) !== null) opts.push({ value: m[1], attrs: m[2] });
+      // 真實 <select>：塞入選項後 value 自動變成第一個
+      sel.value = opts.length ? opts[0].value : '';
+    },
+  };
+  const ctx = {
+    console, String, Array,
+    document: { getElementById: (id) => (id.indexOf('act') >= 0 && id.indexOf('bar') < 0 ? sel : { innerHTML: '' }) },
+    esc: (s) => String(s),
+    renderActBar: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(grab('fillActSelect'), ctx, { filename: 'stats.html-fillActSelect' });
+  const changed = ctx.fillActSelect('ck-act', 'ck-actbar', rows, withName);
+  return { changed, value: sel.value, attrs: opts.map((o) => o.attrs) };
+}
+
+test('第二段供給不得把使用者選的場次挪走（他正在決定 137 則要發給哪一場）', () => {
+  const r = runFillActSelect({ before: 'yearend2025', rows: [{ id: 'yearend2025', name: '尾牙' }, { id: 'midyear2026', name: '年中' }] });
+  assert.equal(r.value, 'yearend2025', '重繪後仍要停在他選的那一場');
+  assert.equal(r.changed, false, '沒變就不必重跑下游載入');
+});
+
+test('選過的場次已經不在清單裡（被刪了）→ 退回預設，並回報「變了」', () => {
+  const r = runFillActSelect({ before: '已刪除的場次', rows: [{ id: 'midyear2026', name: '年中' }] });
+  assert.equal(r.value, 'midyear2026');
+  assert.equal(r.changed, true, '變了就要重跑下游，否則畫面還是舊那場的資料');
+});
+
+test('第一次填（原本沒選）→ 回報「變了」，下游才會被叫起來', () => {
+  const r = runFillActSelect({ before: '', rows: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] });
+  assert.equal(r.changed, true);
+  assert.equal(r.value, 'b', 'reverse 之後最新的在最前面');
+});
+
+test('報到分頁的下拉要帶 data-name（產 QR 圖要印活動名），桌次分頁不帶', () => {
+  assert.ok(runFillActSelect({ before: '', rows: [{ id: 'a', name: 'A' }], withName: true }).attrs[0].indexOf('data-name') >= 0);
+  assert.equal(runFillActSelect({ before: '', rows: [{ id: 'a', name: 'A' }], withName: false }).attrs[0].indexOf('data-name'), -1);
 });

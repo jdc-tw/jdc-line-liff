@@ -793,17 +793,59 @@ var seatSel = null;     // 選中的桌/單位
 //   ① 活動清單沿用首屏那支 batch 的結果，這一趟直接消失
 //   ② 掃描站由 getSeatingBoard 順便回傳，不再單獨打一趟
 // 剩一趟。首屏 batch 失敗時才退回自己打一次。
-function loadTablesTab(){
-  pick('listActivities').then(function(r){
-    if(!r||!r.ok) return jsonp('listActivities',{token:q('t')});   // 首屏沒拿到才補打
+/**
+ * 活動清單的兩段供給：快取先給一次（秒顯），網路回來再給一次校正。
+ *
+ * 為何需要（2026-08-23 真瀏覽器實測）：桌次與報到兩個分頁原本 gate 在
+ * `pick('listActivities')` 上，也就是第一發批次的**網路往返**。實測
+ * batch 83→3626ms、報到區塊出現於 3637ms——卡住它們的不是自己的資料，
+ * 是在等活動清單。資深夥伴通知（snLoad）沒有這一層，所以它一直比較快；
+ * 這支就是把那一層拿掉，讓兩個分頁跟它同形。
+ *
+ * onRows(r, fromCache, servedFromCache)：
+ *   fromCache=true  → 這是快取那一段（可能完全不會發生：沒快取時就只有網路那段）
+ *   servedFromCache → 網路那段用來判斷「失敗了要不要蓋掉畫面」
+ */
+function withActivities(onRows){
+  var servedFromCache=false;
+  CACHE_READY.then(function(){
+    var c=cacheGet(N.activities);
+    if(c&&c.value&&c.value.ok&&c.value.rows&&c.value.rows.length){
+      servedFromCache=true;onRows(c.value,true,false);
+    }
+  });
+  return pick('listActivities').then(function(r){
+    if(!r||!r.ok) return queueRead(function(){return jsonp('listActivities',{token:q('t')});});   // 首屏沒拿到才補打
     return r;
-  }).then(function(r){
-    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    var sel=document.getElementById('ti-act');
-    sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>';}).join('');
-    renderActBar('ti-act','ti-actbar');
-    loadSeating();
+  }).then(function(r){onRows(r,false,servedFromCache);});
+}
+/**
+ * 填活動下拉，並**保住使用者已經選的那一場**。
+ *
+ * 兩段供給表示這支會被呼叫兩次。第二段若把選擇挪走，等於在使用者眼前把
+ * 「137 則要發給哪一場」換掉，而畫面上沒有任何提示（同 2026-08-20 事故的形狀）。
+ * 回傳「有效選擇有沒有變」——沒變就不必重跑下游的載入。
+ */
+function fillActSelect(selId,barId,rows,withName){
+  var sel=document.getElementById(selId);
+  var prev=sel.value;
+  sel.innerHTML=rows.slice().reverse().map(function(a){
+    return '<option value="'+esc(a.id)+'"'+(withName?' data-name="'+esc(a.name)+'"':'')+'>'+esc(a.name)+'</option>';
+  }).join('');
+  var keep=false;
+  for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===prev)keep=true;}
+  if(prev&&keep)sel.value=prev;
+  renderActBar(selId,barId);
+  return sel.value!==prev;
+}
+function loadTablesTab(){
+  withActivities(function(r,fromCache,served){
+    if(!r||!r.ok){
+      if(!served)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      return;
+    }
+    var changed=fillActSelect('ti-act','ti-actbar',r.rows,false);
+    if(fromCache||changed)loadSeating();
   });
 }
 // 兩個分頁各有自己的活動下拉，故兩個取值函式。
@@ -818,16 +860,14 @@ function ckActName(){
 }
 // 報到分頁：活動清單沿用首屏那支 batch 的結果，首屏失敗才補打。
 function loadCheckinTab(){
-  pick('listActivities').then(function(r){
-    if(!r||!r.ok) return jsonp('listActivities',{token:q('t')});
-    return r;
-  }).then(function(r){
-    if(!r||!r.ok){document.getElementById('st-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    var sel=document.getElementById('ck-act');
-    sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';}).join('');
-    renderActBar('ck-act','ck-actbar');
-    loadCheckinBundle(ckActId(),bcTpl());   // 單一入口：命中快取時看不出這裡曾經是兩支並行
+  withActivities(function(r,fromCache,served){
+    if(!r||!r.ok){
+      if(!served)document.getElementById('st-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      return;
+    }
+    var changed=fillActSelect('ck-act','ck-actbar',r.rows,true);
+    // 選的場次沒變就不必再跑一次——快取那段已經跑過了，重跑等於白打一趟 GAS。
+    if(fromCache||changed)loadCheckinBundle(ckActId(),bcTpl());   // 單一入口：命中快取時看不出這裡曾經是兩支並行
   });
 }
 
@@ -894,7 +934,14 @@ function loadSeating(){
     }
   });
   // pick2 抓的是 DEFAULT_ACT 那一場——只有選到同一場才能沿用，切到別場一律自己打。
-  var p=(id===DEFAULT_ACT)?pick2('getSeatingBoard'):Promise.resolve(null);
+  // ⚠️ 這個判斷必須等第二發回來再做（2026-08-23）。`DEFAULT_ACT` 是在 `SECOND=FIRST.then(...)`
+  // 裡面才賦值的，而本支現在會被「活動清單快取」提早叫起來——那個時刻 DEFAULT_ACT 還是空字串，
+  // 條件當場判偽，於是明明第二發正要抓同一場，這裡又自己多打一趟 getSeatingBoard。
+  // 實測（真瀏覽器）：多出來的那趟 4003→11848ms，還因為 queueRead 序列化把第二發往後推 8 秒。
+  // 秒顯不受影響——上面的 cacheGet 已經畫過了，這裡只決定「要不要自己發請求」。
+  var p=SECOND.then(function(){
+    return (id===DEFAULT_ACT)?pick2('getSeatingBoard'):null;
+  },function(){return null;});
   p.then(function(r){
     if(r){applySeating(r);return;}                    // 第二發已備妥（且同一場）
     return queueRead(function(){                       // 沒有才自己打
