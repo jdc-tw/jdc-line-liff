@@ -42,14 +42,39 @@
     font-size: 16px; line-height: 1.65; color: var(--ink); background: var(--bg);
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
+  .wrap {
+    --pad-y: 20px;
+    max-width: 480px; margin: 0 auto; padding: var(--pad-y) 16px 60px;
+  }
 
   /* 標題列：LINE 訊息紀錄　○搜尋　……　清除本機快取（靠右）
      固定在頂端（使用者 2026-08-22）——捲到第五個月還看得到自己在哪一頁、
      也還按得到搜尋。背景要不透明，否則捲動時卡片會透上來。 */
   .stickytop {
     position: sticky; top: 0; z-index: 30; background: var(--bg);
-    padding: 12px 0 2px; margin: -12px 0 0;
+    /* 頂端貼齊 wrap 的內距：原本 padding-top 12px 配 margin-top -12px，
+       但 wrap 的 padding-top 是 20px（桌機 32px），差的那 8px 沒被蓋住——
+       捲動一開始標題列會往上跳那 8px。改吃同一個 --pad-y 就不會有缺口。 */
+    padding: var(--pad-y) 0 8px; margin: calc(-1 * var(--pad-y)) 0 0;
+
+    /* 背景橫向滿版（使用者 2026-08-23 回報「標題列後面看得到內容在滑」）。
+       ⚠️ 實測澄清，別照著錯的理由改：.stickytop 住在 .wrap 裡，390px 手機上只佔
+       left=90～right=374——但**卡片也是同一個寬度**，左右露出的是 body 背景、
+       與 --bg 同色。所以「卡片從縫裡滑過去」是錯的推論，真正的成因是下面那條
+       分隔線當時不存在（白卡 #fff 對底色 #fbfbfa，邊界剛好在標題列下方穿過去）。
+       滿版背景留著的理由是另一個：讓標題列在視覺上是一整條橫幅，
+       而不是浮在畫面中間的一塊——桌機上左右各有一大片空白時差別很明顯。
+       用 box-shadow 鋪兩側，**不用偽元素的 left:-50vw**——絕對定位溢出 body 會生出
+       橫向捲軸，得再去 overflow-x:hidden，而那會動到 sticky 的捲動容器。
+       box-shadow 不參與版面，也不被 hit-test 命中，所以不影響點擊。 */
+    box-shadow: -100vw 0 0 var(--bg), 100vw 0 0 var(--bg);
+  }
+  /* 🔑 分隔線才是這次真正修好問題的那一條。卡片是白的、頁面底是 #fbfbfa，
+     兩色太近，沒有線就看不出「標題列到哪裡為止」，捲動時卡片邊界從標題下方穿過，
+     看起來就像背景在標題後面滑。線也要滿版，理由同上。 */
+  .stickytop::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--ln); box-shadow: -100vw 0 0 var(--ln), 100vw 0 0 var(--ln);
   }
   .topbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
   h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: .01em; flex: none; }
@@ -278,7 +303,7 @@
     :root { --rail-w: 84px; }
     .brandmark { left: 16px; top: 20px; width: 34px; }
     body { font-size: 17px; }
-    .wrap { max-width: 720px; padding: 32px 24px 80px; }
+    .wrap { --pad-y: 32px; max-width: 720px; padding: var(--pad-y) 24px 80px; }
     h1 { font-size: 23px; }
   }
 </style>
