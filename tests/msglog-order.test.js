@@ -75,9 +75,10 @@ for (const file of FILES) {
     const second = new Promise(function (r) { release = r; });
     const { calls, done } = runWire(file, { flag: true, second: second, pending: 0 });
     await flush();
-    assert.deepStrictEqual(calls, [], '第二發還在飛就送出請求＝回到重疊的老樣子');
+    const duringSecond = calls.slice();     // 先取樣、後斷言（理由見下一支測試）
     release({ ok: true });
     await done;
+    assert.deepStrictEqual(duringSecond, [], '第二發還在飛就送出請求＝回到重疊的老樣子');
     assert.deepStrictEqual(calls, ['getUndelivered']);
   });
 
@@ -90,11 +91,16 @@ for (const file of FILES) {
       flag: true, second: Promise.resolve({ ok: true }), pending: 0,
     });
     await flush();
-    assert.deepStrictEqual(calls, [], '前一支還在飛就送出＝沒包 queueRead');
+    const duringPrev = calls.slice();
 
-    releasePrev('前一支結束');            // ⚠️ 一定要放行，否則卡住整條 GAS_TAIL
+    // ⚠️ 先放行、後斷言。斷言失敗會 throw，寫在放行前面就會讓佔位的替身
+    // 永遠不 resolve，卡住模組層級的 GAS_TAIL——同檔後面走佇列的測試全部
+    // 跑到逾時被砍（不是失敗，是靜默掛住）。2026-08-23 做突變測試時當場踩到。
+    releasePrev('前一支結束');
     await prevTask;
     await done;
+
+    assert.deepStrictEqual(duringPrev, [], '前一支還在飛就送出＝沒包 queueRead');
     assert.deepStrictEqual(calls, ['getUndelivered']);
   });
 
