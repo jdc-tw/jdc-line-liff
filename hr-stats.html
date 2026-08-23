@@ -7,47 +7,60 @@
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <title>人事資訊看板</title>
 <style>
+  /* 設計語彙沿用 messages.html（LINE 訊息紀錄，2026-08-23 使用者拍板）：
+     灰底細線、卡片無陰影、3px 圓角、文字三階 --ink/--ink2/--ink3。
+     圖表色另算（見下方 JS 色票註解）：徽章可以淡到彩度 0.05，色塊不行。 */
+  :root {
+    --g: #4a7c62; --g-bg: #eff4f1;
+    --ink: #2c2c2b; --ink2: #6b6b68; --ink3: #9a9a96;
+    --bg: #fbfbfa; --ln: #ececea;
+    --warn: #8a6a2f; --warn-bg: #f7f2e6;
+    --r-dim: #8f3040; --r-bg: #fbeef1;
+    --b: #2f4858;
+  }
   *,*::before,*::after{box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans TC",sans-serif;
-    margin:0 auto;padding:20px 16px 48px;max-width:760px;background:#fff;color:#413b31;font-size:15px;line-height:1.6}
+    margin:0 auto;padding:20px 16px 48px;max-width:760px;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6;
+    -webkit-font-smoothing:antialiased}
   .brand{text-align:center;margin:0 0 14px}.brand img{width:100%;max-width:240px;height:auto}
-  h1{font-size:22px;margin:0 0 2px}
-  .sub{font-size:13px;color:#a59a8a;margin-bottom:18px}
-  .card{background:#fffefb;border:1px solid #ece5d8;border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
-  .sec-h{display:flex;align-items:baseline;gap:8px;margin:0 0 12px;border-left:5px solid #bd9670;padding-left:10px}
-  .sec-h b{font-size:16px}
-  .sec-h small{color:#a59a8a;font-size:12px}
+  h1{font-size:19px;font-weight:600;margin:0 0 2px;letter-spacing:.01em}
+  .sub{font-size:13px;color:var(--ink3);margin-bottom:18px}
+  .card{background:#fff;border:1px solid var(--ln);border-radius:3px;padding:16px 18px;margin-bottom:10px}
+  .sec-h{display:flex;align-items:baseline;gap:8px;margin:0 0 12px}
+  .sec-h b{font-size:15px;font-weight:600}
+  .sec-h small{color:var(--ink3);font-size:12px}
   /* KPI row */
-  .kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-  .kpi{flex:1 1 30%;background:#fffefb;border:1px solid #ece5d8;border-radius:14px;padding:14px 16px;text-align:center}
-  .kpi .v{font-size:30px;font-weight:800}
-  .kpi .k{font-size:12px;color:#a59a8a}
-  /* 直方圖（縱向柱） */
+  .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .kpi{flex:1 1 30%;background:#fff;border:1px solid var(--ln);border-radius:3px;padding:14px 16px;text-align:center}
+  .kpi .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}
+  .kpi .k{font-size:12px;color:var(--ink3)}
+  /* 直方圖（縱向柱）。柱色刻意取深階（L≈0.50）——灰底上淡色柱子會消失，
+     這是「低調但要看得清」的補償：彩度不拉高，靠明度差拉開。 */
   .cols{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px}
   .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-  .col .bar{width:100%;max-width:46px;background:#b9863f;border-radius:4px 4px 0 0;min-height:2px}
-  .col .n{font-size:12px;color:#413b31;margin-bottom:2px}
-  .col .lb{font-size:10.5px;color:#a59a8a;margin-top:4px;white-space:nowrap}
+  .col .bar{width:100%;max-width:46px;background:#346b84;border-radius:3px 3px 0 0;min-height:2px}
+  .col .n{font-size:12px;color:var(--ink);margin-bottom:2px;font-variant-numeric:tabular-nums}
+  .col .lb{font-size:10.5px;color:var(--ink3);margin-top:4px;white-space:nowrap}
   /* 橫條 */
   .hrow{display:flex;align-items:center;gap:8px;margin:5px 0}
-  .hrow .nm{flex:0 0 88px;font-size:13px;text-align:right;color:#413b31;white-space:nowrap;overflow:hidden}
+  .hrow .nm{flex:0 0 88px;font-size:13px;text-align:right;color:var(--ink);white-space:nowrap;overflow:hidden}
   .hrow .trk{flex:1;display:flex;gap:2px;align-items:center}
-  .hrow .seg{height:16px;border-radius:0}
-  .hrow .seg:first-child{border-radius:4px 0 0 4px}
-  .hrow .seg:last-child{border-radius:0 4px 4px 0}
-  .hrow .seg.only{border-radius:4px}
-  .hrow .cnt{font-size:12px;color:#a59a8a;margin-left:6px;white-space:nowrap}
-  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 10px;font-size:12px;color:#413b31}
-  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .hrow .seg{height:14px;border-radius:0}
+  .hrow .seg:first-child{border-radius:3px 0 0 3px}
+  .hrow .seg:last-child{border-radius:0 3px 3px 0}
+  .hrow .seg.only{border-radius:3px}
+  .hrow .cnt{font-size:12px;color:var(--ink3);margin-left:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 10px;font-size:12px;color:var(--ink2)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
   details.tbl{margin-top:8px}
-  details.tbl summary{font-size:12px;color:#a59a8a;cursor:pointer}
-  details.tbl table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%}
-  details.tbl th,details.tbl td{border:1px solid #ece5d8;padding:3px 8px;text-align:right}
+  details.tbl summary{font-size:12px;color:var(--ink3);cursor:pointer}
+  details.tbl table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%;font-variant-numeric:tabular-nums}
+  details.tbl th,details.tbl td{border:1px solid var(--ln);padding:3px 8px;text-align:right}
   details.tbl th:first-child,details.tbl td:first-child{text-align:left}
-  .names{font-size:12.5px;color:#413b31;margin:2px 0 8px}
-  .names b{font-weight:700}
-  .empty{text-align:center;color:#a59a8a;padding:40px 0}
-  .foot{font-size:11.5px;color:#a59a8a;margin-top:6px}
+  .names{font-size:12.5px;color:var(--ink);margin:2px 0 8px}
+  .names b{font-weight:600}
+  .empty{text-align:center;color:var(--ink3);padding:40px 0}
+  .foot{font-size:11.5px;color:var(--ink3);margin-top:6px}
 </style>
 </head>
 <body>
@@ -74,13 +87,19 @@ function jsonp(action,params){
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時，請重新整理。':'連線失敗'};});}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-// 色票（dataviz 驗證過：#3d8f63/#b9863f 全項通過；序列段=同色深淺、非彩虹）
-var C_HQ='#3d8f63', C_SITE='#b9863f';
-var RAMP4=['#f2e3c5','#d19c4e','#96662a','#4f3413'];                  // 年資段（高對比）
-var RAMP5=['#f2e3c5','#d8b075','#b9863f','#82552a','#4f3413'];        // 年齡段（高對比）
-var C_RET=['#b0694a','#d19c4e','#f2e3c5'];                             // 已滿65 / 5年內 / 10年內
+// 色票（2026-08-23 改低調版，與 messages.html 同語彙）。
+// 分類二色：OKLCH L.50 C.105、色相 230／65，dataviz validate_palette 五項 PASS
+//   （彩度下限 0.10 是驗證器硬門檻——messages.html 徽章的 0.05 在色塊上會讀成灰）。
+// 序列段＝同一色相（230）只動明度 L .78→.38，每階差 0.10；不是彩虹。
+// 紅只留給退休預警（訊息紀錄表的規則：紅＝例外與注意）。
+var C_HQ='#006d93', C_SITE='#8b5511';
+var RAMP4=['#88c0dc','#5e94af','#346b84','#0c4960'];                  // 年資段
+var RAMP5=['#88c0dc','#6aa1bb','#4c829c','#2e657e','#0c4960'];        // 年齡段
+var C_RET=['#7a323e','#ad606a','#e2909a'];                             // 已滿65 / 5年內 / 10年內
 // 直方圖依值深淺（越多越深＝量感一眼可比）
-function shade(v,max){var R=['#ecd9b8','#d8b075','#c08a3f','#96662a','#6b4a1e'];
+// 柱子用「數值越大越深」上色。最淺階刻意從 L.64 起（不用序列段的 L.78）——
+// ⑥ 入社趨勢一年只有 1～3 人的柱子會落在最淺階，白卡上 L.78 的柱子幾乎看不見（2026-08-23 對照圖抓到）。
+function shade(v,max){var R=['#5e94af','#4c829c','#346b84','#0c4960'];
   return R[Math.min(R.length-1,Math.floor(v/Math.max(max,1)*(R.length-0.01)))];}
 
 function colChart(bins){
@@ -172,17 +191,17 @@ function renderHr(r){
     var tMax=Math.ceil(Math.max.apply(null,s.unitOrder.map(function(n){return s.units[n].avgTenure;})))+2;
     var xs=function(a){return PX+(a-aMin)/(aMax-aMin)*(W-PX-16);};
     var ys=function(t){return H-PY-(t/tMax)*(H-PY-16);};
-    var svg='<rect x="'+xs(s.avgAge)+'" y="14" width="'+(W-16-xs(s.avgAge))+'" height="'+(ys(s.avgTenure)-14)+'" fill="#b0694a" opacity="0.07"/>';
-    for(var a=Math.ceil(aMin/5)*5;a<aMax;a+=5) svg+='<line x1="'+xs(a)+'" y1="'+(H-PY)+'" x2="'+xs(a)+'" y2="12" stroke="#ece5d8"/><text x="'+xs(a)+'" y="'+(H-6)+'" font-size="10" fill="#a59a8a" text-anchor="middle">'+a+'歲</text>';
-    for(var t=2;t<tMax;t+=2) svg+='<line x1="'+PX+'" y1="'+ys(t)+'" x2="'+(W-16)+'" y2="'+ys(t)+'" stroke="#ece5d8"/><text x="'+(PX-4)+'" y="'+(ys(t)+3)+'" font-size="10" fill="#a59a8a" text-anchor="end">'+t+'年</text>';
-    svg+='<line x1="'+xs(s.avgAge)+'" y1="12" x2="'+xs(s.avgAge)+'" y2="'+(H-PY)+'" stroke="#b0694a" stroke-dasharray="4 3"/>'
-       +'<text x="'+(xs(s.avgAge)+3)+'" y="24" font-size="9.5" fill="#b0694a">全司均齡 '+s.avgAge+'</text>'
-       +'<line x1="'+PX+'" y1="'+ys(s.avgTenure)+'" x2="'+(W-16)+'" y2="'+ys(s.avgTenure)+'" stroke="#b0694a" stroke-dasharray="4 3"/>'
-       +'<text x="'+(W-18)+'" y="'+(ys(s.avgTenure)-4)+'" font-size="9.5" fill="#b0694a" text-anchor="end">均資 '+s.avgTenure+'</text>';
+    var svg='<rect x="'+xs(s.avgAge)+'" y="14" width="'+(W-16-xs(s.avgAge))+'" height="'+(ys(s.avgTenure)-14)+'" fill="#8f3040" opacity="0.05"/>';
+    for(var a=Math.ceil(aMin/5)*5;a<aMax;a+=5) svg+='<line x1="'+xs(a)+'" y1="'+(H-PY)+'" x2="'+xs(a)+'" y2="12" stroke="#ececea"/><text x="'+xs(a)+'" y="'+(H-6)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+a+'歲</text>';
+    for(var t=2;t<tMax;t+=2) svg+='<line x1="'+PX+'" y1="'+ys(t)+'" x2="'+(W-16)+'" y2="'+ys(t)+'" stroke="#ececea"/><text x="'+(PX-4)+'" y="'+(ys(t)+3)+'" font-size="10" fill="#9a9a96" text-anchor="end">'+t+'年</text>';
+    svg+='<line x1="'+xs(s.avgAge)+'" y1="12" x2="'+xs(s.avgAge)+'" y2="'+(H-PY)+'" stroke="#8f3040" stroke-dasharray="4 3"/>'
+       +'<text x="'+(xs(s.avgAge)+3)+'" y="24" font-size="9.5" fill="#8f3040">全司均齡 '+s.avgAge+'</text>'
+       +'<line x1="'+PX+'" y1="'+ys(s.avgTenure)+'" x2="'+(W-16)+'" y2="'+ys(s.avgTenure)+'" stroke="#8f3040" stroke-dasharray="4 3"/>'
+       +'<text x="'+(W-18)+'" y="'+(ys(s.avgTenure)-4)+'" font-size="9.5" fill="#8f3040" text-anchor="end">均資 '+s.avgTenure+'</text>';
     s.unitOrder.forEach(function(nm){
       var u=s.units[nm],col=u.group==='總公司'?C_HQ:C_SITE,r=4+Math.sqrt(u.count)*1.7;
       svg+='<circle cx="'+xs(u.avgAge).toFixed(1)+'" cy="'+ys(u.avgTenure).toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+col+'" fill-opacity="0.85" stroke="#fff" stroke-width="1.5"><title>'+esc(nm)+'：均齡 '+u.avgAge+'・均資 '+u.avgTenure+'・'+u.count+' 人</title></circle>'
-         +'<text x="'+(xs(u.avgAge)+r+3).toFixed(1)+'" y="'+(ys(u.avgTenure)+3).toFixed(1)+'" font-size="10" fill="#413b31">'+esc(nm)+'</text>';
+         +'<text x="'+(xs(u.avgAge)+r+3).toFixed(1)+'" y="'+(ys(u.avgTenure)+3).toFixed(1)+'" font-size="10" fill="#2c2c2b">'+esc(nm)+'</text>';
     });
     html+='<div class="card"><div class="sec-h"><b>⑦ 單位健康矩陣</b><small>一點＝一個單位；越右越年長、越上越資深、點越大人越多；右上淡紅＝雙高單位</small></div>'
         +legend(['總公司','工地'],[C_HQ,C_SITE])
@@ -222,7 +241,7 @@ function renderHr(r){
         +rows.map(function(x){
           var pct=Math.round(x.rate*100),w=Math.max(x.rate/maxR*100,3);
           return '<div class="hrow"><div class="nm">'+esc(x.nm)+'</div>'
-            +'<div class="trk" style="max-width:'+w+'%"><div class="seg only" style="flex:1;background:#b0694a" title="'+esc(x.nm)+'：'+x.hit+'/'+x.count+' 人"></div></div>'
+            +'<div class="trk" style="max-width:'+w+'%"><div class="seg only" style="flex:1;background:#7a323e" title="'+esc(x.nm)+'：'+x.hit+'/'+x.count+' 人"></div></div>'
             +'<div class="cnt">'+pct+'%（'+x.hit+'/'+x.count+' 人）</div></div>';
         }).join('')+'</div>';
     }
@@ -242,7 +261,7 @@ function renderHr(r){
       return '<div class="seg" style="flex:'+c+';background:'+C_RET[i]+'"></div>';}).join('');
     html+='<div class="hrow"><div class="nm">'+esc(nm)+'</div><div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+total+'</div></div>'
         +(s.pub
-          ? '<div class="names" style="margin-left:96px;color:#9a8f7a">🔒 名單需權限，載入中…</div>'
+          ? '<div class="names" style="margin-left:96px;color:#9a9a96">名單需權限，載入中…</div>'
           : '<div class="names" style="margin-left:96px">'
             +(R.now.length?'<b>已滿65：</b>'+R.now.map(esc).join('、')+'　':'')
             +(R.y5.length?'<b>5年內：</b>'+R.y5.map(esc).join('、')+'　':'')
@@ -287,7 +306,7 @@ function markOffline(savedAt) {
   var tag = document.getElementById('offline-tag');
   if (savedAt == null) { if (tag) tag.parentNode.removeChild(tag); return; }
   if (!tag) { tag = document.createElement('span'); tag.id = 'offline-tag';
-    tag.setAttribute('style', 'margin-left:8px;color:#b26a00;font-size:13px'); el.appendChild(tag); }
+    tag.setAttribute('style', 'margin-left:8px;color:#8a6a2f;font-size:13px'); el.appendChild(tag); }
   tag.textContent = offlineLabel(savedAt);
 }
 </script>
