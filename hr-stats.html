@@ -27,7 +27,8 @@
   .sub{font-size:13px;color:var(--ink3);margin-bottom:18px}
   .card{background:#fff;border:1px solid var(--ln);border-radius:3px;padding:16px 18px;margin-bottom:10px}
   .sec-h{display:flex;align-items:baseline;gap:8px;margin:0 0 12px}
-  .sec-h b{font-size:15px;font-weight:600}
+  .sec-h b{font-size:15px;font-weight:600;white-space:nowrap}
+  .sec-h small{line-height:1.45}
   .sec-h small{color:var(--ink3);font-size:12px}
   /* KPI row */
   .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
@@ -36,11 +37,12 @@
   .kpi .k{font-size:12px;color:var(--ink3)}
   /* 直方圖（縱向柱）。柱色刻意取深階（L≈0.50）——灰底上淡色柱子會消失，
      這是「低調但要看得清」的補償：彩度不拉高，靠明度差拉開。 */
-  .cols{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px}
+  .cols{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px;position:relative}
+  .cols .ol{position:absolute;left:0;right:0;top:16px;width:100%;pointer-events:none;overflow:visible}
   .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
   .col .bar{width:100%;max-width:46px;background:#346b84;border-radius:3px 3px 0 0;min-height:2px}
-  .col .n{font-size:12px;color:var(--ink);margin-bottom:2px;font-variant-numeric:tabular-nums}
-  .col .lb{font-size:10.5px;color:var(--ink3);margin-top:4px;white-space:nowrap}
+  .col .n{font-size:12px;line-height:16px;height:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .col .lb{font-size:10.5px;line-height:18px;height:18px;color:var(--ink3);white-space:nowrap}
   /* 橫條 */
   .hrow{display:flex;align-items:center;gap:8px;margin:5px 0}
   .hrow .nm{flex:0 0 88px;font-size:13px;text-align:right;color:var(--ink);white-space:nowrap;overflow:hidden}
@@ -52,6 +54,7 @@
   .hrow .cnt{font-size:12px;color:var(--ink3);margin-left:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .legend{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 10px;font-size:12px;color:var(--ink2)}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  .legend i.ln{width:14px;height:2px;border-radius:1px;vertical-align:3px}
   details.tbl{margin-top:8px}
   details.tbl summary{font-size:12px;color:var(--ink3);cursor:pointer}
   details.tbl table{border-collapse:collapse;font-size:12px;margin-top:6px;width:100%;font-variant-numeric:tabular-nums}
@@ -92,25 +95,67 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 //   （彩度下限 0.10 是驗證器硬門檻——messages.html 徽章的 0.05 在色塊上會讀成灰）。
 // 序列段＝同一色相（230）只動明度 L .78→.38，每階差 0.10；不是彩虹。
 // 紅只留給退休預警（訊息紀錄表的規則：紅＝例外與注意）。
-var C_HQ='#006d93', C_SITE='#8b5511';
-var RAMP4=['#88c0dc','#5e94af','#346b84','#0c4960'];                  // 年資段
-var RAMP5=['#88c0dc','#6aa1bb','#4c829c','#2e657e','#0c4960'];        // 年齡段
-var C_RET=['#7a323e','#ad606a','#e2909a'];                             // 已滿65 / 5年內 / 10年內
+// 2026-08-23 第二版（使用者：「顏色可以多幾個，但低調點」）：
+//   一個主題一個色相、彩度全壓到 0.06–0.08（OKLCH）：年資＝藍灰 230、年齡＝紫灰 300、
+//   入社＝青灰 180、退休＝紅褐 12（紅仍只給退休）。總公司／工地＝230／65。
+//   ⚠️ 彩度 0.08 低於 validate_palette 的 0.10 門檻（會報「讀起來像灰」），刻意為之：
+//   CVD 分離 ΔE 13.2、正常視覺 15.9 都 PASS，靠圖例＋每柱數字當第二編碼。
+var C_HQ='#236682', C_SITE='#7d5329';
+var RAMP4=['#84b3ca','#608da4','#3d6a7f','#1a485c'];                  // 年資段（藍灰）
+var RAMP5=['#b7a9d2','#988ab2','#7a6d93','#5d5075','#423658'];        // 年齡段（紫灰）
+var C_RET=['#763640','#a8636c','#dd939c'];                             // 已滿65 / 5年內 / 10年內
+// 柱狀圖「數值越大越深」的四階，依主題換色相。最淺階從 L.64 起（不用 L.78）——
+// ⑥ 入社趨勢一年只有 1～3 人的柱子會落在最淺階，白卡上 L.78 幾乎看不見（對照圖抓到）。
+var SHADE={tenure:['#5e94af','#437993','#285f78','#0c4960'],
+           age:['#9283b1','#786895','#5e4f79','#483962'],
+           join:['#599a8e','#3e7f73','#216559','#004e44'],
+           retire:['#b7787f','#9a5d65','#7e444c','#662e37']};
 // 直方圖依值深淺（越多越深＝量感一眼可比）
-// 柱子用「數值越大越深」上色。最淺階刻意從 L.64 起（不用序列段的 L.78）——
-// ⑥ 入社趨勢一年只有 1～3 人的柱子會落在最淺階，白卡上 L.78 的柱子幾乎看不見（2026-08-23 對照圖抓到）。
-function shade(v,max){var R=['#5e94af','#4c829c','#346b84','#0c4960'];
+function shade(v,max,R){R=R||SHADE.tenure;
   return R[Math.min(R.length-1,Math.floor(v/Math.max(max,1)*(R.length-0.01)))];}
 
-function colChart(bins){
-  var max=Math.max.apply(null,bins.counts.concat([1]));
-  return '<div class="cols">'+bins.labels.map(function(lb,i){
-    var h=Math.round(bins.counts[i]/max*118);
+/** 柱狀圖，可疊折線比較（2026-08-23 使用者：「有些圖可以再加資訊，用折線來比較」）。
+ *  opts.ramp  ＝柱子深淺的色相（SHADE.*）
+ *  opts.lines ＝[{label, values[], color}]，與柱子**共用同一條 y 軸**（人數）——
+ *               不做雙軸；線的最大值若超過柱子，軸就跟著放大，柱子變矮是正確的後果。
+ *  幾何：.n 固定 16px、.lb 固定 18px，柱區＝150-34＝116px；折線 SVG 絕對定位在柱區上，
+ *  x 用百分比（第 i 根柱的中心＝(i+.5)/n），y 用 px，所以不必知道容器實際寬度。 */
+function colChart(bins,opts){
+  opts=opts||{}; var lines=opts.lines||[], ramp=opts.ramp;
+  var H=116, BAR=112;
+  var allv=bins.counts.concat([1]); lines.forEach(function(l){allv=allv.concat(l.values);});
+  var max=Math.max.apply(null,allv), n=bins.labels.length;
+  var html='<div class="cols">'+bins.labels.map(function(lb,i){
+    var h=Math.round(bins.counts[i]/max*BAR);
     return '<div class="col"><div class="n">'+bins.counts[i]+'</div>'
-      +'<div class="bar" style="height:'+h+'px;background:'+shade(bins.counts[i],max)+'" title="'+esc(lb)+'：'+bins.counts[i]+' 人"></div>'
+      +'<div class="bar" style="height:'+h+'px;background:'+shade(bins.counts[i],max,ramp)+'" title="'+esc(lb)+'：'+bins.counts[i]+' 人"></div>'
       +'<div class="lb">'+esc(lb)+'</div></div>';
-  }).join('')+'</div>';
+  }).join('');
+  if(lines.length){
+    html+='<svg class="ol" height="'+H+'" aria-hidden="true">'+lines.map(function(l){
+      var pts=l.values.map(function(v,i){return [((i+.5)/n*100).toFixed(2)+'%',(H-v/max*BAR).toFixed(1)];});
+      var seg='';
+      for(var i=1;i<pts.length;i++) seg+='<line x1="'+pts[i-1][0]+'" y1="'+pts[i-1][1]+'" x2="'+pts[i][0]+'" y2="'+pts[i][1]+'" stroke="'+l.color+'" stroke-width="2" stroke-linecap="round"/>';
+      var dots=pts.map(function(q){return '<circle cx="'+q[0]+'" cy="'+q[1]+'" r="3.5" fill="'+l.color+'" stroke="#fff" stroke-width="1.5"/>';}).join('');
+      // 末端只標一個值（選擇性直接標示，不每點都標）；疊在柱子數字上方時往上讓 4px
+      var e=pts[pts.length-1], last=l.values[l.values.length-1];
+      var tag=l.endLabel?'<text x="'+e[0]+'" y="'+(parseFloat(e[1])-7)+'" font-size="11" fill="'+l.color+'" text-anchor="end" font-weight="600">'+esc(String(last))+'</text>':'';
+      return seg+dots+tag;
+    }).join('')+'</svg>';
+  }
+  html+='</div>';
+  if(lines.length) html=legend(lines.map(function(l){return l.label;}),lines.map(function(l){return l.color;}),true)+html;
+  return html;
 }
+/** agePairs（[年齡, 年資, 群組]）依 ① ② 的分段切桶，給「總公司 vs 工地」折線用。
+ *  只涵蓋同時有生日與入社日的人，所以線的合計可能略小於柱子——小標有講。 */
+function pairBins(pairs,idx,edges,group){
+  var out=edges.map(function(){return 0;});
+  pairs.forEach(function(p){ if(p[2]!==group) return; var v=p[idx];
+    for(var i=0;i<edges.length;i++){ if(v<edges[i]){out[i]++;return;} } out[edges.length-1]++; });
+  return out;
+}
+var TENURE_EDGES=[1,3,5,10,15,20,Infinity], AGE_EDGES=[25,30,35,40,45,50,55,60,Infinity];
 function stackRows(order,units,key,ramp,segLabels,maxCount,noteFn){
   return order.map(function(nm){
     var u=units[nm], segs=u[key], total=u.count;
@@ -123,8 +168,8 @@ function stackRows(order,units,key,ramp,segLabels,maxCount,noteFn){
       +'<div class="trk" style="max-width:'+w+'%">'+inner+'</div><div class="cnt">'+(noteFn?noteFn(u):total)+'</div></div>';
   }).join('');
 }
-function legend(labels,colors){
-  return '<div class="legend">'+labels.map(function(lb,i){return '<span><i style="background:'+colors[i]+'"></i>'+esc(lb)+'</span>';}).join('')+'</div>';
+function legend(labels,colors,asLine){
+  return '<div class="legend">'+labels.map(function(lb,i){return '<span><i class="'+(asLine?'ln':'')+'" style="background:'+colors[i]+'"></i>'+esc(lb)+'</span>';}).join('')+'</div>';
 }
 function numTable(order,units,key,segLabels){
   var head='<tr><th>單位</th>'+segLabels.map(function(l){return '<th>'+esc(l)+'</th>';}).join('')+'<th>計</th></tr>';
@@ -149,10 +194,16 @@ function renderHr(r){
       +'<div class="kpi"><div class="v">'+s.avgTenure+'</div><div class="k">平均年資（年）</div></div>'
       +'<div class="kpi"><div class="v">'+s.avgAge+'</div><div class="k">平均年齡（歲）</div></div></div>';
   // 1 年資分佈
-  html+='<div class="card"><div class="sec-h"><b>① 全公司年資分佈</b><small>看資深/資淺結構與斷層</small></div>'+colChart(s.tenureBins)
+  html+='<div class="card"><div class="sec-h"><b>① 全公司年資分佈</b><small>柱＝全公司；線＝總公司／工地各自人數（只含有入社日者）</small></div>'
+      +colChart(s.tenureBins,{ramp:SHADE.tenure,lines:s.agePairs&&s.agePairs.length?[
+        {label:'總公司',values:pairBins(s.agePairs,1,TENURE_EDGES,'總公司'),color:C_HQ},
+        {label:'工地',values:pairBins(s.agePairs,1,TENURE_EDGES,'工地'),color:C_SITE}]:[]})
       +(s.noJoin?'<div class="foot">※ '+s.noJoin+' 人無入社日未計入</div>':'')+'</div>';
   // 2 年齡分佈
-  html+='<div class="card"><div class="sec-h"><b>② 全公司年齡分佈</b><small>看年齡結構與退休高峰</small></div>'+colChart(s.ageBins)
+  html+='<div class="card"><div class="sec-h"><b>② 全公司年齡分佈</b><small>柱＝全公司；線＝總公司／工地各自人數（只含有生日者）</small></div>'
+      +colChart(s.ageBins,{ramp:SHADE.age,lines:s.agePairs&&s.agePairs.length?[
+        {label:'總公司',values:pairBins(s.agePairs,0,AGE_EDGES,'總公司'),color:C_HQ},
+        {label:'工地',values:pairBins(s.agePairs,0,AGE_EDGES,'工地'),color:C_SITE}]:[]})
       +(s.noBirth?'<div class="foot">※ '+s.noBirth+' 人無生日未計入</div>':'')+'</div>';
   // 3 各單位人數（降冪·雙色）
   html+='<div class="card"><div class="sec-h"><b>③ 各單位人數</b><small>總公司 vs 工地</small></div>'
@@ -180,8 +231,11 @@ function renderHr(r){
   if(jys.length){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
-    html+='<div class="card"><div class="sec-h"><b>⑥ 入社年度趨勢</b><small>每年新進人數（現仍在職者）；手機可左右滑動</small></div>'
-        +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div style="min-width:'+Math.max(trend.labels.length*30,320)+'px">'+colChart(trend)+'</div></div></div>';
+    html+='<div class="card"><div class="sec-h"><b>⑥ 入社年度趨勢</b><small>柱＝每年新進人數（現仍在職者）；線＝三年移動平均；手機可左右滑動</small></div>'
+        +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div style="min-width:'+Math.max(trend.labels.length*30,320)+'px">'
+        +colChart(trend,{ramp:SHADE.join,lines:[{label:'三年移動平均',color:'#6b6b68',
+          values:trend.counts.map(function(v,i,a){var w=a.slice(Math.max(0,i-2),i+1);return Math.round(w.reduce(function(x,y){return x+y;},0)/w.length*10)/10;})}]})
+        +'</div></div></div>';
   }
   // 7 單位健康矩陣：一點=一個單位（x=平均年齡 y=平均年資 大小=人數）；虛線=全公司平均、右上淡紅=雙高
   (function(){
@@ -227,7 +281,9 @@ function renderHr(r){
       if(a2>=65)rc.counts[0]++;
       else if(65-a2<=10)rc.counts[65-a2+1]++;
     });
-    html+='<div class="card"><div class="sec-h"><b>⑨ 未來退休曲線</b><small>每年將滿 65 歲的人數（依年齡推算·誤差±1年）；看斷崖在哪一年</small></div>'+colChart(rc)+'</div>';
+    html+='<div class="card"><div class="sec-h"><b>⑨ 未來退休曲線</b><small>柱＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；線＝累計退休人數</small></div>'
+        +colChart(rc,{ramp:SHADE.retire,lines:[{label:'累計',color:'#763640',endLabel:true,
+          values:rc.counts.map(function(v,i,a){return a.slice(0,i+1).reduce(function(x,y){return x+y;},0);})}]})+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
