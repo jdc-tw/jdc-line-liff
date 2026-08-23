@@ -58,6 +58,7 @@ var N = {
   seating: function (actId) { return 'getSeatingBoard:' + actId; },
   stations: function (actId) { return 'listStaffStations:' + actId; },
   senior: function (year) { return 'getSeniorNotice:' + year; },
+  preview: function (actId) { return 'previewPassBroadcast:' + actId; },
   attend: function (actId) { return 'attend:' + actId; }
 };
 
@@ -70,7 +71,13 @@ var N = {
 function nameOfSlice(action, slice, params) {
   var p = params || {};
   switch (action) {
-    case 'previewPassBroadcast': return null;   // 恆不落地，見設計 3.3.3
+    // 2026-08-23 推翻設計 3.3.3 的「恆不落地」（使用者指示：照資深員工通知怎麼做）。
+    // 只落地「沒帶範本」的那一份——它等於伺服器存起來的範本，跟重開一次頁面拿到的一樣。
+    // 帶了範本＝使用者還沒按儲存的草稿，存下去會讓下次開頁秒顯一份根本沒存進伺服器的內容。
+    // trim 後為空才算沒帶，與後端 String(tpl||'').trim() || passTemplate_() 同一條規則——
+    // 只比 ==='' 的話，純空白會被當草稿，快取靜默永不命中。
+    case 'previewPassBroadcast':
+      return String(p.tpl || '').trim() ? null : N.preview(p.actId);
     case 'getActivityStats':     return N.activityStats(p.act);
     case 'getSeatingBoard':      return N.seating(p.actId);
     case 'listStaffStations':    return N.stations(p.actId);
@@ -201,6 +208,26 @@ function _unhex(s) {
 function cacheGet(name) {
   if (_revoked) return null;
   return _mem[name] || null;
+}
+
+/**
+ * 刪掉單一個快取鍵（磁碟＋記憶體一起）。
+ *
+ * 為何需要（2026-08-23）：其他卡片的失效靠「寫入後重載，用新資料覆寫同一個鍵」
+ * （snLoad／stLoad／loadSeating 都是這個形狀，見 stats.html:1321 的註解）。
+ * 報到碼通知走不了那條路——它的重載 bcPreview() 一定帶著輸入框裡的 tpl，
+ * 而帶 tpl 的回應依 nameOfSlice 不落地，所以覆寫永遠不會發生。
+ * 存範本／預約／取消／發送之後必須主動把那個鍵拿掉，否則下次開頁秒顯的是異動前的狀態。
+ *
+ * 刻意只做單鍵，不做前綴掃描——設計 3.3.3 當初拿掉 cacheDeletePrefix 的理由
+ * （協調層、寫入屏障、跨分頁回灌）都來自前綴刪除，單鍵沒有那些。
+ */
+function cacheDrop(token, name) {
+  delete _mem[name];
+  if (!_store) return Promise.resolve();
+  return cacheFingerprint(token).then(function (fp) {
+    _store.removeItem(_prefix(fp) + name);
+  }).catch(function () { /* 算不出指紋就等於沒有快取，不影響畫面 */ });
 }
 
 /** 只清當前指紋。撤銷用這支，不用 cacheClearAll——別人的 token 的快取不該被牽連。 */
@@ -439,6 +466,7 @@ if (typeof module !== 'undefined') module.exports = {
   cacheBootstrap: cacheBootstrap,
   cacheGet: cacheGet,
   cacheSave: cacheSave,
+  cacheDrop: cacheDrop,
   cacheClear: cacheClear,
   cacheClearAll: cacheClearAll,
   cacheRevoke: cacheRevoke,

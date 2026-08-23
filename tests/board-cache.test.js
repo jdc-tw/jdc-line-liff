@@ -46,9 +46,11 @@ test('nameOfSlice：無參數的 action 用自己的名字', () => {
   assert.equal(BC.nameOfSlice('getHrStats', { ok: true }, {}), 'getHrStats');
 });
 
-test('nameOfSlice：只有 previewPassBroadcast 恆不落地，其餘一律落地', () => {
-  // previewPassBroadcast：輸入含使用者尚未儲存的輸入框內容，快取正確性成本高於收益（設計 3.3.3）
-  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '' }), null);
+test('nameOfSlice：帶著草稿的 previewPassBroadcast 不落地，其餘一律落地', () => {
+  // 舊前提（設計 3.3.3「恆不落地」）已於 2026-08-23 被使用者推翻，理由見本檔下方那一組
+  // 「報到碼通知落地快取」的測試。這裡改寫成新規則、不刪——刪掉會讓「帶草稿不存」
+  // 這條唯一還成立的守則失去看守人。
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '草稿' }), null);
   // 對照：同一發 batch 裡的其他支都要落地，證明上面那個 null 不是「全部都 null」。
   // ⚠️ getAnniversaries 2026-08-20 一度改成不落地（沒人讀＝白存），
   // 後來拍板改成「補讀取端讓它也秒顯」，所以它必須留在落地清單裡。
@@ -72,9 +74,10 @@ test('nameOfSlice：getActivityStats 的 act 為空時，名稱結尾就是冒�
   assert.equal(BC.nameOfSlice('getActivityStats', { ok: true }, {}), 'getActivityStats:');
 });
 
-test('nameOfSlice：previewPassBroadcast 恆回 null（不分 tpl 空不空，永不落地）', () => {
-  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { tpl: '' }), null);
-  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { tpl: '改過的範本' }), null);
+test('nameOfSlice：previewPassBroadcast 依 tpl 決定落不落地（2026-08-23 起）', () => {
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '' }),
+    'previewPassBroadcast:a');
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '改過的範本' }), null);
 });
 
 test('nameOfSlice：不認得的 action 回 null（fail-safe，不存看不懂的東西）', () => {
@@ -270,7 +273,10 @@ test('persistBatchSlices：params 取自 requestItems，不是回應', async () 
   const map = await BC.cacheBootstrap('tok-A');
   assert.ok(map['getSeatingBoard:midyear2026'], '名稱要用請求的 actId');
   assert.equal(map['getSeatingBoard:FROM-RESPONSE'], undefined);
-  assert.equal(Object.keys(map).length, 1, 'preview 恆不落地');
+  // preview 自 2026-08-23 起也落地（tpl 為空的那一份），名稱同樣得取自請求的 actId。
+  // 本測試的主題是「params 從哪裡來」，不是 preview 存不存——所以斷言跟著改，題目不變。
+  assert.ok(map['previewPassBroadcast:midyear2026'], 'preview 的名稱也要用請求的 actId');
+  assert.equal(Object.keys(map).length, 2);
   BC.__resetForTest();
 });
 
@@ -553,4 +559,57 @@ test('watchDirty：容器不存在時安靜略過，不得拋錯', () => {
   const { ctx } = loadWithFakeDom();
   assert.doesNotThrow(() => ctx.watchDirty('不存在的id'));
   assert.equal(ctx.isDirty('不存在的id'), false);
+});
+
+// ── 報到碼通知落地快取（2026-08-23）────────────────────────────────────
+// 為何推翻 3.3.3 的「恆不落地」：使用者 2026-08-23 指示「照資深員工通知當時怎麼做，
+// 就怎麼做」。資深通知（getSeniorNotice）同樣是「範本＋名單＋發送狀態」算出來的資料、
+// 下游同樣是收不回來的 LINE，它是落地快取的，且 2026-08-20 誤發事故後使用者已明確
+// 拍板「保留秒顯，只修漏洞」。兩張長得幾乎一樣的卡不該一張秒顯、一張每次白等。
+//
+// 安全性不靠快取正確，靠三道既有防線（都查證過）：
+//   ① 網路回來會覆蓋（兩段繪製，與 renderSenior 同形）
+//   ② 送出前的 confirm 把狀態講進確認框
+//   ③ 後端 doPassBroadcast_ 的冪等網（Code.js 的 res.skipped / skippedNames）
+//      ＋送出當下重驗 published / eventDate / templateHasUrl
+test('N.preview：以 actId 分開，切活動不會吃到別場的預覽', () => {
+  assert.equal(BC.N.preview('midyear2026'), 'previewPassBroadcast:midyear2026');
+  assert.notEqual(BC.N.preview('a'), BC.N.preview('b'));
+});
+
+test('nameOfSlice：previewPassBroadcast 只在 tpl 為空時落地（那份才等於伺服器存的範本）', () => {
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '' }),
+    'previewPassBroadcast:a');
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a' }),
+    'previewPassBroadcast:a', 'tpl 未帶＝後端退回存起來的那份，與空字串等價');
+});
+
+test('nameOfSlice：tpl 有內容 → 不落地（那是使用者還沒按儲存的草稿）', () => {
+  // 存下去的話，下次開頁會秒顯一份根本沒存進伺服器的範本，而使用者以為存過了。
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '改過的範本' }), null);
+  // 只有空白也算沒帶——與後端 String(tpl||'').trim() || passTemplate_() 同一條規則。
+  // 這裡刻意用「純空白」而不是空字串：兩者在 JS 是不同的值，但後端視為同一件事，
+  // 前端算名稱時若只比 ===''，空白字串會被當成草稿而永遠不落地（靜默失效）。
+  assert.equal(BC.nameOfSlice('previewPassBroadcast', { ok: true }, { actId: 'a', tpl: '   ' }),
+    'previewPassBroadcast:a');
+});
+
+test('cacheDrop：只刪指定那一個鍵，同指紋的其他快取不受牽連', async () => {
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheSave('tok-A', 'previewPassBroadcast:a', { ok: true, willSend: 137 });
+  await BC.cacheSave('tok-A', 'getRosterList', { ok: true, rows: ['王小明'] });
+  await BC.cacheDrop('tok-A', 'previewPassBroadcast:a');
+  assert.equal(BC.cacheGet('previewPassBroadcast:a'), null, '記憶體要一起清，否則本次開頁仍讀得到舊值');
+  assert.ok(BC.cacheGet('getRosterList'), '別人的快取不該被牽連');
+  // 磁碟也要真的沒了——只清 _mem 的話，重新整理又會把舊狀態撈回來。
+  await BC.cacheBootstrap('tok-A');
+  assert.equal(BC.cacheGet('previewPassBroadcast:a'), null, '重開頁仍不該讀到已失效的預覽');
+  assert.ok(BC.cacheGet('getRosterList'));
+});
+
+test('cacheDrop：沒有 store（隱私模式）或鍵不存在 → 安靜完成，不丟例外', async () => {
+  BC.__setStoreForTest(null);
+  await BC.cacheDrop('tok-A', 'previewPassBroadcast:a');
+  const st = fakeStore(); BC.__setStoreForTest(st);
+  await BC.cacheDrop('tok-A', '不存在的鍵');
 });
