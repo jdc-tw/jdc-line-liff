@@ -46,6 +46,25 @@ function statusOf(result) {
 }
 var STATUS_LABEL = { ok: '成功', bad: '失敗', skip: '略過' };
 
+/**
+ * 訊息型別代號 → 中文。hub 的 messageTypeOf 把一批訊息的 type 用 `+` 串起來，
+ * 所以 `text+image` 代表「一個人收到兩則：一則文字、一則圖片」。
+ *
+ * 2026-08-23 使用者指定移到卡面第一列（原本擠在名單的人名旁邊）。
+ * ⚠️ 沒收錄的代號**照原樣顯示**，不吞掉也不寫死成「其他」——LINE 日後多一種型別時，
+ *    看得到生代號才知道要來補這張表；顯示「其他」會讓那件事永遠沒人發現。
+ */
+var KIND_LABEL = {
+  text: '文字', image: '圖片', video: '影片', audio: '語音',
+  sticker: '貼圖', location: '位置', flex: '圖文', template: '範本',
+  imagemap: '圖文選單',
+};
+function kindLabel(kind) {
+  var parts = String(kind == null ? '' : kind).split('+').filter(function (k) { return k; });
+  if (!parts.length) return '';
+  return parts.map(function (k) { return KIND_LABEL[k] || k; }).join('＋');
+}
+
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
@@ -166,6 +185,7 @@ function groupBatches(header, rows) {
       source: src,
       categoryLabel: CATEGORY[src] || src || '（未申報）',
       gist: gistOf(col(header, g[0], '訊息內容'), col(header, g[0], '訊息型別')),
+      kind: col(header, g[0], '訊息型別'),
       rows: rs,
       tally: t,
       lamp: lamp,
@@ -215,20 +235,29 @@ function highlight(text, toks) {
   return out;
 }
 
-/** 24 則以內畫一顆一顆的點；再多就壓成比例條——點太密反而數不出來。 */
-function stripHtml(batch) {
-  var t = batch.tally, n = batch.rows.length;
-  var label = '成功 ' + t.ok + '，失敗 ' + t.bad + '，略過 ' + t.skip;
-  if (n <= 24) {
-    return '<span class="strip" role="img" aria-label="' + label + '">'
-      + batch.rows.map(function (r) { return '<i class="dot ' + r.st + '"></i>'; }).join('')
-      + '</span>';
-  }
-  var pct = function (v) { return (v / n * 100).toFixed(2) + '%'; };
-  return '<span class="strip"><span class="bar" role="img" aria-label="' + label + '">'
-    + '<span class="ok" style="width:' + pct(t.ok) + '"></span>'
-    + '<span class="bad" style="width:' + pct(t.bad) + '"></span>'
-    + '<span class="skip" style="width:' + pct(t.skip) + '"></span></span></span>';
+/**
+ * 收件人名字，逗號串起來。**全部輸出，讓 CSS 的 ellipsis 決定切在哪**——
+ * 使用者 2026-08-23：「看目前的文字大小可以列出幾個完整的名字，就列出多少就好」。
+ * ⚠️ 刻意不在 JS 算「放得下幾個」：字寬隨字型、字級、裝置、使用者的縮放設定變動，
+ *    算出來的數字在某一台一定是錯的；CSS 用實際排版結果切，永遠對。
+ *    代價是 DOM 裡有看不見的字——可接受，那些字本來就要進搜尋索引。
+ */
+function namesLine(batch, toks) {
+  return batch.rows.map(function (r) { return highlight(r.name, toks); }).join('、');
+}
+
+/**
+ * 失敗／略過的註記。**全成功時回空字串**（燈號已經是綠的，再寫一次是廢話）。
+ *
+ * 為何需要它：統一燈號只有三色，137 人裡 3 人失敗與 137 人全滅都是同一顆紅點。
+ * 原本靠每人一顆點的狀態列表達規模，2026-08-23 使用者拍板拿掉那排點，
+ * 規模就沒有別的地方講得出來了——這一格是補上那個洞，不是裝飾。
+ */
+function failNote(batch) {
+  var t = batch.tally, out = [];
+  if (t.bad) out.push(t.bad + ' 失敗');
+  if (t.skip) out.push(t.skip + ' 略過');
+  return out.join('・');
 }
 
 /**
@@ -242,13 +271,14 @@ function stripHtml(batch) {
  */
 function foldHtml(batch, toks) {
   var body = batch.rows.map(function (r) {
+    // 2026-08-23：型別搬去卡面第一列（整批共用，逐人重複沒有意義）；
+    // 狀態從「成功」二字改成一顆燈點——同一個資訊用兩種語彙表達，讀的人要換兩次腦。
+    // 燈點放在最右，與卡面第一列的總燈號同一欄位、同一套顏色。
     return '<div class="prow">'
       + '<span class="nm">' + highlight(r.name, toks) + '</span>'
       + (r.unit ? '<span class="tag">' + highlight(r.unit, toks) + '</span>' : '')
-      + (r.kind ? '<span class="tag">' + highlight(r.kind, toks) + '</span>' : '')
       + '<span class="sp"></span>'
-      + '<span class="tag ' + (r.st === 'ok' ? 'g' : (r.st === 'bad' ? 'r' : '')) + '">'
-      + STATUS_LABEL[r.st] + '</span>'
+      + '<i class="lamp ' + r.st + '" role="img" aria-label="' + STATUS_LABEL[r.st] + '"></i>'
       + (r.error ? '<span class="err">' + highlight(r.error, toks) + '</span>' : '')
       + '</div>';
   }).join('');
@@ -280,19 +310,22 @@ function fullMessageOf(batch) {
  * @param {string} [anchorId] 當天第一張卡才給——滑桿的「日」模式靠它跳。
  */
 function cardHtml(batch, toks, anchorId) {
+  var kind = kindLabel(batch.kind);
+  var note = failNote(batch);
   return '<div class="card"' + (anchorId ? ' id="' + esc(anchorId) + '"' : '') + '><div class="head">'
     + '<div class="ln">'
     +   '<span class="tag ' + esc(batch.source) + '">'
     +     highlight(batch.categoryLabel, toks) + '</span>'
     +   '<span class="dt">' + highlight(batch.time.slice(5, 10), toks) + '</span>'
     +   '<span class="tm">' + highlight(batch.time.slice(11, 16), toks) + '</span>'
+    +   (kind ? '<span class="kind">' + highlight(kind, toks) + '</span>' : '')
     +   '<i class="lamp ' + batch.lamp + '" role="img" aria-label="'
     +     batch.statusLabel + '"></i>'
     + '</div>'
     + '<div class="ln">'
     +   '<span class="num">' + batch.rows.length + '<u>\u4eba</u></span>'
-    +   '<span class="num">' + batch.msgCount + '<u>\u5247</u></span>'
-    +   stripHtml(batch)
+    +   '<span class="names">' + namesLine(batch, toks) + '</span>'
+    +   (note ? '<span class="fail">' + esc(note) + '</span>' : '')
     + '</div>'
     + '<div class="gist">' + highlight(batch.gist, toks) + '</div>'
     + '</div>' + foldHtml(batch, toks) + '</div>';
@@ -391,9 +424,10 @@ if (typeof module !== 'undefined' && module.exports) {
     CATEGORY: CATEGORY, SKIP_RESULT: SKIP_RESULT, STATUS_LABEL: STATUS_LABEL,
     sinceWarning: sinceWarning, railTicks: railTicks, fullMessageOf: fullMessageOf,
     esc: esc, col: col, statusOf: statusOf, gistOf: gistOf, textInPayload: textInPayload,
+    KIND_LABEL: KIND_LABEL, kindLabel: kindLabel, namesLine: namesLine, failNote: failNote,
     msgCountOf: msgCountOf, tallyOf: tallyOf, lampOf: lampOf,
     groupBatches: groupBatches, monthGroups: monthGroups,
-    highlight: highlight, stripHtml: stripHtml, foldHtml: foldHtml,
+    highlight: highlight, foldHtml: foldHtml,
     cardHtml: cardHtml, listHtml: listHtml,
   };
 }
