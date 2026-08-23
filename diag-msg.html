@@ -475,6 +475,20 @@ body.d-noafter .stickytop::after { display: none !important; }
 body.d-nomargin .stickytop { margin-top: 0 !important; }
 body.d-nopad { padding-left: 0 !important; padding-right: 0 !important; }
 body.d-nowrap .wrap { max-width: none !important; margin: 0 !important; padding-left: 8px !important; padding-right: 8px !important; }
+
+/* ── 第三輪：元凶已定位到「body 左右內距」（使用者二分搜尋結果）──
+   但 stats.html／board.html 的 body **也有 padding**（20px 16px 40px）卻不穿透，
+   所以不是「有 padding」本身。三個候選差異：
+     ① messages 用 calc() ＋ CSS 變數，stats 是固定值
+     ② messages 是 74px（讓出滑桿欄），stats 是 16px
+     ③ stats 的 body 有 margin: 0 auto，messages 只有 margin: 0
+   四個變體逐一套用（互斥），看哪些不穿透。 */
+body.v1 { padding-left: 74px !important; padding-right: 0 !important; }              /* 去掉 calc 與變數 */
+body.v2 { padding-left: 16px !important; padding-right: 16px !important; }           /* 縮小數值 */
+body.v3 { padding-left: 0 !important; padding-right: 0 !important; }                 /* 移到內層 */
+body.v3 .wrap { padding-left: calc(16px + var(--rail-w)) !important; max-width: none !important; }
+body.v4 { margin: 0 auto !important; max-width: 480px !important; }                  /* 比照 stats 的 margin auto */
+
 </style>
 </head>
 <body>
@@ -851,6 +865,14 @@ cacheBootstrap(TOKEN).then(function () {
   <button id="dno">沒穿透</button>
   <button id="dback">上一步</button>
   <button id="dreset">重來</button>
+  <hr style="border:0;border-top:1px solid #ececea;margin:8px 0">
+  <b>第三輪：四個變體</b>
+  <div class="stepline" id="vnow">目前：原樣</div>
+  <button data-v="v1">① 固定 74px（不用 calc）</button>
+  <button data-v="v2">② 縮成 16px</button>
+  <button data-v="v3">③ 移到內層容器</button>
+  <button data-v="v4">④ 比照 stats 的 margin auto</button>
+  <button data-v="">回原樣</button>
   <div class="st" id="dst"></div>
 </div>
 <script>
@@ -924,6 +946,22 @@ cacheBootstrap(TOKEN).then(function () {
     var h = hist.pop(); if (!h) return;
     cand = h.cand; trying = h.trying; done = null; apply(trying); paint();
   });
+  // 四個變體互斥——一次只套一個，否則分不出是誰的功勞
+  var VN = { v1: '① 固定 74px（不用 calc）', v2: '② 縮成 16px',
+             v3: '③ 移到內層容器', v4: '④ 比照 stats 的 margin auto' };
+  [].slice.call(document.querySelectorAll('#dctl button[data-v]')).forEach(function (bt) {
+    bt.addEventListener('click', function () {
+      ['v1','v2','v3','v4'].forEach(function (v) { document.body.classList.remove(v); });
+      var v = bt.dataset.v;
+      if (v) document.body.classList.add(v);
+      document.querySelectorAll('#dctl button[data-v]').forEach(function (x) {
+        x.className = (x.dataset.v === v && v) ? 'on' : '';
+      });
+      document.getElementById('vnow').textContent = '目前：' + (VN[v] || '原樣');
+      window.scrollTo(0, 0);
+    });
+  });
+
   document.getElementById('dreset').addEventListener('click', function () {
     cand = FEATS.map(function (f) { return f[0]; }); hist = []; done = null; step();
   });
