@@ -38,7 +38,9 @@
   /* KPI row */
   .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .kpi{flex:1 1 30%;background:#fff;border:1px solid var(--ln);border-radius:3px;padding:14px 16px;text-align:center}
-  .kpi .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}
+  .kpi .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;position:relative}
+  .kpi .d{position:absolute;margin-left:4px;top:6px;font-size:10.5px;font-weight:600;white-space:nowrap}
+  .kpi .d.up{color:#b95f85}.kpi .d.dn{color:#4f90bf}.kpi .d.flat{color:var(--ink3);font-weight:400}
   .kpi .k{font-size:12px;color:var(--ink3)}
   /* 直方圖（縱向柱）。柱色刻意取深階（L≈0.50）——灰底上淡色柱子會消失，
      這是「低調但要看得清」的補償：彩度不拉高，靠明度差拉開。 */
@@ -268,6 +270,7 @@ function colChart(bins,opts){
     var lmax=opts.rightAxis?Math.max.apply(null,[].concat.apply([1],lines.map(function(l){return l.values;}))):max;
     html+='<svg class="ol" height="'+H+'" aria-hidden="true">'+(opts.rightAxis?'<text x="100%" y="'+(H-lmax/lmax*BAR+4)+'" font-size="9.5" fill="#9a9a96" text-anchor="end">'+lmax+'</text>':'')+lines.map(function(l){
       var pts=l.values.map(function(v,i){return [((i+.5)/n*100).toFixed(2)+'%',(H-v/lmax*BAR).toFixed(1)];});
+      if(opts.skipFirst) pts=pts.slice(1);   // ⑮：累計線從第二格起畫，第一格「已滿 65」只留棒棒糖（2026-08-23 使用者：起點跟合計重疊）
       var seg='';
       for(var i=1;i<pts.length;i++) seg+='<line x1="'+pts[i-1][0]+'" y1="'+pts[i-1][1]+'" x2="'+pts[i][0]+'" y2="'+pts[i][1]+'" stroke="'+l.color+'" stroke-width="1.2"'+(opts.rightAxis?' stroke-dasharray="3 3"':'')+' stroke-linecap="round"/>';
       var dots=opts.rightAxis?'':pts.map(function(q){return '<circle cx="'+q[0]+'" cy="'+q[1]+'" r="2.5" fill="'+l.color+'" stroke="#fff" stroke-width="1"/>';}).join('');
@@ -275,7 +278,7 @@ function colChart(bins,opts){
       var e=pts[pts.length-1], last=l.values[l.values.length-1];
       var tag=l.endLabel?'<text x="'+e[0]+'" y="'+(parseFloat(e[1])-7)+'" font-size="11" fill="'+l.color+'" text-anchor="end" font-weight="600">'+esc(String(last))+'</text>':'';
       // labelAll：每個點上方標值（灰色小字）——⑮ 合計線（2026-08-23 使用者）
-      if(l.labelAll) tag=pts.map(function(q,i){return '<text x="'+q[0]+'" y="'+(parseFloat(q[1])-5)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+esc(String(l.values[i]))+'</text>';}).join('');
+      if(l.labelAll){var o=opts.skipFirst?1:0;tag=pts.map(function(q,i){return '<text x="'+q[0]+'" y="'+(parseFloat(q[1])-5)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+esc(String(l.values[i+o]))+'</text>';}).join('');}
       return seg+dots+tag;
     }).join('')+'</svg>';
   }
@@ -376,8 +379,9 @@ function areaChart(labels,values,color,fill,lines,cum){
     l.values.forEach(function(v,i){if(!v)return;svg+='<rect x="'+(x(i)+off-bw/2).toFixed(1)+'" y="'+y(v).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(y(0)-y(v)).toFixed(1)+'" fill="'+l.color+'" rx=".8"><title>'+esc(l.label)+' '+esc(labels[i])+'：'+v+' 人</title></rect>';});
   });
   values.forEach(function(v,i){
-    svg+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="'+(top.indexOf(i)>=0?3:1.8)+'" fill="'+color+'" stroke="#fff" stroke-width="1"><title>'+esc(labels[i])+'：'+v+' 人</title></circle>';
-    if(top.indexOf(i)>=0) svg+='<text x="'+x(i).toFixed(1)+'" y="'+(y(v)-8).toFixed(1)+'" font-size="11" font-weight="600" fill="#2c2c2b" text-anchor="'+(x(i)>W-24?'end':x(i)<24?'start':'middle')+'">'+v+'</text>';
+    svg+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="1.8" fill="'+color+'" stroke="#fff" stroke-width="1"><title>'+esc(labels[i])+'：'+v+' 人</title></circle>';
+    // 全公司每兩年一個灰色小字（2026-08-23 使用者；原本標最高三年）
+    if((n-1-i)%2===0) svg+='<text x="'+x(i).toFixed(1)+'" y="'+(y(v)-6).toFixed(1)+'" font-size="9.5" fill="#9a9a96" text-anchor="'+(x(i)>W-24?'end':x(i)<24?'start':'middle')+'">'+v+'</text>';
     if((n-1-i)%every===0) svg+='<text x="'+x(i).toFixed(1)+'" y="'+(H-6)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+esc(labels[i])+'</text>';
   });
   // 寬度貼合容器（viewBox 等比縮放）；容器比 W 窄時才出現橫向捲動
@@ -386,7 +390,7 @@ function areaChart(labels,values,color,fill,lines,cum){
     var cmax=Math.max.apply(null,cum.values.concat([1]));
     var cy=function(v){return PT+(1-v/cmax)*(H-PT-PB);};
     svg+='<polyline points="'+cum.values.map(function(v,i){return x(i).toFixed(1)+','+cy(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+cum.color+'" stroke-width="1.2" stroke-dasharray="1 3" stroke-linecap="round" stroke-linejoin="round"/>'
-      +cum.values.map(function(v,i){return (n-1-i)%2===0?'<text x="'+x(i).toFixed(1)+'" y="'+(cy(v)+12).toFixed(1)+'" font-size="9.5" fill="#9a9a96" text-anchor="'+(i===n-1?'end':'middle')+'">'+v+'</text>':'';}).join('')
+      +'<text x="'+(x(n-1)-6).toFixed(1)+'" y="'+(cy(cum.values[n-1])+12).toFixed(1)+'" font-size="10" fill="'+cum.color+'" text-anchor="end">'+cum.values[n-1]+'</text>'
       +'<text x="'+(W-2)+'" y="'+(cy(cmax)+3.5).toFixed(1)+'" font-size="9.5" fill="'+cum.color+'" text-anchor="end">'+cmax+'</text>'
       +'<text x="'+(W-2)+'" y="'+(cy(0)-3).toFixed(1)+'" font-size="9.5" fill="#9a9a96" text-anchor="end">0</text>';
   }
@@ -480,9 +484,20 @@ function renderHr(r){
 
   var html='';
   // KPI
-  html+='<div class="kpis"><div class="kpi"><div class="v">'+s.total+'</div><div class="k">在職人數</div></div>'
-      +'<div class="kpi"><div class="v">'+s.avgTenure+'</div><div class="k">平均年資（年）</div></div>'
-      +'<div class="kpi"><div class="v">'+s.avgAge+'</div><div class="k">平均年齡（歲）</div></div></div>';
+  html+='<div class="kpis"><div class="kpi"><div class="v">'+s.total+'<small class="d" data-k="total"></small></div><div class="k">在職人數</div></div>'
+      +'<div class="kpi"><div class="v">'+s.avgTenure+'<small class="d" data-k="avgTenure"></small></div><div class="k">平均年資（年）</div></div>'
+      +'<div class="kpi"><div class="v">'+s.avgAge+'<small class="d" data-k="avgAge"></small></div><div class="k">平均年齡（歲）</div></div></div>';
+  // 較 30 天前的增減（2026-08-23 使用者）：讀每日快照 hr-stats-history.json，取 ≥30 天前最近的一筆；不足 30 天就用最早那筆。
+  // 沒有快照或只有今天一筆就不顯示——不顯示比顯示 0 誠實。
+  fetch('hr-stats-history.json?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();}).then(function(h){
+    if(!h||h.length<2) return;
+    var today=h[h.length-1].d, cut=new Date(today); cut.setDate(cut.getDate()-30); var cutS=cut.toISOString().slice(0,10);
+    var base=h.filter(function(x){return x.d<=cutS;}).pop()||h[0]; if(base.d===today) return;
+    var cur={total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge};
+    Array.prototype.forEach.call(main.querySelectorAll('.kpi .d'),function(el){var k=el.getAttribute('data-k'),d=Math.round((cur[k]-base[k])*10)/10;
+      if(!d){el.textContent='—';el.className='d flat';} else {el.textContent=(d>0?'▲':'▼')+Math.abs(d);el.className='d '+(d>0?'up':'dn');}
+      el.title='較 '+base.d+'（'+base[k]+'）';});
+  }).catch(function(){});
   // 1 單位體質雷達（2026-08-23 使用者：放第一張，當作下面所有圖的總和；多一點分析與分類）
   (function(){
     var R5=function(u){var R=u.retire;return R.now.length+(R.y1||[]).length+(R.y3||[]).length+R.y5.length;};
@@ -572,20 +587,26 @@ function renderHr(r){
     var xs=function(a){return PX+(a-aMin)/(aMax-aMin)*(W-PX-16);};
     var ys=function(t){return H-PY-(t/tMax)*(H-PY-16);};
     var svg='';
-    for(var a=Math.ceil(aMin/5)*5;a<aMax;a+=5) svg+='<line x1="'+xs(a)+'" y1="'+(H-PY)+'" x2="'+xs(a)+'" y2="12" stroke="#ececea"/><text x="'+xs(a)+'" y="'+(H-6)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+a+'歲</text>';
-    for(var t=2;t<tMax;t+=2) svg+='<line x1="'+PX+'" y1="'+ys(t)+'" x2="'+(W-16)+'" y2="'+ys(t)+'" stroke="#ececea"/><text x="'+(PX-4)+'" y="'+(ys(t)+3)+'" font-size="10" fill="#9a9a96" text-anchor="end">'+t+'年</text>';
+    for(var a=Math.ceil(aMin/5)*5;a<aMax;a+=5) svg+='<line x1="'+xs(a)+'" y1="'+(H-PY)+'" x2="'+xs(a)+'" y2="12" stroke="#f3f3f1"/><text x="'+xs(a)+'" y="'+(H-6)+'" font-size="9.5" fill="#9a9a96" text-anchor="middle">'+a+'歲</text>';
+    for(var t=2;t<tMax;t+=4) svg+='<line x1="'+PX+'" y1="'+ys(t)+'" x2="'+(W-16)+'" y2="'+ys(t)+'" stroke="#f3f3f1"/><text x="'+(PX-4)+'" y="'+(ys(t)+3)+'" font-size="9.5" fill="#9a9a96" text-anchor="end">'+t+'年</text>';
     [['總公司',C_HQ,22],['工地','#8f9aa6',H-PY-5]].forEach(function(g){var ga=R.gAvgs[g[0]];if(!ga)return;   // 均齡標籤：總公司在頂、工地在底，兩組太近會疊
       svg+='<line x1="'+xs(ga[2]).toFixed(1)+'" y1="12" x2="'+xs(ga[2]).toFixed(1)+'" y2="'+(H-PY)+'" stroke="'+g[1]+'" stroke-dasharray="3 3"/>'
          +'<text x="'+(xs(ga[2])+3).toFixed(1)+'" y="'+g[2]+'" font-size="9.5" fill="'+g[1]+'">'+g[0]+'均齡 '+(Math.round(ga[2]*10)/10)+'</text>'
          +'<line x1="'+PX+'" y1="'+ys(ga[1]).toFixed(1)+'" x2="'+(W-16)+'" y2="'+ys(ga[1]).toFixed(1)+'" stroke="'+g[1]+'" stroke-dasharray="3 3"/>'
          +'<text x="'+(W-18)+'" y="'+(ys(ga[1])-4).toFixed(1)+'" font-size="9.5" fill="'+g[1]+'" text-anchor="end">'+g[0]+'均資 '+(Math.round(ga[1]*10)/10)+'</text>';});
+    // 標籤避讓：預設標在點右側；跟已放的標籤框相撞就改標在點下方（再撞就上方）。框寬≈字數×9.5
+    var placed=[];
+    var fits=function(b){return !placed.some(function(q){return b.x<q.x+q.w&&b.x+b.w>q.x&&b.y<q.y+q.h&&b.y+b.h>q.y;});};
+    s.unitOrder.forEach(function(nm){var u=s.units[nm],r=3+Math.sqrt(u.count)*1.1;placed.push({x:xs(u.avgAge)-r,y:ys(u.avgTenure)-r,w:2*r,h:2*r});});   // 點本身也是障礙
     s.unitOrder.forEach(function(nm){
-      var u=s.units[nm],tags=R.classify(nm),col=TAGC[tags[0].t]||'#9a9a96',r=4+Math.sqrt(u.count)*1.7;
-      svg+='<circle cx="'+xs(u.avgAge).toFixed(1)+'" cy="'+ys(u.avgTenure).toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+col+'" fill-opacity="0.85" stroke="#fff" stroke-width="1.5"><title>'+esc(nm)+'：'+tags.map(function(t){return t.t;}).join('・')+'；均齡 '+u.avgAge+'・均資 '+u.avgTenure+'・'+u.count+' 人</title></circle>'
-         +(tags.length>1?'<circle cx="'+xs(u.avgAge).toFixed(1)+'" cy="'+ys(u.avgTenure).toFixed(1)+'" r="'+(r+2.5).toFixed(1)+'" fill="none" stroke="'+(TAGC[tags[1].t]||'#9a9a96')+'" stroke-width="1.5"/>':'')
-         +'<text x="'+(xs(u.avgAge)+r+4).toFixed(1)+'" y="'+(ys(u.avgTenure)+3).toFixed(1)+'" font-size="10" fill="#2c2c2b">'+esc(nm)+'</text>';
+      var u=s.units[nm],tags=R.classify(nm),col=TAGC[tags[0].t]||'#9a9a96',r=3+Math.sqrt(u.count)*1.1,cx=xs(u.avgAge),cy=ys(u.avgTenure),w=nm.length*9.5;
+      var cands=[{x:cx+r+3,y:cy-6,a:'start'},{x:cx-w/2,y:cy+r+3,a:'middle'},{x:cx-w/2,y:cy-r-14,a:'middle'},{x:cx-r-3-w,y:cy-6,a:'end'}];
+      var c=cands.filter(function(b){return fits({x:b.x,y:b.y,w:w,h:12});})[0]||cands[0]; placed.push({x:c.x,y:c.y,w:w,h:12});
+      var tx=c.a==='start'?c.x:c.a==='end'?c.x+w:c.x+w/2;
+      svg+='<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+col+'" fill-opacity="0.9" stroke="#fff" stroke-width="1"><title>'+esc(nm)+'：'+tags.map(function(t){return t.t;}).join('・')+'；均齡 '+u.avgAge+'・均資 '+u.avgTenure+'・'+u.count+' 人</title></circle>'
+         +'<text x="'+tx.toFixed(1)+'" y="'+(c.y+9).toFixed(1)+'" font-size="9.5" fill="#2c2c2b" stroke="#fff" stroke-width="2.5" paint-order="stroke" stroke-linejoin="round" text-anchor="'+c.a+'">'+esc(nm)+'</text>';
     });
-    html+='<div class="card"><div class="sec-h"><b>② 單位健康矩陣</b><small>①的平面版：一點＝一個單位，越右越年長、越上越資深、點越大人越多；點色＝①的分類（第二個分類畫成外圈）；虛線＝同組平均。分類規則見①的健康報告</small></div>'
+    html+='<div class="card"><div class="sec-h"><b>② 單位健康矩陣</b><small>①的平面版：一點＝一個單位，越右越年長、越上越資深、點越大人越多；點色＝①的主分類（多個分類看滑過提示）；虛線＝同組平均。分類規則見①的健康報告</small></div>'
         +'<div class="legend">'+Object.keys(TAGC).map(function(k){return '<span><i style="background:'+TAGC[k]+';border-radius:50%"></i>'+k+'</span>';}).join('')+'</div>'
         +'<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto">'+svg+'</svg></div>';
   })();
@@ -654,7 +675,7 @@ function renderHr(r){
   if(jys.length){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
-    html+='<div class="card"><div class="sec-h"><b>⑪ 入社年度趨勢</b><small>淺藍面積＝每年新進人數（現仍在職者），標最高三年；細柱＝總公司（藍）／工地（灰）'+(s.joinYearsByGroup?'':'（由年資回推入社年，±1 年）')+'；點線＝累計在職人數（右軸）</small></div>'
+    html+='<div class="card"><div class="sec-h"><b>⑪ 入社年度趨勢</b><small>淺藍面積＝每年新進人數（現仍在職者），每兩年標一次；細柱＝總公司（藍）／工地（灰）'+(s.joinYearsByGroup?'':'（由年資回推入社年，±1 年）')+'；點線＝累計在職人數（右軸）</small></div>'
         +areaChart(trend.labels,trend.counts,'#a9cde6','#e1eef7',(function(){
           if(s.joinYearsByGroup){   // 後端直接算的真值（2026-08-23 加）；沒有才退回用年資回推
             var byY=function(g){return trend.labels.map(function(lb,i){return (s.joinYearsByGroup[g]||{})[String(y0+i)]||0;});};
@@ -729,10 +750,10 @@ function renderHr(r){
       if(k<0) return; rc.counts[k]++; (p[2]==='總公司'?rcHq:rcSite)[k]++;
     });
     var cum=function(a){return a.map(function(v,i){return a.slice(0,i+1).reduce(function(x,y){return x+y;},0);});};
-    html+='<div class="card"><div class="sec-h"><b>⑮ 未來退休曲線</b><small>點＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；虛線＝累計退休人數（右軸），分總公司／工地／合計</small></div>'
+    html+='<div class="card"><div class="sec-h"><b>⑮ 未來退休曲線</b><small>點＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；虛線＝累計退休人數（右軸，含已滿 65，從 \'26 起畫），分總公司／工地／合計</small></div>'
         +(function(){var ch=cum(rcHq),cs=cum(rcSite),ca=cum(rc.counts),L=ch.length-1;
           // 上：逐年人數（棒棒糖、自己的尺度）；下：三條累計線（自己的尺度）。2026-08-23 使用者：疊在一起時逐年點被壓在底部看不出差異
-          return colChart(rc,{ramp:SHADE.retire,lollipop:true,rightAxis:true,height:300,lines:[
+          return colChart(rc,{ramp:SHADE.retire,lollipop:true,rightAxis:true,height:300,skipFirst:true,lines:[
             {label:'總公司累計 '+ch[L],color:'#2f6fae',values:ch},
             {label:'工地累計 '+cs[L],color:'#4a5563',values:cs},
             {label:'合計 '+ca[L],color:'#b95f85',labelAll:true,values:ca}]});})()+'</div>';

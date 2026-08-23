@@ -28,18 +28,23 @@ jobs:
           GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
           curl -fsSL "$GAS?action=getHrStatsPublic&callback=__cb" \
             | sed -E 's/^__cb\((.*)\)$/\1/' > hr-stats-pub.json.new
-          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('hr-stats-pub.json.new','utf8')); if(!r.ok||!r.stats||!r.stats.total) throw new Error('hr-stats 內容異常，放棄更新'); if(!r.stats.pub) throw new Error('缺 pub 旗標，疑似含姓名的 gated 版，放棄'); const nm=[]; Object.keys(r.stats.units).forEach(function(n){const R=r.stats.units[n].retire; ['now','y5','y10'].forEach(function(k){R[k].forEach(function(v){if(v)nm.push(v);});});}); if(nm.length) throw new Error('偵測到姓名外洩('+nm.length+')，放棄更新'); console.log('✓ 在職',r.stats.total,'| 單位',r.stats.unitOrder.length,'| 退休名單已剝名')"
+          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('hr-stats-pub.json.new','utf8')); if(!r.ok||!r.stats||!r.stats.total) throw new Error('hr-stats 內容異常，放棄更新'); if(!r.stats.pub) throw new Error('缺 pub 旗標，疑似含姓名的 gated 版，放棄'); const nm=[]; Object.keys(r.stats.units).forEach(function(n){const R=r.stats.units[n].retire; ['now','y1','y3','y5','y10'].forEach(function(k){(R[k]||[]).forEach(function(v){if(v)nm.push(v);});});}); if(nm.length) throw new Error('偵測到姓名外洩('+nm.length+')，放棄更新'); console.log('✓ 在職',r.stats.total,'| 單位',r.stats.unitOrder.length,'| 退休名單已剝名')"
           mv hr-stats-pub.json.new hr-stats-pub.json
+
+      # 每日快照（2026-08-23）：KPI 的「較 30 天前」增減要有歷史才算得出來。一天一筆、同日覆寫、最多留 730 筆。
+      - name: 追加每日快照到 hr-stats-history.json
+        run: |
+          node -e "const fs=require('fs'); const s=JSON.parse(fs.readFileSync('hr-stats-pub.json','utf8')).stats; const d=new Date(Date.now()+8*3600e3).toISOString().slice(0,10); let h=[]; try{h=JSON.parse(fs.readFileSync('hr-stats-history.json','utf8'));}catch(e){} h=h.filter(function(x){return x.d!==d;}); h.push({d:d,total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge}); h.sort(function(a,b){return a.d<b.d?-1:1;}); if(h.length>730)h=h.slice(-730); fs.writeFileSync('hr-stats-history.json',JSON.stringify(h)); console.log('✓ 快照',d,'共',h.length,'筆')"
 
       - name: 有變動才 commit & push
         run: |
-          if git diff --quiet hr-stats-pub.json; then
+          if git diff --quiet hr-stats-pub.json hr-stats-history.json; then
             echo "人事聚合無變動，不需更新。"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hr-stats-pub.json
+          git add hr-stats-pub.json hr-stats-history.json
           git commit -m "chore: 自動更新 hr-stats-pub.json（排程）"
           git push
           echo "✓ 已更新並推上 GitHub Pages"
