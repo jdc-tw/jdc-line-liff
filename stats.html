@@ -2281,17 +2281,12 @@ var LAST_VERDICT='ok';
 FIRST.then(function(env){LAST_VERDICT=(env&&env._verdict)||'ok';});
 
 // ── LINE 訊息紀錄連結與未送出警語 ────────────────────────────────────────
-// ⚠️ 暫停對承辦人露出（2026-08-20 使用者指示）：功能完整保留，只是不接上。
-//    要上線把下面這個常數改成 true——**但不是只改這一個字就好**：
-//    `getUndelivered` 的呼叫點在首載批次之前、而且沒走 queueRead，
-//    旗標一翻它就會與首載批次同時起跑，違反本站「同頁任一時刻最多一支 /exec」。
-//    （yu-agent-a5 在 bb72b32 實測：getUndelivered 34→2135ms 與 batch 35→6034ms
-//      重疊。**現在量不到並行是因為旗標是 false，不是因為修好了。**）
-//    修法：把這段移到第二發批次之後，再包 queueRead——警語晚幾秒到沒有代價；
-//    不要併進首載 batch，那會讓首屏多等 2 秒。
+// 2026-08-23 對佳岑上線（使用者拍板：只開這一頁，board.html〔雅慧〕維持 false——
+//    未送出的紅字對她是看得懂卻不歸她處理的雜訊，而 getUndelivered 的角色是 any，
+//    她的 token 打得到）。
 //    ⚠️ 這個開關**不管**上面資深通知的三態顯示（snPickMsg／snSend 的 SN.status）
 //       ——那是安全機制，斷了會讓小字永遠空白（後端已不回舊的 SN.sent），故意不放進來。
-var MSG_LOG_UI_ON = false;
+var MSG_LOG_UI_ON = true;
 
 // 連結用 ?mt= 帶 hub 的 viewer token，與看板自己的 ?t= 分開：
 // 一顆給 line-platform、一顆給 hub，權限來源不同，不可共用。
@@ -2303,13 +2298,28 @@ var MSG_LOG_UI_ON = false;
   if(mt){ a.href='messages.html?t='+encodeURIComponent(mt); a.hidden=false; }
 })();
 
-if(MSG_LOG_UI_ON){
-  jsonp('getUndelivered',{token:q('t')}).then(function(r){
-    if(r&&r.ok&&r.pending>0){
-      var bar=document.getElementById('alertBar');
-      bar.textContent='🔴 有 '+r.pending+' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
-      bar.style.display='block';
-    }
+// 未送出警語的呼叫**排在第二發批次之後、且包 queueRead**（2026-08-23，T279）。
+// 原本是頂層裸 jsonp：旗標一翻就會與首載批次同時起跑，違反本站「同頁任一時刻
+// 最多一支 /exec」（yu-agent-a5 在 bb72b32 實測 getUndelivered 34→2135ms 與
+// 首載 batch 35→6034ms 重疊）。不併進首載 batch——那會讓首屏多等 2 秒；
+// 警語內容是「有 N 則沒送出，去試算表確認」，晚幾秒到沒有代價。
+// second 收到 null＝第一發撤銷或離線，此時不再追加請求（畫面已經被覆蓋層蓋住）。
+// 抽成具名函式是為了讓 tests/msglog-order.test.js 抓得到接線順序；
+// 頂層 if 區塊沒有名字，測試只能比對字串，改壞了不會紅。
+function wireUndeliveredAlert(second){
+  if(!MSG_LOG_UI_ON)return Promise.resolve(null);
+  return second.then(function(env){
+    if(!env)return null;
+    return queueRead(function(){
+      return jsonp('getUndelivered',{token:q('t')}).then(function(r){
+        if(r&&r.ok&&r.pending>0){
+          var bar=document.getElementById('alertBar');
+          bar.textContent='🔴 有 '+r.pending+' 則 LINE 訊息沒有送出去，請開試算表的「未送出」分頁確認是否要重發。';
+          bar.style.display='block';
+        }
+        return r;
+      });
+    });
   });
 }
 
@@ -2351,6 +2361,7 @@ var SECOND=FIRST.then(function(first){
 });
 var SECOND_DONE=false;
 SECOND.then(function(){SECOND_DONE=true;},function(){SECOND_DONE=true;});
+wireUndeliveredAlert(SECOND);   // 見上面 wireUndeliveredAlert 的註解：必須在 SECOND 賦值之後
 // 報到分頁的 preview 切片（宣告在上面 _previewSlice 那一段，收貨動作必須排在 SECOND 賦值之後）。
 SECOND.then(function(env){
   var s=env&&env.ok&&env.results&&env.results.previewPassBroadcast;
