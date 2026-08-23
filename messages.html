@@ -437,6 +437,13 @@
     border: none; border-radius: 3px; background: var(--warn); color: #fff;
   }
 
+  .moremonths {
+    display: block; width: 100%; margin: 14px 0 0; padding: 11px;
+    font: inherit; font-size: 13.5px; border: 1px solid var(--ln); border-radius: 3px;
+    background: #fff; color: var(--b);
+  }
+  .moremonths:active { background: #f4f4f2; }
+
   .verstamp {
     display: block; text-align: center; margin: 18px 0 0;
     font-size: 10.5px; color: var(--ink3);
@@ -567,6 +574,11 @@ var BATCHES = [];                // groupBatches 的產出，新到舊
 var INDEX = [];                  // buildIndex 的產出
 var SHOWN_KEYS = [];             // 目前畫面上有哪些月／日（滑桿淡化用）
 var RAIL_MODE = 'month';
+/* 一次畫幾個月。2026-08-23 加：原本 28 批一次全畫，DOM 很大。
+   分批畫本來就該做（紀錄只會愈積愈多），而它同時是狀態列穿透那件事的變因之一
+   ——同一份版面，6 批的頁面不穿透、28 批的穿透。 */
+var MONTHS_STEP = 1;
+var monthsShown = MONTHS_STEP;
 
 var listEl = document.getElementById('list');
 var msgEl = document.getElementById('msg');
@@ -579,14 +591,47 @@ var railEl = document.getElementById('rail');
 var clearBtn = document.getElementById('clearBtn');
 
 /* ═══ 渲染 ═══════════════════════════════════════════════ */
+/** 只取前 n 個月的批次。搜尋結果不分月（相關性排序），所以搜尋時不切。 */
+function limitByMonth(list, n) {
+  var seen = [], out = [];
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i].month;
+    if (seen.indexOf(m) < 0) {
+      if (seen.length >= n) break;
+      seen.push(m);
+    }
+    out.push(list[i]);
+  }
+  return { list: out, 全部月數: uniqueMonths(list).length, 已顯示月數: seen.length };
+}
+function uniqueMonths(list) {
+  var s = [];
+  list.forEach(function (b) { if (s.indexOf(b.month) < 0) s.push(b.month); });
+  return s;
+}
+
 function paint(query) {
   var res = search(INDEX, query || '');
   var toks = tokenize(query || '');
-  listEl.innerHTML = listHtml(res.list, toks, res.all);
+  /* 搜尋中不分批：使用者要的是「全部符合的」，切掉會讓他以為沒搜到。 */
+  var cut = res.all ? limitByMonth(res.list, monthsShown)
+                    : { list: res.list, 全部月數: 1, 已顯示月數: 1 };
+  listEl.innerHTML = listHtml(cut.list, toks, res.all)
+    + (cut.已顯示月數 < cut.全部月數
+        ? '<button class="moremonths" type="button" id="moreBtn">載入更早的紀錄（還有 '
+          + (cut.全部月數 - cut.已顯示月數) + ' 個月）</button>'
+        : '');
+  var mb = document.getElementById('moreBtn');
+  if (mb) mb.addEventListener('click', function () {
+    monthsShown += MONTHS_STEP;
+    go(qEl.value);
+  });
 
   SHOWN_KEYS = [];
   var mark = function (k) { if (SHOWN_KEYS.indexOf(k) < 0) SHOWN_KEYS.push(k); };
-  res.list.forEach(function (b) {
+  /* ⚠️ 用 cut.list 不是 res.list——滑桿的淡化要跟著**實際畫出來的**走，
+     否則點了還沒載入的月份會捲到不存在的錨點、什麼都不會發生。 */
+  cut.list.forEach(function (b) {
     mark('year:' + b.month.slice(0, 4));
     mark('month:' + b.month);
     if (RAIL_MODE === 'day') mark('day:' + b.time.slice(0, 10));
@@ -687,7 +732,15 @@ railEl.addEventListener('click', function (e) {
   var t = e.target.closest('.tick');
   if (!t) return;
   if (qEl.value) { qEl.value = ''; go(''); }   // 搜尋中跳日期＝先回到完整清單
+  /* 點到還沒載入的月份：先把它載進來再跳，否則按了沒反應。 */
   var el = document.getElementById(t.dataset.anchor);
+  if (!el) {
+    var all = uniqueMonths(BATCHES);
+    var want = t.dataset.k.indexOf('month:') === 0 ? t.dataset.k.slice(6) : null;
+    var idx = want ? all.indexOf(want) : -1;
+    if (idx >= 0 && idx + 1 > monthsShown) { monthsShown = idx + 1; go(''); }
+    el = document.getElementById(t.dataset.anchor);
+  }
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
