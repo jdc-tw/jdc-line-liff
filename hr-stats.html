@@ -32,6 +32,11 @@
   .info:hover i,.info.on i,.info:focus-visible i{border-color:var(--ink);color:var(--ink)}
   .info .tip{display:none;position:absolute;right:0;top:24px;z-index:5;width:min(320px,80vw);background:#fff;border:1px solid var(--ln);border-radius:3px;box-shadow:0 4px 14px rgba(0,0,0,.08);padding:9px 11px;font-size:12.5px;line-height:1.6;color:var(--ink2);text-align:left}
   .info:hover .tip,.info.on .tip,.info:focus-visible .tip{display:block}
+  .info .tip ul{margin:0;padding-left:16px}.info .tip li{margin:2px 0}
+  /* 全站浮動提示（滑過／點到任一圖元） */
+  #tt{position:fixed;z-index:60;pointer-events:none;display:none;max-width:260px;background:#2c2c2b;color:#fff;font-size:12px;line-height:1.5;padding:6px 9px;border-radius:3px;box-shadow:0 3px 10px rgba(0,0,0,.15);white-space:pre-line}
+  #tt.on{display:block}
+  [data-tip]{cursor:default}
   .sec-h b{font-size:15px;font-weight:600;white-space:nowrap}
   .sec-h small{line-height:1.45}
   .sec-h small{color:var(--ink3);font-size:12px}
@@ -182,6 +187,15 @@
   .dtrk i.o{background:#fff;border-width:2px;box-shadow:none}
   .dtrk b{position:absolute;top:8px;height:2px;opacity:.45}
   .hrow .cnt u{text-decoration:none;color:var(--ink3);font-size:11px}
+  /* 堆疊柱（⑮） */
+  .stk{display:flex;align-items:flex-end;gap:6px}
+  .stk .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+  .stk .bars{width:100%;max-width:30px;display:flex;flex-direction:column;justify-content:flex-end}
+  .stk .bars i{display:block;width:100%;min-height:0}
+  .stk .bars i:first-child{border-radius:3px 3px 0 0}
+  .stk .n{font-size:12px;line-height:16px;height:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .stk .lb{font-size:10.5px;line-height:18px;height:18px;color:var(--ink3);white-space:nowrap}
+  .stk .cu{font-size:10.5px;line-height:18px;height:18px;color:var(--ink3);font-variant-numeric:tabular-nums;border-top:1px solid var(--ln);width:100%;text-align:center}
   /* 棒棒糖（⑨）：細桿＋頂端圓點，圓點用 ::after 畫在桿頂 */
   .col .stem{position:relative;width:2px;background:currentColor;min-height:2px;border-radius:1px}
   .col .stem::after{content:'';position:absolute;left:50%;top:0;width:9px;height:9px;margin:-4px 0 0 -4.5px;border-radius:50%;background:currentColor;border:1.5px solid #fff;box-sizing:border-box}
@@ -204,6 +218,7 @@
 <h1>人事資訊看板</h1>
 <div class="sub" id="sub">載入中…</div>
 <div id="sheet" class="sheet" role="dialog" aria-modal="true"><div class="sh-body"></div></div>
+<div id="tt" role="tooltip"></div>
 <div id="main"></div>
 <script src="assets/deny-no-role.js"></script>
 <script src="assets/board-cache.js"></script>
@@ -325,9 +340,9 @@ function pyramid(labels,left,right,cl,cr,marks){
   return '<div class="pyr">'+ov+labels.map(function(lb,i){
     var wl=left[i]/maxL*100, wr=right[i]/maxR*100;
     return '<div class="prow2">'
-      +'<div class="side l"><span class="v">'+(left[i]||'')+'</span><i style="width:'+wl.toFixed(1)+'%;background:'+cl+'"></i></div>'
+      +'<div class="side l"><span class="v">'+(left[i]||'')+'</span><i style="width:'+wl.toFixed(1)+'%;background:'+cl+'" data-tip="總公司・'+esc(lb)+'：'+(left[i]||0)+' 人"></i></div>'
       +'<div class="mid">'+esc(lb)+'</div>'
-      +'<div class="side r"><i style="width:'+wr.toFixed(1)+'%;background:'+cr+'"></i><span class="v">'+(right[i]||'')+'</span></div>'
+      +'<div class="side r"><i style="width:'+wr.toFixed(1)+'%;background:'+cr+'" data-tip="工地・'+esc(lb)+'：'+(right[i]||0)+' 人"></i><span class="v">'+(right[i]||'')+'</span></div>'
       +'</div>';
   }).join('')+'</div>';
 }
@@ -391,8 +406,7 @@ function areaChart(labels,values,color,fill,lines,cum){
     var cy=function(v){return PT+(1-v/cmax)*(H-PT-PB);};
     svg+='<polyline points="'+cum.values.map(function(v,i){return x(i).toFixed(1)+','+cy(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+cum.color+'" stroke-width="1.2" stroke-dasharray="1 3" stroke-linecap="round" stroke-linejoin="round"/>'
       +'<text x="'+(x(n-1)-6).toFixed(1)+'" y="'+(cy(cum.values[n-1])+12).toFixed(1)+'" font-size="10" fill="'+cum.color+'" text-anchor="end">'+cum.values[n-1]+'</text>'
-      +'<text x="'+(W-2)+'" y="'+(cy(cmax)+3.5).toFixed(1)+'" font-size="9.5" fill="'+cum.color+'" text-anchor="end">'+cmax+'</text>'
-      +'<text x="'+(W-2)+'" y="'+(cy(0)-3).toFixed(1)+'" font-size="9.5" fill="#9a9a96" text-anchor="end">0</text>';
+      ;
   }
   var cumSvg='';
   return (lines.length?legend([ '全公司' ].concat(lines.map(function(l){return l.label;})).concat(cum?[cum.label]:[]),[color].concat(lines.map(function(l){return l.color;})).concat(cum?[cum.color]:[]),false):'')
@@ -423,8 +437,8 @@ function dotRows(rows,maxR,color){
     var p5=Math.round(x.rate*100), p10=Math.round(x.rate10*100), l5=x.rate/maxR*100, l10=x.rate10/maxR*100;
     return '<div class="hrow"><div class="nm">'+esc(x.nm)+'</div>'
       +'<div class="dtrk">'
-      +(l10>l5?'<b style="left:'+l5.toFixed(1)+'%;width:'+(l10-l5).toFixed(1)+'%;background:'+color+'"></b><i class="o" style="left:'+l10.toFixed(1)+'%;border-color:'+color+'"></i>':'')
-      +'<i style="left:'+l5.toFixed(1)+'%;background:'+color+'"></i></div>'
+      +(l10>l5?'<b style="left:'+l5.toFixed(1)+'%;width:'+(l10-l5).toFixed(1)+'%;background:'+color+'"></b><i class="o" style="left:'+l10.toFixed(1)+'%;border-color:'+color+'" data-tip="'+esc(x.nm)+'・10 年內：'+x.hit10+'/'+x.count+' 人（'+p10+'%）"></i>':'')
+      +'<i style="left:'+l5.toFixed(1)+'%;background:'+color+'" data-tip="'+esc(x.nm)+'・5 年內：'+x.hit+'/'+x.count+' 人（'+p5+'%）"></i></div>'
       +'<div class="cnt">'+p5+'%'+(p10>p5?'<u>→'+p10+'%</u>':'')+'<u>（'+x.hit+(x.hit10>x.hit?'→'+x.hit10:'')+'/'+x.count+'）</u></div></div>';
   }).join('');
 }
@@ -432,7 +446,7 @@ function dotRows(rows,maxR,color){
  *  比圓餅誠實——人數直接數得出來，而且 2 類與 4 類長得一樣清楚。 */
 function waffle(items,total,title){
   var cells='', i=0;
-  items.forEach(function(it){for(var k=0;k<it.v;k++,i++) cells+='<i style="background:'+it.c+'" title="'+esc(it.nm)+'"></i>';});
+  items.forEach(function(it){for(var k=0;k<it.v;k++,i++) cells+='<i style="background:'+it.c+'" data-tip="'+esc(it.nm)+'：'+it.v+' 人（'+Math.round(it.v/total*100)+'%）"></i>';});
   for(;i<total;i++) cells+='<i></i>';
   return '<div class="wf"><div class="wft">'+esc(title)+'</div><div class="wfg">'+cells+'</div>'
     +'<div class="wfl">'+items.filter(function(it){return it.v;}).map(function(it){return '<span><i style="background:'+it.c+'"></i>'+esc(it.nm)+' <b>'+it.v+'</b><u>'+Math.round(it.v/total*100)+'%</u></span>';}).join('')+'</div></div>';
@@ -474,6 +488,23 @@ function numTable(order,units,key,segLabels){
   return '<details class="tbl"><summary>數字表</summary><table>'+head+rows+'</table></details>';
 }
 
+/** 全站互動提示（2026-08-23 使用者：所有圖表滑過／碰到要彈出詳細資訊）。
+ *  把容器內的 title 屬性與 SVG <title> 子節點全轉成 data-tip（原生 title 慢、手機不顯示），
+ *  由 #tt 一個浮動框統一顯示：滑鼠跟著游標、觸控點一下顯示、再點別處關。 */
+function bindTips(root){
+  Array.prototype.forEach.call(root.querySelectorAll('[title]'),function(el){el.setAttribute('data-tip',el.getAttribute('title'));el.removeAttribute('title');});
+  Array.prototype.forEach.call(root.querySelectorAll('svg title'),function(t){var el=t.parentNode;el.setAttribute('data-tip',t.textContent);el.removeChild(t);});
+}
+(function(){
+  var tt=null, cur=null;
+  var move=function(x,y){if(!tt||!cur) return; var w=tt.offsetWidth,h=tt.offsetHeight,X=x+12,Y=y+14; if(X+w>innerWidth-8)X=x-w-12; if(Y+h>innerHeight-8)Y=y-h-14; tt.style.left=X+'px'; tt.style.top=Y+'px';};
+  var show=function(el,x,y){tt=tt||document.getElementById('tt'); if(!tt) return; tt.textContent=el.getAttribute('data-tip'); tt.classList.add('on'); cur=el; move(x,y);};
+  var hide=function(){if(tt){tt.classList.remove('on');} cur=null;};
+  var find=function(t){while(t&&t!==document){if(t.getAttribute&&t.getAttribute('data-tip'))return t;t=t.parentNode;}return null;};
+  document.addEventListener('mousemove',function(e){var el=find(e.target); if(!el){if(cur)hide();return;} if(el!==cur)show(el,e.clientX,e.clientY); else move(e.clientX,e.clientY);});
+  document.addEventListener('touchstart',function(e){var el=find(e.target); if(!el){hide();return;} var t=e.touches[0]; if(el===cur){hide();return;} show(el,t.clientX,t.clientY);},{passive:true});
+  document.addEventListener('scroll',hide,{passive:true});
+})();
 function renderHr(r){
   var main=document.getElementById('main');
   if(!r||!r.ok){document.getElementById('sub').textContent='';main.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
@@ -487,16 +518,16 @@ function renderHr(r){
   html+='<div class="kpis"><div class="kpi"><div class="v">'+s.total+'<small class="d" data-k="total"></small></div><div class="k">在職人數</div></div>'
       +'<div class="kpi"><div class="v">'+s.avgTenure+'<small class="d" data-k="avgTenure"></small></div><div class="k">平均年資（年）</div></div>'
       +'<div class="kpi"><div class="v">'+s.avgAge+'<small class="d" data-k="avgAge"></small></div><div class="k">平均年齡（歲）</div></div></div>';
-  // 較 30 天前的增減（2026-08-23 使用者）：讀每日快照 hr-stats-history.json，取 ≥30 天前最近的一筆；不足 30 天就用最早那筆。
-  // 沒有快照或只有今天一筆就不顯示——不顯示比顯示 0 誠實。
+  // 跟上個月比（2026-08-23 使用者：以月為單位）：快照 hr-stats-history.json 每月 1 日一筆；基準＝上個月（本月之前最後一筆）。
+  // 沒有上個月的快照就不顯示——不顯示比顯示 0 誠實。
   fetch('hr-stats-history.json?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();}).then(function(h){
-    if(!h||h.length<2) return;
-    var today=h[h.length-1].d, cut=new Date(today); cut.setDate(cut.getDate()-30); var cutS=cut.toISOString().slice(0,10);
-    var base=h.filter(function(x){return x.d<=cutS;}).pop()||h[0]; if(base.d===today) return;
-    var cur={total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge};
+    if(!h||!h.length) return;
+    var now=new Date(Date.now()+8*3600e3), ym=now.toISOString().slice(0,7);
+    var base=h.filter(function(x){return x.d.slice(0,7)<ym;}).pop(); if(!base) return;
+    var cur={total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge}, bm=Number(base.d.slice(5,7));
     Array.prototype.forEach.call(main.querySelectorAll('.kpi .d'),function(el){var k=el.getAttribute('data-k'),d=Math.round((cur[k]-base[k])*10)/10;
       if(!d){el.textContent='—';el.className='d flat';} else {el.textContent=(d>0?'▲':'▼')+Math.abs(d);el.className='d '+(d>0?'up':'dn');}
-      el.title='較 '+base.d+'（'+base[k]+'）';});
+      el.setAttribute('data-tip','較 '+bm+' 月（'+base[k]+'）');});
   }).catch(function(){});
   // 1 單位體質雷達（2026-08-23 使用者：放第一張，當作下面所有圖的總和；多一點分析與分類）
   (function(){
@@ -719,7 +750,7 @@ function renderHr(r){
     // 排行清單：細條＋人數，總公司／工地兩欄（2026-08-23 使用者否決樹狀圖）
     // 每列加「全公司同職稱人數」的點並上下連成點線，跟本組條長比（2026-08-23 使用者）。尺度＝全公司最大職稱人數
     var rank=function(arr,max){return '<div class="rkw">'+arr.map(function(it){
-        return '<div class="rk"><span class="nm">'+esc(it.nm)+'</span><span class="bar"><i style="width:'+(it.v/max*100).toFixed(1)+'%;background:'+it.c+'"></i></span><span class="v">'+it.v+'</span></div>';}).join('')+'</div>';};
+        return '<div class="rk" data-tip="'+esc(it.nm)+'：'+it.v+' 人（全公司同職稱 '+s.titles[it.nm].count+' 人）"><span class="nm">'+esc(it.nm)+'</span><span class="bar"><i style="width:'+(it.v/max*100).toFixed(1)+'%;background:'+it.c+'"></i></span><span class="v">'+it.v+'</span></div>';}).join('')+'</div>';};
     var rmax=Math.max.apply(null,tmHq.concat(tmSite).map(function(x){return x.v;}).concat([1]));
     html+='<div class="card"><div class="sec-h"><b>⑬ 職稱分布</b><small>人數降冪；總公司與工地分開（職稱體系不同），條長同一尺度</small></div><div class="tms">'
         +'<div class="tmw"><div class="wft">總公司 '+sumV(tmHq)+' 人・'+tmHq.length+' 種</div>'+rank(tmHq,rmax)+'</div>'
@@ -750,13 +781,16 @@ function renderHr(r){
       if(k<0) return; rc.counts[k]++; (p[2]==='總公司'?rcHq:rcSite)[k]++;
     });
     var cum=function(a){return a.map(function(v,i){return a.slice(0,i+1).reduce(function(x,y){return x+y;},0);});};
-    html+='<div class="card"><div class="sec-h"><b>⑮ 未來退休曲線</b><small>點＝每年將滿 65 歲的人數（依年齡推算·誤差±1年）；虛線＝累計退休人數（右軸，含已滿 65，從 \'26 起畫），分總公司／工地／合計</small></div>'
-        +(function(){var ch=cum(rcHq),cs=cum(rcSite),ca=cum(rc.counts),L=ch.length-1;
-          // 上：逐年人數（棒棒糖、自己的尺度）；下：三條累計線（自己的尺度）。2026-08-23 使用者：疊在一起時逐年點被壓在底部看不出差異
-          return colChart(rc,{ramp:SHADE.retire,lollipop:true,rightAxis:true,height:300,skipFirst:true,lines:[
-            {label:'總公司累計 '+ch[L],color:'#2f6fae',values:ch},
-            {label:'工地累計 '+cs[L],color:'#4a5563',values:cs},
-            {label:'合計 '+ca[L],color:'#b95f85',labelAll:true,values:ca}]});})()+'</div>';
+    html+='<div class="card"><div class="sec-h"><b>⑮ 未來退休曲線</b><small>柱＝每年將滿 65 歲的人數（依年齡推算·誤差±1年），藍＝總公司、灰＝工地；柱頂＝當年合計；最下一列灰字＝累計（含已滿 65）</small></div>'
+        +(function(){var ca=cum(rc.counts),max=Math.max.apply(null,rc.counts.concat([1])),H=200;
+          // 2026-08-23 重做：每年一根堆疊柱（總公司藍／工地灰）、柱頂標當年人數、柱下一列灰字＝累計。不畫線、不用右軸
+          return legend(['總公司','工地'],[C_HQ,'#8f9aa6'])+'<div class="stk" style="height:'+(H+52)+'px">'+rc.labels.map(function(lb,i){
+            var hq=rcHq[i],st=rcSite[i],tot=rc.counts[i],hh=Math.round(hq/max*H),hs=Math.round(st/max*H);
+            return '<div class="col"><div class="n">'+(tot||'')+'</div><div class="bars" style="height:'+H+'px">'
+              +'<i style="height:'+hh+'px;background:'+C_HQ+'" data-tip="'+esc(lb)+'・總公司：'+hq+' 人"></i>'
+              +'<i style="height:'+hs+'px;background:#8f9aa6" data-tip="'+esc(lb)+'・工地：'+st+' 人"></i></div>'
+              +'<div class="lb">'+esc(lb)+'</div><div class="cu" data-tip="至 '+esc(lb)+' 累計 '+ca[i]+' 人">'+ca[i]+'</div></div>';}).join('')
+            +'</div><div class="foot">最下一列＝累計退休人數（含已滿 65）</div>';})()+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
@@ -789,10 +823,15 @@ function renderHr(r){
   }).join('')+'</table>';
   html+='</div>';
   main.innerHTML=html;
+  bindTips(main);
   // 卡片說明收進右上角 ⓘ（2026-08-23 使用者：標題旁說明太多）。滑過或點一下出現，再點一下收
   Array.prototype.forEach.call(main.querySelectorAll('.sec-h > small'),function(sm){
     var w=document.createElement('span'); w.className='info'; w.setAttribute('tabindex','0'); w.setAttribute('role','button'); w.setAttribute('aria-label','說明');
-    w.innerHTML='<i>i</i>'; var tip=document.createElement('span'); tip.className='tip'; tip.innerHTML=sm.innerHTML; w.appendChild(tip);
+    w.innerHTML='<i>i</i>'; var tip=document.createElement('span'); tip.className='tip';
+    // 說明改條列（2026-08-23 使用者）：以「；」切句，一句一列
+    var parts=sm.innerHTML.split(/；/).map(function(t){return t.trim();}).filter(Boolean);
+    tip.innerHTML=parts.length>1?'<ul>'+parts.map(function(t){return '<li>'+t+'</li>';}).join('')+'</ul>':parts[0]||'';
+    w.appendChild(tip);
     sm.parentNode.replaceChild(w,sm);
     w.onclick=function(e){e.stopPropagation();w.classList.toggle('on');};
   });
@@ -800,7 +839,7 @@ function renderHr(r){
   var sel=document.getElementById('rdsel');
   var showUnit=function(n){};
   var sheet=document.getElementById('sheet');
-  var openReport=function(n){sheet.querySelector('.sh-body').innerHTML=window.__radar.report(n);sheet.classList.add('on');document.body.style.overflow='hidden';
+  var openReport=function(n){sheet.querySelector('.sh-body').innerHTML=window.__radar.report(n);bindTips(sheet);sheet.classList.add('on');document.body.style.overflow='hidden';
     sheet.querySelector('.sh-x').onclick=closeReport;};
   var closeReport=function(){sheet.classList.remove('on');document.body.style.overflow='';};
   sheet.onclick=function(e){if(e.target===sheet)closeReport();};
