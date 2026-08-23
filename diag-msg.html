@@ -27,7 +27,7 @@
      值＝ --bg #fbfbfa（頁面底色）；⚠️ 這裡是**寫死的字面值**，CSS 變數在 meta 裡讀不到，
      改 --bg 的話這一行要跟著改，否則狀態列會與頁面差一階而沒有任何錯誤訊息。 -->
 <meta name="theme-color" content="#fbfbfa">
-<title>訊息紀錄（診斷版）</title>
+<title>讓位寬度實驗</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
   /* ═══════════════════════════════════════════════════════════════
@@ -71,13 +71,26 @@
   }
   *, *::before, *::after { box-sizing: border-box; }
 
+  /* ⚠️ **body 不可以有左右 padding**（2026-08-23，使用者用二分搜尋在真機定位出來的）。
+     iPhone standalone 下，body 帶左右內距時，捲動的內容會被繪製到狀態列那一帶
+     （env(safe-area-inset-top) 回 0、那 62px 不在可視區內，CSS 碰不到它，
+     所以三種遮罩全部無效——偽元素、box-shadow、viewport 外的 fixed 都試過了）。
+     佐證：stats.html／board.html 的 body 也有 padding（20px 16px 40px）卻不穿透，
+     差別在數值與寫法；但本頁只要把左右內距從 body 挪走，穿透就消失。
+     讓位改由下面的 .shell 承擔——版面計算完全等價（wrap 仍在剩餘空間置中）。 */
   body {
-    /* 左欄要把左安全區也讓出來，否則橫向持機時滑桿會被瀏海吃掉 */
-    margin: 0; padding-left: calc(var(--rail-w) + var(--sal)); padding-right: var(--sar);
+    margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
     font-size: 16px; line-height: 1.65; color: var(--ink); background: var(--bg);
     -webkit-font-smoothing: antialiased;
   }
+  /* 左欄的讓位：原本掛在 body，2026-08-23 移到這裡（見上方 body 的註解）。
+     左安全區也要讓，否則橫向持機時滑桿會被瀏海吃掉。 */
+  .shell {
+    padding-left: calc(var(--rail-w) + var(--sal));
+    padding-right: var(--sar);
+  }
+
   .wrap {
     --pad-y: 20px;
     max-width: 480px; margin: 0 auto;
@@ -434,61 +447,39 @@
 </style>
 
 <style id="diagctl">
-/* ⚠️ 一次性診斷（2026-08-23）。這份是 messages.html 的**原封複製**，只換掉網路層
-   （假資料、不需 token），所以版面與線上完全一致——先確認它會不會重現穿透，
-   會的話再逐一關掉特徵縮小範圍。量完就刪。
-   為何走到這一步：cover／body-vs-容器捲動／巨大陰影／負向遮罩／其他 fixed
-   五個變因在乾淨的實驗頁上全部試過都不穿透，代表元凶在這份頁面特有的東西上。 */
+/* ⚠️ 一次性診斷（2026-08-23 重建）。這份是**現在線上版**的原封複製
+   （body 無左右內距、讓位由 .shell 承擔），只換掉網路層。
+   基準狀態＝線上現況＝**已知會穿透**。
+
+   已知事實（使用者真機實測）：
+     · body padding-left 74px            → 穿透
+     · body padding 0（完全不讓位）        → 不穿透
+     · body 0 ＋ shell padding-left 74px  → 仍穿透   ← 現在線上這版
+   共同點：**只要左邊有 74px 讓位就穿透，掛在誰身上都一樣。**
+   所以這一輪要問的是：多寬開始穿透？padding 換 margin 有沒有差？ */
 #dctl {
   position: fixed; right: 8px; bottom: 8px; z-index: 999;
-  background: rgba(255,255,255,.96); border: 1px solid #c9c9c5; border-radius: 8px;
-  padding: 8px; font: 12px/1.5 -apple-system, sans-serif; max-width: 190px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  background: rgba(255,255,255,.97); border: 1px solid #c9c9c5; border-radius: 8px;
+  padding: 9px; font: 12px/1.5 -apple-system, sans-serif; max-width: 200px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.14);
 }
 #dctl b { display: block; margin-bottom: 5px; font-size: 13px; }
-#dctl .stepline { font-size: 11.5px; line-height: 1.6; color: #2c2c2b; margin-bottom: 6px; }
-#dctl #dyes { background: #d81b60; color: #fff; border-color: #d81b60; }
-#dctl #dno { background: #2e7d4f; color: #fff; border-color: #2e7d4f; }
+#dctl .stepline { font-size: 11.5px; line-height: 1.6; margin-bottom: 6px; }
 #dctl button {
-  font: inherit; display: block; width: 100%; margin: 3px 0; padding: 6px 8px;
+  font: inherit; display: block; width: 100%; margin: 3px 0; padding: 7px 8px;
   border: 1px solid #c9c9c5; border-radius: 5px; background: #fff; color: #2c2c2b;
 }
-#dctl button.on { background: #d81b60; color: #fff; border-color: #d81b60; }
+#dctl #vyes { background: #d81b60; color: #fff; border-color: #d81b60; }
+#dctl #vno { background: #2e7d4f; color: #fff; border-color: #2e7d4f; }
 #dctl .st { margin-top: 6px; color: #6b6b68; font-size: 11px; }
 
-/* 每個開關＝關掉 messages.html 的一項特徵 */
-body.d-nomask .topmask { display: none !important; }
-body.d-noshadow .stickytop { box-shadow: none !important; }
-body.d-norail .rail, body.d-norail .brandmark { display: none !important; }
-body.d-nosticky .stickytop { position: static !important; }
-body.d-nosat { --sat: 0px !important; }
-/* 卡片改成與底色同色——如果穿透是「白卡片才看得見」，這一項會讓它消失 */
-body.d-flat .card { background: var(--bg) !important; border-color: var(--bg) !important; }
-
-/* ── 第二輪（六個全關仍穿透）──
-   剩下的差異在版面本身。這一排用**二分法**：先整塊拿掉，縮小了再細分。
-   ⚠️ 第一輪的「關標題列陰影」只關了 .stickytop 自己的 box-shadow，
-      **漏掉 .stickytop::after**——那條分隔線也有 ±100vw 的陰影，
-      同樣是「畫在元素邊界之外」，而乾淨實驗頁沒有這種東西。 */
-body.d-nobar .stickytop { display: none !important; }
-body.d-noafter .stickytop::after { display: none !important; }
-body.d-nomargin .stickytop { margin-top: 0 !important; }
-body.d-nopad { padding-left: 0 !important; padding-right: 0 !important; }
-body.d-nowrap .wrap { max-width: none !important; margin: 0 !important; padding-left: 8px !important; padding-right: 8px !important; }
-
-/* ── 第三輪：元凶已定位到「body 左右內距」（使用者二分搜尋結果）──
-   但 stats.html／board.html 的 body **也有 padding**（20px 16px 40px）卻不穿透，
-   所以不是「有 padding」本身。三個候選差異：
-     ① messages 用 calc() ＋ CSS 變數，stats 是固定值
-     ② messages 是 74px（讓出滑桿欄），stats 是 16px
-     ③ stats 的 body 有 margin: 0 auto，messages 只有 margin: 0
-   四個變體逐一套用（互斥），看哪些不穿透。 */
-body.v1 { padding-left: 74px !important; padding-right: 0 !important; }              /* 去掉 calc 與變數 */
-body.v2 { padding-left: 16px !important; padding-right: 16px !important; }           /* 縮小數值 */
-body.v3 { padding-left: 0 !important; padding-right: 0 !important; }                 /* 移到內層 */
-body.v3 .wrap { padding-left: calc(16px + var(--rail-w)) !important; max-width: none !important; }
-body.v4 { margin: 0 auto !important; max-width: 480px !important; }                  /* 比照 stats 的 margin auto */
-
+/* 讓位寬度：找臨界值 */
+body.w0 .shell { padding-left: 0 !important; }
+body.w16 .shell { padding-left: 16px !important; }
+body.w40 .shell { padding-left: 40px !important; }
+body.w74 .shell { padding-left: 74px !important; }
+/* 同樣 74px，但改用 margin——測「是不是 padding 這個屬性的問題」 */
+body.m74 .shell { padding-left: 0 !important; margin-left: 74px !important; }
 </style>
 </head>
 <body>
@@ -498,6 +489,7 @@ body.v4 { margin: 0 auto !important; max-width: 480px !important; }             
 
 <nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
 
+<div class="shell">
 <div class="wrap">
   <div class="stickytop">
   <div class="topbar">
@@ -521,6 +513,9 @@ body.v4 { margin: 0 auto !important; max-width: 480px !important; }             
   <!-- ⚠️ 暫時的，量完就拆（2026-08-23）。刻意不帶 token——診斷頁只讀瀏覽器環境。 -->
   <a class="diaglink" href="diag-safearea.html">版面診斷</a>
   <a class="diaglink" href="diag-scroll.html">捲動實驗</a>
+  <a class="diaglink" href="diag-msg.html">本頁診斷版</a>
+  <a class="diaglink" href="diag-msg-stats.html">診斷版（比照 stats）</a>
+</div>
 </div>
 
 <script src="assets/board-cache.js"></script>
@@ -528,8 +523,6 @@ body.v4 { margin: 0 auto !important; max-width: 480px !important; }             
 <script src="assets/messages-search.js"></script>
 <script>
 // 這一頁的後端是 jdc-line-hub（獨立的 GAS 專案），不是本站其他頁用的 line-platform。
-// ⚠️ 真實端點已換成假值：這份的網路層被樁攔截、不會真的送出，
-// 公開站台沒必要多一份端點副本。
 var EXEC_URL = 'https://script.google.com/macros/s/DIAG_STUB_NOT_A_REAL_DEPLOYMENT/exec';
 
 // 一次全拿，前端自己分月。hub 的 readLog_ 是 `Number(days) || 30`，沒有上限。
@@ -859,113 +852,63 @@ cacheBootstrap(TOKEN).then(function () {
 </script>
 
 <div id="dctl">
-  <b id="dq">二分搜尋定位</b>
-  <div class="stepline" id="dstep"></div>
-  <button id="dyes">會穿透</button>
-  <button id="dno">沒穿透</button>
-  <button id="dback">上一步</button>
-  <button id="dreset">重來</button>
-  <hr style="border:0;border-top:1px solid #ececea;margin:8px 0">
-  <b>第三輪：四個變體</b>
-  <div class="stepline" id="vnow">目前：原樣</div>
-  <button data-v="v1">① 固定 74px（不用 calc）</button>
-  <button data-v="v2">② 縮成 16px</button>
-  <button data-v="v3">③ 移到內層容器</button>
-  <button data-v="v4">④ 比照 stats 的 margin auto</button>
-  <button data-v="">回原樣</button>
-  <div class="st" id="dst"></div>
+  <b id="vq"></b>
+  <div class="stepline" id="vnow"></div>
+  <button id="vyes">會穿透</button>
+  <button id="vno">沒穿透</button>
+  <button id="vback">上一步</button>
+  <div class="st" id="vst"></div>
 </div>
 <script>
-/* 引導式二分搜尋（delta debugging）。
-   ⚠️ 為何改成這樣：上一版是 11 顆獨立開關，等於把「排列組合並歸納」的工作
-      丟給使用者——2048 種組合，回報一定會亂（實際回報就出現前後矛盾的句子）。
-      現在機器算組合、人只回答「穿透 / 沒穿透」，最多四步定位。
-   已知前提（使用者實測）：11 個全關 → 不穿透；全不關 → 穿透。
-      所以元凶必在這 11 個之中。 */
+/* 引導式：機器依序套用、記錄回答、最後印總結表。使用者只點兩顆鈕。
+   ⚠️ 第一步與最後一步是**已知答案的對照**：
+      「讓位 0」已實測不穿透、「讓位 74px」就是線上現況已實測穿透。
+      這兩步答錯 ⇒ 這一輪的設置或判讀有問題，中間三步的結果不算數。 */
 (function () {
-  var FEATS = [
-    ['d-nomask', 'topmask'],
-    ['d-noshadow', '標題列陰影'],
-    ['d-norail', '滑桿與 logo'],
-    ['d-nosticky', 'sticky 改靜態'],
-    ['d-nosat', '安全區變數'],
-    ['d-flat', '卡片同底色'],
-    ['d-nobar', '整個標題列'],
-    ['d-noafter', '分隔線陰影'],
-    ['d-nomargin', '標題列負 margin'],
-    ['d-nopad', 'body 左右內距'],
-    ['d-nowrap', 'wrap 限寬']
+  var V = [
+    ['w0',  '① 讓位 0（已知：不穿透）'],
+    ['w16', '② 讓位 16px'],
+    ['w40', '③ 讓位 40px'],
+    ['w74', '④ 讓位 74px（＝線上現況，已知：穿透）'],
+    ['m74', '⑤ 讓位 74px 但改用 margin']
   ];
-  // cand＝還可能是元凶的候選（全部關掉它們就不穿透）
-  var cand = FEATS.map(function (f) { return f[0]; });
-  var trying = null;      // 這一步正在「關掉」的子集
-  var hist = [];
-  var done = null;
-
-  function apply(off) {
-    FEATS.forEach(function (f) { document.body.classList.remove(f[0]); });
-    off.forEach(function (c) { document.body.classList.add(c); });
-  }
-  function name(c) {
-    for (var i = 0; i < FEATS.length; i++) if (FEATS[i][0] === c) return FEATS[i][1];
-    return c;
-  }
-  function step() {
-    if (done) return paint();
-    if (cand.length === 1) { done = cand[0]; apply([]); return paint(); }
-    trying = cand.slice(0, Math.ceil(cand.length / 2));   // 關掉前半
-    apply(trying);
-    paint();
-  }
-  function answer(pierced) {
-    if (done) return;
-    hist.push({ cand: cand.slice(), trying: trying.slice() });
-    // 關掉 trying 之後「沒穿透」⇒ 元凶在 trying 裡；「還是穿透」⇒ 在另一半
-    cand = pierced ? cand.filter(function (c) { return trying.indexOf(c) < 0; }) : trying.slice();
-    step();
+  var idx = 0, ans = [];
+  function apply(k) {
+    V.forEach(function (v) { document.body.classList.remove(v[0]); });
+    if (k) document.body.classList.add(k);
+    window.scrollTo(0, 0);
   }
   function paint() {
-    var st = document.getElementById('dst');
-    var q = document.getElementById('dq');
-    var sp = document.getElementById('dstep');
-    var sa = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-    if (done) {
-      q.textContent = '找到了';
-      sp.innerHTML = '<b style="color:#d81b60">' + name(done) + '</b>';
-      st.textContent = '把這一項的結果告訴我就好';
+    var q = document.getElementById('vq'), now = document.getElementById('vnow'),
+        st = document.getElementById('vst');
+    if (idx >= V.length) {
+      q.textContent = '五步都完成了';
+      now.innerHTML = ans.map(function (a, i) {
+        return (a ? '🔴 穿透' : '✅ 沒穿透') + '　' + V[i][1];
+      }).join('<br>');
+      var bad = (ans[0] === true) || (ans[3] === false);
+      st.innerHTML = bad
+        ? '<b style="color:#d81b60">⚠️ 對照組答案不符預期（①該不穿透、④該穿透）＝這輪不算數</b>'
+        : '截這張圖給我就好';
       return;
     }
-    q.textContent = '現在穿透嗎？';
-    sp.innerHTML = '已關掉：<b>' + trying.map(name).join('、') + '</b>'
-      + '<br>剩 ' + cand.length + ' 個候選';
+    q.textContent = '現在穿透嗎？（' + (idx + 1) + '/' + V.length + '）';
+    now.innerHTML = '<b>' + V[idx][1] + '</b>';
+    var sa = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     st.textContent = (sa ? '✅ App' : '🔴 非 App') + '／捲一下再回答';
   }
-  document.getElementById('dyes').addEventListener('click', function () { answer(true); });
-  document.getElementById('dno').addEventListener('click', function () { answer(false); });
-  document.getElementById('dback').addEventListener('click', function () {
-    var h = hist.pop(); if (!h) return;
-    cand = h.cand; trying = h.trying; done = null; apply(trying); paint();
+  function go(p) {
+    if (idx >= V.length) return;
+    ans[idx] = p; idx++;
+    apply(idx < V.length ? V[idx][0] : null);
+    paint();
+  }
+  document.getElementById('vyes').addEventListener('click', function () { go(true); });
+  document.getElementById('vno').addEventListener('click', function () { go(false); });
+  document.getElementById('vback').addEventListener('click', function () {
+    if (idx === 0) return; idx--; ans.length = idx; apply(V[idx][0]); paint();
   });
-  // 四個變體互斥——一次只套一個，否則分不出是誰的功勞
-  var VN = { v1: '① 固定 74px（不用 calc）', v2: '② 縮成 16px',
-             v3: '③ 移到內層容器', v4: '④ 比照 stats 的 margin auto' };
-  [].slice.call(document.querySelectorAll('#dctl button[data-v]')).forEach(function (bt) {
-    bt.addEventListener('click', function () {
-      ['v1','v2','v3','v4'].forEach(function (v) { document.body.classList.remove(v); });
-      var v = bt.dataset.v;
-      if (v) document.body.classList.add(v);
-      document.querySelectorAll('#dctl button[data-v]').forEach(function (x) {
-        x.className = (x.dataset.v === v && v) ? 'on' : '';
-      });
-      document.getElementById('vnow').textContent = '目前：' + (VN[v] || '原樣');
-      window.scrollTo(0, 0);
-    });
-  });
-
-  document.getElementById('dreset').addEventListener('click', function () {
-    cand = FEATS.map(function (f) { return f[0]; }); hist = []; done = null; step();
-  });
-  step();
+  apply(V[0][0]); paint();
 })();
 </script>
 </body>
