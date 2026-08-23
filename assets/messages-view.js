@@ -235,15 +235,27 @@ function highlight(text, toks) {
   return out;
 }
 
+/** 卡面名字最多列幾個。超過就收成「…」，不切在半個名字上。 */
+var NAMES_SHOWN = 3;
+
 /**
- * 收件人名字，逗號串起來。**全部輸出，讓 CSS 的 ellipsis 決定切在哪**——
- * 使用者 2026-08-23：「看目前的文字大小可以列出幾個完整的名字，就列出多少就好」。
- * ⚠️ 刻意不在 JS 算「放得下幾個」：字寬隨字型、字級、裝置、使用者的縮放設定變動，
- *    算出來的數字在某一台一定是錯的；CSS 用實際排版結果切，永遠對。
- *    代價是 DOM 裡有看不見的字——可接受，那些字本來就要進搜尋索引。
+ * 收件人名字，逗號串起來，**最多 NAMES_SHOWN 個**，其餘收成「…」。
+ *
+ * 使用者 2026-08-23：「要看到完整三個人的名字再出現，要不然就點點點就好」——
+ * 19 人的批次原本會印到第 12 個才被 CSS 切斷，而且切在半個名字上（「林煥…」）。
+ *
+ * ⚠️ 這與本檔原本「全部輸出、截斷交給 CSS」的理由**不衝突**：當初拒絕的是
+ *    「在 JS 算得下幾個**字**」（字寬隨字型／字級／裝置／縮放變動，算出來的數字
+ *    在某一台一定是錯的）。這裡的上限是**人數**，純機械、與排版無關。
+ * ⚠️ CSS 的 ellipsis 仍然留著當第二道：三個四字名加頓號在窄機上還是會超寬。
+ * ⚠️ 搜尋不受影響——索引走 messages-search.js 的 `name` 欄位，逐列取 `r.name`，
+ *    不經過這支。看不見不等於搜不到。
  */
 function namesLine(batch, toks) {
-  return batch.rows.map(function (r) { return highlight(r.name, toks); }).join('、');
+  var rows = batch.rows || [];
+  var head = rows.slice(0, NAMES_SHOWN)
+    .map(function (r) { return highlight(r.name, toks); }).join('、');
+  return rows.length > NAMES_SHOWN ? head + '…' : head;
 }
 
 /**
@@ -325,9 +337,17 @@ function cardHtml(batch, toks, anchorId) {
     + '<div class="ln">'
     +   '<span class="num">' + batch.rows.length + '<u>\u4eba</u></span>'
     +   '<span class="names">' + namesLine(batch, toks) + '</span>'
+    + '</div>'
+    /* 失敗註記放在**摘要**那一列的最右，不跟名字搶第二列（2026-08-23）。
+       為何：兩者同列時，「137人 ＋ 三個名字 ＋ 3 失敗・2 略過」在 390px 的手機上
+       差 8px 放不下，CSS 就把第三個名字切成「張…」——而使用者要的正是
+       「看到完整三個人的名字再出現，要不然就點點點」。
+       搬到第三列之後，名字有整列寬度、**永遠不會被切**；被 ellipsis 切的變成摘要，
+       那是散文，切在哪都不影響判讀。 */
+    + '<div class="ln">'
+    +   '<span class="gist">' + highlight(batch.gist, toks) + '</span>'
     +   (note ? '<span class="fail">' + esc(note) + '</span>' : '')
     + '</div>'
-    + '<div class="gist">' + highlight(batch.gist, toks) + '</div>'
     + '</div>' + foldHtml(batch, toks) + '</div>';
 }
 
@@ -425,6 +445,7 @@ if (typeof module !== 'undefined' && module.exports) {
     sinceWarning: sinceWarning, railTicks: railTicks, fullMessageOf: fullMessageOf,
     esc: esc, col: col, statusOf: statusOf, gistOf: gistOf, textInPayload: textInPayload,
     KIND_LABEL: KIND_LABEL, kindLabel: kindLabel, namesLine: namesLine, failNote: failNote,
+    NAMES_SHOWN: NAMES_SHOWN,
     msgCountOf: msgCountOf, tallyOf: tallyOf, lampOf: lampOf,
     groupBatches: groupBatches, monthGroups: monthGroups,
     highlight: highlight, foldHtml: foldHtml,
