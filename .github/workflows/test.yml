@@ -16,8 +16,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '20' }
       # ⚠️ 必須用萬用字元 tests/*.test.js。寫成目錄形式 `node --test tests/`
       # 在新版 Node 會噴 Cannot find module。
