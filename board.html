@@ -980,4 +980,5 @@ rosterDlInit({ jsonp: jsonp, token: TOKEN, leaversId: 'r-dl-leavers',
   msg: function (t, ty) { var el = document.getElementById('r-dl-msg'); el.className = 'msg show msg-' + (ty || 'info'); el.textContent = t; } });
 load();
 loadHr();   // 人事異動與報到互不相依 → 並行載入（徽章也一起到位）
-</script></body></html>
+</script><script src="assets/page-version.js" defer></script>
+</body></html>
