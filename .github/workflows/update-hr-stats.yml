@@ -31,10 +31,10 @@ jobs:
           node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('hr-stats-pub.json.new','utf8')); if(!r.ok||!r.stats||!r.stats.total) throw new Error('hr-stats 內容異常，放棄更新'); if(!r.stats.pub) throw new Error('缺 pub 旗標，疑似含姓名的 gated 版，放棄'); const nm=[]; Object.keys(r.stats.units).forEach(function(n){const R=r.stats.units[n].retire; ['now','y1','y3','y5','y10'].forEach(function(k){(R[k]||[]).forEach(function(v){if(v)nm.push(v);});});}); if(nm.length) throw new Error('偵測到姓名外洩('+nm.length+')，放棄更新'); console.log('✓ 在職',r.stats.total,'| 單位',r.stats.unitOrder.length,'| 退休名單已剝名')"
           mv hr-stats-pub.json.new hr-stats-pub.json
 
-      # 每日快照（2026-08-23）：KPI 的「較 30 天前」增減要有歷史才算得出來。一天一筆、同日覆寫、最多留 730 筆。
-      - name: 追加每日快照到 hr-stats-history.json
+      # 月快照（2026-08-23，同日改月）：KPI「較上月」增減用。只在每月 1 日（台北）寫一筆，同日覆寫，最多留 120 筆。
+      - name: 每月 1 日追加快照到 hr-stats-history.json
         run: |
-          node -e "const fs=require('fs'); const s=JSON.parse(fs.readFileSync('hr-stats-pub.json','utf8')).stats; const d=new Date(Date.now()+8*3600e3).toISOString().slice(0,10); let h=[]; try{h=JSON.parse(fs.readFileSync('hr-stats-history.json','utf8'));}catch(e){} h=h.filter(function(x){return x.d!==d;}); h.push({d:d,total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge}); h.sort(function(a,b){return a.d<b.d?-1:1;}); if(h.length>730)h=h.slice(-730); fs.writeFileSync('hr-stats-history.json',JSON.stringify(h)); console.log('✓ 快照',d,'共',h.length,'筆')"
+          node -e "const fs=require('fs'); const s=JSON.parse(fs.readFileSync('hr-stats-pub.json','utf8')).stats; const d=new Date(Date.now()+8*3600e3).toISOString().slice(0,10); if(d.slice(8)!=='01'){console.log('非月初，略過快照');process.exit(0);} let h=[]; try{h=JSON.parse(fs.readFileSync('hr-stats-history.json','utf8'));}catch(e){} h=h.filter(function(x){return x.d!==d;}); h.push({d:d,total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge}); h.sort(function(a,b){return a.d<b.d?-1:1;}); if(h.length>120)h=h.slice(-120); fs.writeFileSync('hr-stats-history.json',JSON.stringify(h)); console.log('✓ 快照',d,'共',h.length,'筆')"
 
       - name: 有變動才 commit & push
         run: |
