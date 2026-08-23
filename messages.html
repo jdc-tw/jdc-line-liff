@@ -2,14 +2,17 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<!-- viewport-fit=cover：不加的話 env(safe-area-inset-*) 全部回 0（2026-08-23 實測前提）。
-     加了之後可視區明確延伸到整個螢幕，fixed／sticky 的 top:0 才真的是螢幕頂端；
-     代價是安全區要自己留，見下方 --sat／--sal／--sar／--sab。 -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- 加到主畫面（standalone）時的狀態列底色。使用者 2026-08-23 就是這樣開這一頁的。
-     不設的話 iOS 會自己取頁面頂端的顏色，捲動時那一條會跟著內容變色。
-     值＝ --bg #fbfbfa（頁面底色）；⚠️ 這裡是**寫死的字面值**，CSS 變數在 meta 裡讀不到，
-     改 --bg 的話這一行要跟著改，否則狀態列會與頁面差一階而沒有任何錯誤訊息。 -->
+<!-- ⚠️ 刻意**不加** viewport-fit=cover，且 head 與 stats/board/admin 三頁一致（2026-08-23）。
+     為何：iPhone（iOS 26.6.1、加到主畫面）捲動時卡片內容從狀態列後面透出來。
+     同 App 的另外三頁沒有這個問題，它們就是沒有 cover、有下面兩行 apple-mobile 的 meta。
+     iOS 26.1 起 env(safe-area-inset-top) 回 0（WebKit bug 301994，26.5.2 仍 REOPENED），
+     狀態列那 62px 任何 DOM 都碰不到——所以偽元素、box-shadow、viewport 外的 fixed 遮罩
+     全部無效（六種都在真機試過）。cover 在這個狀態下什麼都沒帶來，
+     只會告訴 Safari「內容可延伸到邊緣」，讓 Liquid Glass 狀態列取樣到真實像素。
+     出處：1ar.io/updates/safari-26-liquid-glass-web、muffinman.io/blog/pwa-ios-status-bar-blur。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#fbfbfa">
 <!-- ⚠️ GitHub Pages 的 HTML 回 `Cache-Control: max-age=600`，改不了（Pages 不支援自訂 header）。
      這行讓瀏覽器**第二次起**不要用快取——第一次仍可能拿到舊版，
@@ -134,8 +137,9 @@
      兩次的共通點是「依附在 sticky 元素上、畫在它的邊界之外」。
      Safari 捲動時會把 sticky 元素提升到合成層，超出邊界的繪製就不保證了。
      實體元素沒有這個問題：它自己就是一個盒子，一定會被畫。
-     ⚠️ 這一版**必須配 viewport-fit=cover**——沒有 cover 時 --sat 是 0、高度 0，
-        而且 fixed 的 top:0 也到不了螢幕頂端。兩者是一組，不可只留一個。
+     ⚠️ 2026-08-23 晚：head 已**拿掉 viewport-fit=cover**（見檔頭註解），所以 --sat 恆為 0、
+        這個元素高度 0、等於不存在。留著不拆的理由：它是真機實證「三種遮罩都無效」的紀錄，
+        而且 iOS 26.1+ 那 62px 本來就是 DOM 碰不到的縫，再多一層遮罩也沒用。
      ⚠️ z-index 32 要高於 .stickytop(30) 與 .brandmark(31)：它只佔 0～--sat，
         logo 在 14px+--sat 以下，不會被壓到。 */
   .topmask {
