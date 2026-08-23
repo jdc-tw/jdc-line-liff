@@ -235,7 +235,7 @@
 </style></head><body>
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <div id="alertBar" class="alert-bar"></div>
-<div class="toplinks"><a id="msgLogLink" target="_blank" rel="noopener" hidden>訊息紀錄 →</a></div>
+<div class="toplinks"><a id="msgLogLink" target="_blank" rel="noopener" hidden>LINE 訊息紀錄 →</a></div>
 <div class="tabs">
   <!-- 標籤一律兩字：分頁列可用寬 358px，五個鈕才塞得下一列（四字×5 會換行成兩列） -->
   <button id="tabbtn-stats" class="on" onclick="showTab('stats')">統計</button>
@@ -1159,8 +1159,8 @@ function snPickMsg(){
   // 'unknown' 絕不可顯示成「未發送」——那會引誘承辦人重發，而 LINE 收不回來。
   var st=(SN.status&&SN.status[i])||'unknown';
   var el=document.getElementById('sn-sent');
-  el.textContent = st==='sent'    ? '這則已經發送過。收件名單請開「訊息紀錄」查看。'
-                 : st==='unknown' ? '⚠️ 無法確認這則發送過沒有——訊息平台沒有回應。發送前請先開「訊息紀錄」確認。'
+  el.textContent = st==='sent'    ? '這則已經發送過。收件名單請開「LINE 訊息紀錄」查看。'
+                 : st==='unknown' ? '⚠️ 無法確認這則發送過沒有——訊息平台沒有回應。發送前請先開「LINE 訊息紀錄」確認。'
                  : '';
   el.style.color = st==='unknown' ? '#b00' : '';
   setMsg('sn-msg','','ok');
@@ -1229,7 +1229,7 @@ function snSend(){
   // 三則又跨兩個日曆年，重複發最容易發生；把狀態寫進確認框而不是只放在小字。
   // 'unknown' 要講得比 'sent' 更重——不知道有沒有發過，比知道發過更該停下來查。
   var warn = st==='sent'    ? '⚠️ 這則已經發送過一次。\n\n'
-           : st==='unknown' ? '⚠️ 無法確認這則發送過沒有——訊息平台沒有回應。\n請先開「訊息紀錄」確認，不要憑印象決定。\n\n'
+           : st==='unknown' ? '⚠️ 無法確認這則發送過沒有——訊息平台沒有回應。\n請先開「LINE 訊息紀錄」確認，不要憑印象決定。\n\n'
            : '';
   if(!confirm('把「'+title+'」發給 '+uids.length+' 位 '+SN.year+' 年度的資深同仁？\n\n'
       +warn+'LINE 訊息送出後收不回來。'))return;
@@ -2180,7 +2180,7 @@ function pick(a){return FIRST.then(function(r){
 var LAST_VERDICT='ok';
 FIRST.then(function(env){LAST_VERDICT=(env&&env._verdict)||'ok';});
 
-// ── 訊息紀錄連結與未送出警語 ────────────────────────────────────────
+// ── LINE 訊息紀錄連結與未送出警語 ────────────────────────────────────────
 // ⚠️ 暫停對承辦人露出（2026-08-20 使用者指示）：功能完整保留，只是不接上。
 //    要上線把下面這個常數改成 true——**但不是只改這一個字就好**：
 //    `getUndelivered` 的呼叫點在首載批次之前、而且沒走 queueRead，

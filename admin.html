@@ -17,7 +17,7 @@
   .sub{font-size:13px;color:#888;margin-bottom:20px}
   a.card{display:block;background:#fff;border:1px solid #e3e5e8;border-radius:14px;padding:18px 20px;margin-bottom:12px;text-decoration:none;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.06)}
   a.card:active{background:#f0f1f3}
-  /* a.card 是 display:block，會蓋過 hidden 屬性 —— 沒有這一行，訊息紀錄那張藏不住 */
+  /* a.card 是 display:block，會蓋過 hidden 屬性 —— 沒有這一行，LINE 訊息紀錄那張藏不住 */
   a.card[hidden]{display:none}
   .t{font-size:16px;font-weight:700}
   .d{font-size:13px;color:#888;margin-top:4px}
@@ -53,11 +53,11 @@
   </a>
   <!-- 帶了 mt 顯示這張（可點）；沒帶則顯示下面那張說明，不會整個不見 -->
   <a class="card" id="go-messages" href="messages.html" hidden>
-    <div class="t">✉️ 訊息紀錄</div>
+    <div class="t">✉️ LINE 訊息紀錄</div>
     <div class="d">每一則 LINE 通知的發送紀錄・依批次摺疊</div>
   </a>
   <div class="note" id="msg-note" hidden>
-    <div class="t" id="msg-note-t">✉️ 訊息紀錄</div>
+    <div class="t" id="msg-note-t">✉️ LINE 訊息紀錄</div>
     <div class="d" id="msg-note-d">正在確認權限…</div>
   </div>
   <!-- 版本標記由 JS 填 document.lastModified —— 手打的固定字串沒有用：
@@ -90,16 +90,16 @@ try{ document.getElementById('ver').textContent='版本 '+document.lastModified;
 // 純轉傳：本頁無資料、不打後端；token 帶去的看板自己驗
 var m=location.search.match(/[?&]t=([^&]+)/),t=m?m[1]:'';
 // mt＝hub 的 viewer token，與 t（line-platform）是兩套權限來源，不可互換。
-// 本頁是入口，順手把它轉傳下去：只要換這一個書籤，三個看板的「訊息紀錄 →」就都會出現。
+// 本頁是入口，順手把它轉傳下去：只要換這一個書籤，三個看板的「LINE 訊息紀錄 →」就都會出現。
 var mm=location.search.match(/[?&]mt=([^&]+)/),mt=mm?mm[1]:'';
 if(t){
   var q='?t='+t+(mt?'&mt='+mt:'');
   document.getElementById('go-board').href='board.html'+q;
   document.getElementById('go-stats').href='stats.html'+q;
-  // hr-stats.html 還沒有訊息紀錄的 UI，帶 mt 過去也沒東西讀，所以不帶
+  // hr-stats.html 還沒有 LINE 訊息紀錄的 UI，帶 mt 過去也沒東西讀，所以不帶
   document.getElementById('go-hr').href='hr-stats.html?t='+t;
 }
-// 訊息紀錄入口。三條路，**任何一條都要留下可見的東西**——
+// LINE 訊息紀錄入口。三條路，**任何一條都要留下可見的東西**——
 // 整張消失時看不出是「改沒生效」還是「權限不足」，2026-08-20 就卡在這一格。
 //   1. 網址帶了 mt → 直接用（沿用舊行為，也方便臨時用別人的身分驗）
 //   2. 沒帶 mt 但有 t → 跟後端換一顆（舊書籤直接生效，不必要求任何人改網址）
@@ -124,7 +124,7 @@ function jsonp(action,params,timeoutMs){
     .then(function(t){var a=t.indexOf('('),b=t.lastIndexOf(')');if(a===-1||b===-1)throw new Error('bad');return JSON.parse(t.slice(a+1,b));})])
     .then(function(v){clearTimeout(timer);return v;})
     .catch(function(e){clearTimeout(timer);return {ok:false,msg:(e&&e.name==='AbortError')?'連線逾時（伺服器喚醒中），請重新整理再試。':'連線失敗，請重新整理。'};});}
-// 訊息紀錄入口。三條路，**任何一條都要留下可見的東西**——
+// LINE 訊息紀錄入口。三條路，**任何一條都要留下可見的東西**——
 // 整張消失時看不出是「改沒生效」還是「權限不足」，2026-08-20 就卡在這一格。
 //   1. 網址帶了 mt → 直接用（沿用舊行為，也方便臨時拿別人的身分驗）
 //   2. 沒帶 mt 但有 t → 跟後端換一顆（舊書籤直接生效，不必要求任何人改網址）
@@ -138,7 +138,7 @@ function jsonp(action,params,timeoutMs){
 // ⚠️ 走 queueRead 不直接 jsonp：本頁下面的預取也用它，兩支並行違反「讀取不並行」
 //    （見下一段註解）。排在預取之前是刻意的——這支決定畫面上看不看得到入口，優先。
 // 換來的 mt 存進既有的加密快取（T280，2026-08-22 使用者拍板方案 D）。
-// 第二次之後開這一頁，訊息紀錄入口**一趟 API 都不用打**、直接可點。
+// 第二次之後開這一頁，LINE 訊息紀錄入口**一趟 API 都不用打**、直接可點。
 // ⚠️ 存的是一顆憑證。可接受的理由：mt 本來就會出現在網址列
 //    （`messages.html?t=<mt>`），而同一份 board-cache 已經在存人事看板的姓名資料，
 //    沒有新的洩漏類型。加密＝AES-GCM、7 天 TTL、依 t 的指紋分格。
@@ -146,7 +146,7 @@ var MSG_TOKEN_SLICE='getMsgLogToken';
 if(mt){
   showMsgLog(mt);                       // 這一頁的後端是 hub，吃的是 mt
 }else if(t){
-  showNote('✉️ 訊息紀錄','正在確認權限…');   // 先顯示，別讓人盯著空白等 API
+  showNote('✉️ LINE 訊息紀錄','正在確認權限…');   // 先顯示，別讓人盯著空白等 API
   // ⚠️ **整段包在佇列的第一個工作裡**，不可以寫成 `cacheBootstrap(t).then(queueRead(...))`。
   //    cacheBootstrap 是非同步的，等它 resolve 才排隊的話，下面的預取會插到前面去，
   //    首次開頁（沒快取）的入口就從 ~1.9 秒變成 ~4.7 秒——那等於偷偷做了「預取先」，
@@ -165,12 +165,12 @@ if(mt){
           showMsgLog(r.token);
           return cacheSave(t,MSG_TOKEN_SLICE,r);   // cacheSave 只收 ok:true
         }
-        showNote('✉️ 訊息紀錄（目前開不了）',(r&&r.msg)||'無法取得檢視權限，請稍後重試。');
+        showNote('✉️ LINE 訊息紀錄（目前開不了）',(r&&r.msg)||'無法取得檢視權限，請稍後重試。');
       });
     });
   });
 }else{
-  showNote('✉️ 訊息紀錄（這條網址少了 token）','網址要帶 ?t=… 才進得去。');
+  showNote('✉️ LINE 訊息紀錄（這條網址少了 token）','網址要帶 ?t=… 才進得去。');
 }
 
 // 預取種子（2026-07-25 建，2026-08-19 改寫）：停在本頁時背景先抓，點進去即秒顯。

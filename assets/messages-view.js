@@ -1,5 +1,5 @@
 /**
- * messages-view.js — 訊息紀錄頁的共用渲染（messages.html 用）。
+ * messages-view.js — LINE 訊息紀錄頁的共用渲染（messages.html 用）。
  * 純函式、無 DOM 依賴：呼叫端自己把回傳的字串塞進自己的節點。
  * 雙環境：瀏覽器直接當全域用，node 下由 module.exports 供測試。
  *
@@ -190,7 +190,18 @@ function stripHtml(batch) {
     + '<span class="skip" style="width:' + pct(t.skip) + '"></span></span></span>';
 }
 
-/** 名單：預設收起（照 stats.html 的 .fold-sum），只給一個三角形，不放文字。 */
+/**
+ * 下拉：訊息全文 ＋ 收件名單 ＋ 批次號，收在**同一個**三角形底下。
+ *
+ * 2026-08-23 使用者拍板合併。原本是兩個下拉：卡面先給一小段主旨（訊息內容第一行），
+ * 點開看全文；名單另一個三角形。但這些訊息是套版產生的，第一行每一則都長得一樣
+ * （「○○您好」），那一小段**認不出這批是什麼**，只是佔掉一列。
+ * 分類徽章已經說了這批是哪一種，所以卡面不再放主旨，要看內容就點開。
+ * ⚠️ subject 仍留在搜尋索引裡（權重 5）——看不見不等於不能搜。
+ *
+ * ⚠️ 同一批裡每個人的內文不一樣（套版帶各自姓名年資），這裡固定拿第一個人的；
+ *    使用者 2026-08-22 拍板不標明是誰的。
+ */
 function foldHtml(batch, toks) {
   var body = batch.rows.map(function (r) {
     return '<div class="prow">'
@@ -203,22 +214,42 @@ function foldHtml(batch, toks) {
       + (r.error ? '<span class="err">' + highlight(r.error, toks) + '</span>' : '')
       + '</div>';
   }).join('');
-  return '<details><summary class="fold-sum" aria-label="展開名單 '
-    + batch.rows.length + ' 人"></summary>'
-    + '<div class="fold-body">' + body
+  return '<details><summary class="fold-sum" aria-label="\u5c55\u958b\u8a0a\u606f\u5167\u5bb9\u8207\u540d\u55ae\uff08'
+    + batch.rows.length + ' \u4eba\uff09"></summary>'
+    + '<div class="fold-body">'
+    + '<div class="fullmsg">' + highlight(fullMessageOf(batch), toks) + '</div>'
+    + body
     + '<div class="bid">' + highlight(batch.batchId, toks) + '</div></div></details>';
 }
 
-/**
- * 一張批次卡：三列（分類·日期·時間·燈號／人數·則數·狀態列／主旨）。
- * @param {string} [anchorId] 當天第一張卡才給——滑桿的「日」模式靠它跳。
- */
+/** 全文＝第一個人收到的完整內文（不是截斷的主旨）。 */
 function fullMessageOf(batch) {
   var r = (batch.rows && batch.rows[0]) || {};
-  return String(r.content == null ? '' : r.content) || '（無內容）';
+  return String(r.content == null ? '' : r.content) || '\uff08\u7121\u5167\u5bb9\uff09';
 }
 
+/**
+ * 一張批次卡：卡面兩列（分類·日期·時間·燈號／人數·則數·狀態列），底下一個下拉。
+ *
+ * 第二列**只在多人批次才畫**（2026-08-23 使用者拍板）。單人單則時它印的是
+ * 「1 人 1 則」——兩個數字恆為 1，說不出任何這張卡以外的事；而人數的用途本來就是
+ * 「一眼看出這批的規模」，一個人的批次沒有規模可言。狀態則由第一列的燈號負責。
+ * 「則數」也只在**與人數不同**時才印：一人一則是常態，相等的時候印它等於印廢話，
+ * 印出來就代表「有人收到不只一則」，那才是要讓人看見的例外。
+ *
+ * @param {string} [anchorId] 當天第一張卡才給——滑桿的「日」模式靠它跳。
+ */
 function cardHtml(batch, toks, anchorId) {
+  var people = batch.rows.length;
+  var scale = people > 1
+    ? '<div class="ln">'
+      +   '<span class="num">' + people + '<u>\u4eba</u></span>'
+      +   (batch.msgCount !== people
+            ? '<span class="num">' + batch.msgCount + '<u>\u5247</u></span>' : '')
+      +   stripHtml(batch)
+      + '</div>'
+    : '';
+
   return '<div class="card"' + (anchorId ? ' id="' + esc(anchorId) + '"' : '') + '><div class="head">'
     + '<div class="ln">'
     +   '<span class="tag ' + esc(batch.source) + '">'
@@ -228,16 +259,7 @@ function cardHtml(batch, toks, anchorId) {
     +   '<i class="lamp ' + batch.lamp + '" role="img" aria-label="'
     +     batch.statusLabel + '"></i>'
     + '</div>'
-    + '<div class="ln">'
-    +   '<span class="num">' + batch.rows.length + '<u>人</u></span>'
-    +   '<span class="num">' + batch.msgCount + '<u>則</u></span>'
-    +   stripHtml(batch)
-    + '</div>'
-    /* 主旨點開＝看全文。⚠️ 同一批裡每個人的內文不一樣（套版帶各自姓名年資），
-       這裡固定拿第一個人的；使用者 2026-08-22 拍板不標明是誰的。 */
-    + '<details class="subj"><summary class="subject">'
-    +   highlight(batch.subject, toks) + '</summary>'
-    +   '<div class="fullmsg">' + highlight(fullMessageOf(batch), toks) + '</div></details>'
+    + scale
     + '</div>' + foldHtml(batch, toks) + '</div>';
 }
 
