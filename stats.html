@@ -653,20 +653,41 @@ var tablesLoaded=false;
 function setMsg(id,text,cls){var el=document.getElementById(id);el.textContent=text;el.className='msg '+(cls||'');}
 
 // ── 活動管理 ──────────────────────────────────────────────────────────────
+// 與 snLoad／loadSeating 同一個形狀：快取秒顯 → 背景重抓校正 → 存回快取。
+// 2026-08-23 修兩件事：
+//   ① listActivities 的快取一直有在寫（persistBatchSlices 從首發存），但**全站沒有任何
+//      一處讀它**——所以這個分頁每次都白等一趟 GAS。對照組 N.seating 讀寫都有。
+//   ② 原本是裸 jsonp，沒走 queueRead。切到這個分頁時若第二發批次還在飛，兩支會並行，
+//      違反本站「同頁任一時刻最多一支 /exec」（同型的代價實測見本檔 getUndelivered 那段註解）。
+// 這張卡整片是按鈕、沒有任何輸入欄位，所以兩段繪製不需要 renderPreview 那種髒旗標保留。
 function loadActs(){
   var box=document.getElementById('act-list');
-  box.innerHTML='<div class="empty">載入中…</div>';
-  jsonp('listActivities',{token:q('t')}).then(function(r){
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    if(!r.rows.length){box.innerHTML='<div class="empty">無</div>';return;}
-    // 「最新的活動排最上面」＝以活動日期為主鍵（沒填就退回截止日），同日才看建立順序。
-    // 原本只是 reverse()＝建立順序，晚建立的舊活動會壓在新活動上面。
-    box.innerHTML=r.rows.map(function(a,i){return {a:a,i:i};}).sort(function(x,y){
-      var kx=String(x.a.eventDate||x.a.deadline||''),ky=String(y.a.eventDate||y.a.deadline||'');
-      if(kx!==ky)return kx<ky?1:-1;
-      return y.i-x.i;
-    }).map(function(o){return actCard(o.a);}).join('');
+  var cached=null;
+  CACHE_READY.then(function(){
+    cached=cacheGet(N.activities);
+    if(cached&&cached.value.rows&&cached.value.rows.length)paintActs(cached.value);   // 秒顯
+    else box.innerHTML='<div class="empty">載入中…</div>';
   });
+  return queueRead(function(){
+    return jsonp('listActivities',{token:q('t')}).then(function(r){
+      return cacheSave(q('t'),N.activities,r).then(function(){
+        // 抓失敗不蓋掉舊資料——寧可看到稍舊的清單，也不要整片變「載入失敗」（全站慣例）
+        if(r&&r.ok)paintActs(r);
+        else if(!cached)box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      });
+    });
+  });
+}
+function paintActs(r){
+  var box=document.getElementById('act-list');
+  if(!r.rows.length){box.innerHTML='<div class="empty">無</div>';return;}
+  // 「最新的活動排最上面」＝以活動日期為主鍵（沒填就退回截止日），同日才看建立順序。
+  // 原本只是 reverse()＝建立順序，晚建立的舊活動會壓在新活動上面。
+  box.innerHTML=r.rows.map(function(a,i){return {a:a,i:i};}).sort(function(x,y){
+    var kx=String(x.a.eventDate||x.a.deadline||''),ky=String(y.a.eventDate||y.a.deadline||'');
+    if(kx!==ky)return kx<ky?1:-1;
+    return y.i-x.i;
+  }).map(function(o){return actCard(o.a);}).join('');
 }
 
 // ── 補填開權（活動關閉後讓單一同仁自己補填一次）─────────────────────────
@@ -772,17 +793,59 @@ var seatSel = null;     // 選中的桌/單位
 //   ① 活動清單沿用首屏那支 batch 的結果，這一趟直接消失
 //   ② 掃描站由 getSeatingBoard 順便回傳，不再單獨打一趟
 // 剩一趟。首屏 batch 失敗時才退回自己打一次。
-function loadTablesTab(){
-  pick('listActivities').then(function(r){
-    if(!r||!r.ok) return jsonp('listActivities',{token:q('t')});   // 首屏沒拿到才補打
+/**
+ * 活動清單的兩段供給：快取先給一次（秒顯），網路回來再給一次校正。
+ *
+ * 為何需要（2026-08-23 真瀏覽器實測）：桌次與報到兩個分頁原本 gate 在
+ * `pick('listActivities')` 上，也就是第一發批次的**網路往返**。實測
+ * batch 83→3626ms、報到區塊出現於 3637ms——卡住它們的不是自己的資料，
+ * 是在等活動清單。資深夥伴通知（snLoad）沒有這一層，所以它一直比較快；
+ * 這支就是把那一層拿掉，讓兩個分頁跟它同形。
+ *
+ * onRows(r, fromCache, servedFromCache)：
+ *   fromCache=true  → 這是快取那一段（可能完全不會發生：沒快取時就只有網路那段）
+ *   servedFromCache → 網路那段用來判斷「失敗了要不要蓋掉畫面」
+ */
+function withActivities(onRows){
+  var servedFromCache=false;
+  CACHE_READY.then(function(){
+    var c=cacheGet(N.activities);
+    if(c&&c.value&&c.value.ok&&c.value.rows&&c.value.rows.length){
+      servedFromCache=true;onRows(c.value,true,false);
+    }
+  });
+  return pick('listActivities').then(function(r){
+    if(!r||!r.ok) return queueRead(function(){return jsonp('listActivities',{token:q('t')});});   // 首屏沒拿到才補打
     return r;
-  }).then(function(r){
-    if(!r||!r.ok){document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    var sel=document.getElementById('ti-act');
-    sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      return '<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>';}).join('');
-    renderActBar('ti-act','ti-actbar');
-    loadSeating();
+  }).then(function(r){onRows(r,false,servedFromCache);});
+}
+/**
+ * 填活動下拉，並**保住使用者已經選的那一場**。
+ *
+ * 兩段供給表示這支會被呼叫兩次。第二段若把選擇挪走，等於在使用者眼前把
+ * 「137 則要發給哪一場」換掉，而畫面上沒有任何提示（同 2026-08-20 事故的形狀）。
+ * 回傳「有效選擇有沒有變」——沒變就不必重跑下游的載入。
+ */
+function fillActSelect(selId,barId,rows,withName){
+  var sel=document.getElementById(selId);
+  var prev=sel.value;
+  sel.innerHTML=rows.slice().reverse().map(function(a){
+    return '<option value="'+esc(a.id)+'"'+(withName?' data-name="'+esc(a.name)+'"':'')+'>'+esc(a.name)+'</option>';
+  }).join('');
+  var keep=false;
+  for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===prev)keep=true;}
+  if(prev&&keep)sel.value=prev;
+  renderActBar(selId,barId);
+  return sel.value!==prev;
+}
+function loadTablesTab(){
+  withActivities(function(r,fromCache,served){
+    if(!r||!r.ok){
+      if(!served)document.getElementById('seat-board').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      return;
+    }
+    var changed=fillActSelect('ti-act','ti-actbar',r.rows,false);
+    if(fromCache||changed)loadSeating();
   });
 }
 // 兩個分頁各有自己的活動下拉，故兩個取值函式。
@@ -797,16 +860,14 @@ function ckActName(){
 }
 // 報到分頁：活動清單沿用首屏那支 batch 的結果，首屏失敗才補打。
 function loadCheckinTab(){
-  pick('listActivities').then(function(r){
-    if(!r||!r.ok) return jsonp('listActivities',{token:q('t')});
-    return r;
-  }).then(function(r){
-    if(!r||!r.ok){document.getElementById('st-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
-    var sel=document.getElementById('ck-act');
-    sel.innerHTML=r.rows.slice().reverse().map(function(a){
-      return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';}).join('');
-    renderActBar('ck-act','ck-actbar');
-    loadCheckinBundle(ckActId(),bcTpl());   // 單一入口：命中快取時看不出這裡曾經是兩支並行
+  withActivities(function(r,fromCache,served){
+    if(!r||!r.ok){
+      if(!served)document.getElementById('st-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';
+      return;
+    }
+    var changed=fillActSelect('ck-act','ck-actbar',r.rows,true);
+    // 選的場次沒變就不必再跑一次——快取那段已經跑過了，重跑等於白打一趟 GAS。
+    if(fromCache||changed)loadCheckinBundle(ckActId(),bcTpl());   // 單一入口：命中快取時看不出這裡曾經是兩支並行
   });
 }
 
@@ -873,7 +934,14 @@ function loadSeating(){
     }
   });
   // pick2 抓的是 DEFAULT_ACT 那一場——只有選到同一場才能沿用，切到別場一律自己打。
-  var p=(id===DEFAULT_ACT)?pick2('getSeatingBoard'):Promise.resolve(null);
+  // ⚠️ 這個判斷必須等第二發回來再做（2026-08-23）。`DEFAULT_ACT` 是在 `SECOND=FIRST.then(...)`
+  // 裡面才賦值的，而本支現在會被「活動清單快取」提早叫起來——那個時刻 DEFAULT_ACT 還是空字串，
+  // 條件當場判偽，於是明明第二發正要抓同一場，這裡又自己多打一趟 getSeatingBoard。
+  // 實測（真瀏覽器）：多出來的那趟 4003→11848ms，還因為 queueRead 序列化把第二發往後推 8 秒。
+  // 秒顯不受影響——上面的 cacheGet 已經畫過了，這裡只決定「要不要自己發請求」。
+  var p=SECOND.then(function(){
+    return (id===DEFAULT_ACT)?pick2('getSeatingBoard'):null;
+  },function(){return null;});
   p.then(function(r){
     if(r){applySeating(r);return;}                    // 第二發已備妥（且同一場）
     return queueRead(function(){                       // 沒有才自己打
@@ -1267,6 +1335,23 @@ function snSend(){
 var _previewSlice=null;      // 第二發抓到的 preview，只活在本次開頁的記憶體
 var _previewActId='';
 var _previewUsed=false;      // 存過範本／改過預約之後標成 true，逼下次 bundle 重新查
+/**
+ * 存範本／預約／取消／發送之後，讓 preview 失效。五個異動點共用這一支。
+ *
+ * 為何不是「寫入後重載就自動覆寫」（snLoad／stLoad／loadSeating 的做法）：
+ * 那三支重載時送的參數與首載相同，所以新回應會蓋掉同一個快取鍵。
+ * 這裡不行——重載走 bcPreview()，它一定帶著輸入框裡的 tpl，而帶 tpl 的回應
+ * 依 nameOfSlice 不落地（那是使用者還沒按儲存的草稿）。覆寫永遠不會發生，
+ * 所以要主動把鍵拿掉，否則下次開頁秒顯的是異動前的狀態。
+ *
+ * clearDirty 一起做：範本已經存進伺服器了，那份草稿不再是「使用者未保存的輸入」，
+ * 之後的重繪應該用伺服器的新值蓋掉它。
+ */
+function bcInvalidate(){
+  _previewUsed=true;
+  clearDirty('bc-tpl');clearDirty('bc-date');
+  return cacheDrop(q('t'),N.preview(ckActId()));
+}
 // ⚠️ 收下 SECOND 的 previewPassBroadcast 那段 `SECOND.then(...)` 不在這裡，在檔尾 SECOND 賦值之後。
 // 原本寫在這一行（宣告之前），var SECOND 被 hoist 但賦值還沒發生 → `undefined.then` 直接 TypeError，
 // 整段 inline script 從這裡以下全部不執行、頁面永遠停在載入中且 console 只有一行紅字。
@@ -1278,6 +1363,7 @@ function loadCheckinBundle(actId,tpl){
   // 提早呼叫會讓秒顯靜默失效（不報錯，只是每次都多打一支）。
   return CACHE_READY.then(function(){
     var stationsC=cacheGet(N.stations(actId));
+    var previewC=cacheGet(N.preview(actId));       // 上次開頁存下來的（2026-08-23）
     var previewUsable=!!(_previewSlice&&_previewActId===actId&&!_previewUsed);
     var plan=planCheckinBundle({
       secondPending:!SECOND_DONE, tpl:tpl,
@@ -1286,7 +1372,13 @@ function loadCheckinBundle(actId,tpl){
     });
 
     if(stationsC)renderStations(stationsC.value.rows);
-    if(previewUsable&&tpl==='')renderPreview(_previewSlice);
+    // 秒顯順序：本次開頁的第二發切片最新，沒有才退回磁碟上那份。
+    // 兩者都只在 tpl==='' 時採用——帶了 tpl 表示使用者正在改草稿，畫面不該被覆寫。
+    // ⚠️ 這一段一定在下面 plan.wait 的 return 之前，否則等第二發的期間畫面是空的（＝現行症狀）。
+    if(tpl===''){
+      if(previewUsable)renderPreview(_previewSlice);
+      else if(previewC&&!_previewUsed)renderPreview(previewC.value);
+    }
 
     if(plan.wait)return SECOND.then(function(){return loadCheckinBundle(actId,tpl);});
     if(!plan.send.length)return;
@@ -1419,22 +1511,24 @@ function bcRenderSched(r){
   // 狀態寫在按鈕上（2026-08-16 使用者：「預約狀態應該要顯示在按鈕上，改變按鈕文字」）。
   // 標題旁不再重複掛一顆狀態標籤——那顆只留「N 則」。
   tag.innerHTML='';
+  // 日期欄同樣兩段繪製，同樣只在使用者沒動過時才寫（見 renderPreview 開頭的說明）。
+  var setDate=function(v){if(!isDirty('bc-date'))dt.value=v;};
   if(sc&&sc.status==='sent'){
-    dt.value=sc.date;dt.disabled=true;
+    setDate(sc.date);dt.disabled=true;
     bt.textContent='已於 '+String(sc.sentAt||sc.date).slice(5,10)+' 發送';bt.disabled=true;
     bcLockTpl(true,'已發送，內容不再變動。');
   }else if(sc&&sc.status==='failed'){
-    dt.value=sc.date;dt.disabled=false;
+    setDate(sc.date);dt.disabled=false;
     bt.textContent='預約失敗，重新預約';bt.disabled=false;
     bcLockTpl(false);
   }else if(sc){
-    dt.value=sc.date;dt.disabled=true;
+    setDate(sc.date);dt.disabled=true;
     bt.textContent='已預約 '+String(sc.date).slice(5)+'，點此取消';bt.disabled=false;
     // 有預約＝內容鎖定（使用者拍板的機制，取代原本的「已改但沒重新預約」警語）。
     // 後端 savePassTemplate 也會擋，這裡鎖的是畫面，兩層都有。
     bcLockTpl(true,'已預約，內容鎖定中。要修改請先取消預約。');
   }else{
-    if(!dt.value)dt.value=r.defaultDate||'';
+    setDate(dt.value||r.defaultDate||'');
     dt.disabled=false;bt.textContent='預約';bt.disabled=!(r.published&&r.tplHasUrl&&r.hasDate!==false);
     bcLockTpl(false);
   }
@@ -1459,7 +1553,7 @@ function bcSchedule(){
     if(!confirm('取消 '+BC_SCHED.date+' 的預約發送？'))return;
     jsonp('cancelPassSchedule',{token:q('t'),actId:ckActId()}).then(function(r){
       if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'取消失敗','err');return;}
-      _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
+      bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
       setMsg('bc-msg','已取消預約。','ok');bcPreview();
     });
     return;
@@ -1472,7 +1566,7 @@ function bcSchedule(){
   jsonp('schedulePassBroadcast',{token:q('t'),actId:ckActId(),date:d,
     tpl:document.getElementById('bc-tpl').value||''}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'預約失敗','err');return;}
-    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
+    bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
     setMsg('bc-msg','已預約 '+d+' 自動發送。','ok');bcPreview();
   });
 }
@@ -1480,7 +1574,7 @@ function bcSchedule(){
 function bcSaveTpl(){
   jsonp('savePassTemplate',{token:q('t'),tpl:document.getElementById('bc-tpl').value}).then(function(r){
     if(!r||!r.ok){setMsg('bc-msg',(r&&r.msg)||'儲存失敗','err');return;}
-    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
+    bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
     setMsg('bc-msg','已儲存，下次打開就是這一份。','ok');
   });
 }
@@ -1489,7 +1583,13 @@ function renderPreview(r){
   var tplEl=document.getElementById('bc-tpl');
   BC=r;
   BC_DEFAULT_TPL=r.defaultTemplate||r.template;   // 出廠預設由伺服器給，不是「目前這份」
-  if(!tplEl.value)tplEl.value=r.template;
+  // ⚠️ 這支會被呼叫**兩次**——快取先秒顯一次，第二發／網路回來再一次（2026-08-23 起）。
+  // 與 renderSenior 同一個形狀，也承接同一個教訓（2026-08-20 誤發事故）：
+  // 重繪不得覆寫使用者已經表達的輸入，但**沒動過就要覆寫**，否則畫面會永遠停在
+  // 七天前那份範本，而伺服器上早就換了一份——且完全沒有徵兆。
+  // 原本的護欄是 `if(!tplEl.value)`，它防得住覆寫、防不住這種「該更新卻不更新」。
+  watchDirty('bc-tpl');watchDirty('bc-date');
+  if(!isDirty('bc-tpl'))tplEl.value=r.template;
   document.getElementById('bc-edit').style.display='block';
   renderPhs('bc','bc-phs','bc-tpl');
   paintMirror('bc-tpl','bc-mirror','bc');
@@ -1560,7 +1660,7 @@ function bcSendOne(){
     userIds:JSON.stringify([sel.value])},60000).then(function(r){
     btn.disabled=false;   // 放在 then 開頭，涵蓋下面每一條 return 分支
     if(!r||!r.ok){var m1=(r&&r.msg)||'補發失敗';setMsg('bc-msg',m1,'err');sendModal('err',m1);return;}
-    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
+    bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
     if(r.failed){var m2='補發失敗：'+r.failures.map(function(f){return f.name+'('+f.msg+')';}).join('、');
       setMsg('bc-msg',m2,'err');sendModal('err',m2);return;}
     // 這一格最要緊：按補發的理由通常正是「他說沒收到」。這次真的沒送卻回
@@ -1591,7 +1691,7 @@ function bcSend(){
     //    那是既有缺陷，順手修掉（2026-08-21）。
     document.getElementById('bc-send').disabled=false;
     if(!r||!r.ok){var m3=(r&&r.msg)||'發送失敗';setMsg('bc-msg',m3,'err');sendModal('err',m3);return;}
-    _previewUsed=true;   // 第二發那份 preview 已過期，下次 bundle 重新查
+    bcInvalidate();   // 記憶體與磁碟的 preview 都過期了，下次 bundle 重新查
     // 逐則回報實際結果，不假設成功（LINE 的 400/401/429 都不會拋例外）
     // setMsg 走 textContent，這裡一律純文字——塞 HTML 會被原樣印出來
     // 同 snSend：r.sent 含被冪等網擋下的，要扣掉才是這一次真的送出的數量。
