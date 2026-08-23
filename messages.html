@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 加到主畫面（standalone）時的狀態列底色。使用者 2026-08-23 就是這樣開這一頁的。
+     不設的話 iOS 會自己取頁面頂端的顏色，捲動時那一條會跟著內容變色。
+     值＝ --bg #fbfbfa（頁面底色）；⚠️ 這裡是**寫死的字面值**，CSS 變數在 meta 裡讀不到，
+     改 --bg 的話這一行要跟著改，否則狀態列會與頁面差一階而沒有任何錯誤訊息。 -->
+<meta name="theme-color" content="#fbfbfa">
 <title>LINE 訊息紀錄</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
@@ -66,21 +71,23 @@
        而不是浮在畫面中間的一塊——桌機上左右各有一大片空白時差別很明顯。
        用 box-shadow 鋪兩側，**不用偽元素的 left:-50vw**——絕對定位溢出 body 會生出
        橫向捲軸，得再去 overflow-x:hidden，而那會動到 sticky 的捲動容器。
-       box-shadow 不參與版面，也不被 hit-test 命中，所以不影響點擊。 */
-    box-shadow: -100vw 0 0 var(--bg), 100vw 0 0 var(--bg);
-  }
-  /* ⚠️ 往上延伸蓋掉標題列**上方**那一帶（使用者 2026-08-23 真機截圖）。
-     iPhone 上 sticky 的 top:0 貼的是可視區頂端，但頁面內容一路鋪到狀態列底下，
-     於是「10:45／電量／動態島」那一條的背後看得到卡片在滑。
-     做法：偽元素從標題列上緣（bottom:100%）往上鋪 100vh。
-     ⚠️ 不用 env(safe-area-inset-top)：這頁的 viewport 沒有 viewport-fit=cover，
-        那個變數在這裡是 0，寫了等於沒寫；而加 cover 會連帶改動整頁的左右安全區。
-     ⚠️ absolute 往上溢出不會生出捲軸（瀏覽器不允許負向捲動），已實測 scrollWidth 無變化。 */
-  .stickytop::before {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 100vh;
-    background: var(--bg); box-shadow: -100vw 0 0 var(--bg), 100vw 0 0 var(--bg);
-  }
+       box-shadow 不參與版面，也不被 hit-test 命中，所以不影響點擊。
 
+       ⚠️ **一個 shadow 同時處理上方與左右，刻意不用偽元素**（2026-08-23 第二輪）：
+       `0 -50vmax 0 50vmax` ＝ 往上偏移 50vmax、再往四周擴散 50vmax，實際塗到的範圍是
+       上緣 top-100vmax、下緣**維持在 bottom**（不會蓋到下方內容）、左右各外擴 50vmax。
+       ⚠️ 兩個值必須相等，下緣才會剛好落在 bottom：`offset > spread` 會在標題列下方
+          留一道沒塗到的空隙。
+       ⚠️ 單位用 vmax（視窗長邊）不用 vh：寬而矮的視窗上 50vh 撐不過左右兩側
+          （2560×600 時左右各需 920px，50vh 只有 300px），vmax 取長邊，兩個方向都夠。
+       上一版用 `.stickytop::before { bottom:100%; height:100vh }` 往上鋪，
+       **在 Chromium 實測有效（關掉它那一帶會露出卡片白），但 iPhone 加到主畫面的
+       standalone 模式下 Safari 沒有畫出來**——使用者 11:25 的截圖，狀態列後面
+       清楚看得到「1人 許倩瑋」那張卡。成因是 iOS 的橡皮筋回彈：往下拉一點時
+       sticky 標題列跟著下移，它後面的卡片就從上方露出來。
+       改用元素本體的 box-shadow：那是自身繪製，不是另一個盒子，Safari 穩定得多。 */
+    box-shadow: 0 -50vmax 0 50vmax var(--bg);
+  }
   /* 🔑 分隔線才是這次真正修好問題的那一條。卡片是白的、頁面底是 #fbfbfa，
      兩色太近，沒有線就看不出「標題列到哪裡為止」，捲動時卡片邊界從標題下方穿過，
      看起來就像背景在標題後面滑。線也要滿版，理由同上。 */
