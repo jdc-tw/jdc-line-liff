@@ -124,8 +124,18 @@
   .ltrk b{position:absolute;top:8px;left:0;height:2px;opacity:.6}
   .ltrk i{position:absolute;top:4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.06);box-sizing:border-box}
   .lolli .cnt{flex:0 0 110px}
-  /* 雷達上方的分類與比較 */
-  .rdtop{margin:4px 0 8px}
+  /* 健康報告面板（由下滑出，桌機置中） */
+  .sheet{position:fixed;inset:0;background:rgba(44,44,43,.35);display:none;z-index:50;align-items:flex-end;justify-content:center}
+  .sheet.on{display:flex}
+  .sh-body{background:#fff;width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:8px 8px 0 0;padding:14px 18px 28px}
+  @media(min-width:768px){.sheet{align-items:center}.sh-body{border-radius:6px;max-height:84vh}}
+  .sh-h{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+  .sh-h b{font-size:17px;font-weight:600}
+  .sh-x{margin-left:auto;font:inherit;font-size:20px;line-height:1;border:none;background:none;color:var(--ink3);cursor:pointer;padding:2px 6px}
+  .cmp.rules{font-size:12.5px;color:var(--ink2)}
+  /* 雷達上方 */
+  .rdtop{margin:4px 0 8px;display:flex;align-items:baseline;gap:10px}
+  .rlink{margin-left:auto;font-size:12.5px;color:var(--b);text-decoration:none;white-space:nowrap}
   .tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
   .rdn{font-size:12.5px;color:var(--ink2)}
   .cmp{margin:0;padding:0 0 0 18px;font-size:13px;color:var(--ink);line-height:1.7}
@@ -160,6 +170,7 @@
 <div class="brand"><img src="assets/logo-full.svg" alt="日商日本國土開發股份有限公司台灣分公司"></div>
 <h1>人事資訊看板</h1>
 <div class="sub" id="sub">載入中…</div>
+<div id="sheet" class="sheet" role="dialog" aria-modal="true"><div class="sh-body"></div></div>
 <div id="main"></div>
 <script src="assets/deny-no-role.js"></script>
 <script src="assets/board-cache.js"></script>
@@ -451,18 +462,25 @@ function renderHr(r){
       L.push('資深（10 年以上）占 '+pc(p[4])+'（全公司 '+pc(avg[4])+'）');
       L.push('5 年內退休 '+hit5(u)+' 人、'+pc(p[5])+'（全公司 '+pc(avg[5])+'）'+(u.retire.now.length?'，其中已滿 65 歲 '+u.retire.now.length+' 人':''));
       return L;};
+    // 卡上只放雷達＋數字；標籤、比較句、規則都在「健康報告」面板（2026-08-23 使用者：卡上說明太多，點進去個別看）
     var draw=function(n){var u=s.units[n],p=prof(u),col=u.group==='總公司'?C_HQ:C_SITE;
-      return '<div class="rdtop"><div class="tags">'+classify(u,p).map(function(t){return '<span class="chip" style="background:'+t.c+';color:#fff">'+t.t+'</span>';}).join('')+'<span class="rdn">'+esc(n)+'・'+esc(u.group)+'・'+u.count+' 人</span></div>'
-        +'<ul class="cmp">'+cmp(u,p).map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></div>'
+      return '<div class="rdtop"><span class="rdn">'+esc(n)+'・'+esc(u.group)+'・'+u.count+' 人</span><a href="#" class="rlink" data-u="'+esc(n)+'">看健康報告 →</a></div>'
         +radar(axes,[{label:'全公司（單位平均）',color:'#6b6b68',ref:true,values:avg},{label:n,color:col,values:p}]);};
-    window.__radar={draw:draw};
+    var report=function(n){var u=s.units[n],p=prof(u),col=u.group==='總公司'?C_HQ:C_SITE;
+      return '<div class="sh-h"><b>'+esc(n)+'</b><span class="rdn">'+esc(u.group)+'・'+u.count+' 人</span><button type="button" class="sh-x" aria-label="關閉">×</button></div>'
+        +'<div class="tags">'+classify(u,p).map(function(t){return '<span class="chip" style="background:'+t.c+';color:#fff">'+t.t+'</span>';}).join('')+'</div>'
+        +'<ul class="cmp">'+cmp(u,p).map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>'
+        +radar(axes,[{label:'全公司（單位平均）',color:'#6b6b68',ref:true,values:avg},{label:n,color:col,values:p}])
+        +'<div class="wft" style="margin-top:14px">分類規則</div><ul class="cmp rules"><li>接班警訊：5 年退休率 ≥20%，或有已滿 65 歲者</li><li>年輕型：均齡低於全公司 3 歲以上，且新人比 ≥50%</li><li>資深型：均資高於全公司 2 年以上，且資深比 ≥40%</li><li>新舊斷層：新人比 ≥50% 且 5 年退休率 ≥15%</li><li>均衡：以上皆無</li></ul>'
+        +'<div class="wft" style="margin-top:10px">六軸定義</div><ul class="cmp rules"><li>新人比＝0–3 年年資占單位人數</li><li>資深比＝10 年以上年資占單位人數</li><li>5 年退休率＝（已滿 65＋60–64 歲）占單位人數</li><li>全公司的「單位人數」＝總人數÷單位數</li></ul>';};
+    window.__radar={draw:draw,report:report};
     var first=byCount[0];
     // 全單位標籤總覽：一眼看哪些單位有警訊
     var overview=s.unitOrder.map(function(n){var u=s.units[n];return '<button type="button" class="uchip" data-u="'+esc(n)+'" style="border-color:'+(u.group==='總公司'?C_HQ:C_SITE)+'">'+esc(n)+classify(u,prof(u)).map(function(t){return '<i style="background:'+t.c+'" title="'+t.t+'"></i>';}).join('')+'</button>';}).join('');
-    html+='<div class="card"><div class="sec-h"><b>① 單位體質雷達</b><small>六軸各自以最大值為 100%；虛線＝全公司，實面＝所選單位。分類規則：接班警訊＝5 年退休率 ≥20% 或有已滿 65；年輕型＝均齡低於全公司 3 歲且新人比 ≥50%；資深型＝均資高於全公司 2 年且資深比 ≥40%；新舊斷層＝新人比 ≥50% 且 5 年退休率 ≥15%</small></div>'
+    html+='<div class="card"><div class="sec-h"><b>① 單位體質雷達</b><small>虛線＝全公司，實面＝所選單位；點單位看健康報告</small></div>'
         +'<select id="rdsel" class="sel">'+s.unitOrder.map(function(n){return '<option value="'+esc(n)+'"'+(n===first?' selected':'')+'>'+esc(n)+'</option>';}).join('')+'</select>'
         +'<div id="rdbox">'+draw(first)+'</div>'
-        +'<div class="wft" style="margin-top:12px">全單位分類（點單位切換；色點＝標籤）</div><div class="uchips">'+overview+'</div>'
+        +'<div class="wft" style="margin-top:12px">全單位（色點＝分類，點開看報告）</div><div class="uchips">'+overview+'</div>'
         +'<div class="legend" style="margin-top:6px">'+[['接班警訊','#b95f85'],['年輕型','#4f90bf'],['資深型','#6c7886'],['新舊斷層','#8f7fd6'],['均衡','#3aa693']].map(function(x){return '<span><i style="background:'+x[1]+';border-radius:50%"></i>'+x[0]+'</span>';}).join('')+'</div></div>';
   })();
   // 2 年資分佈
@@ -662,8 +680,14 @@ function renderHr(r){
   var sel=document.getElementById('rdsel');
   var showUnit=function(n){sel.value=n;document.getElementById('rdbox').innerHTML=window.__radar.draw(n);
     Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.classList.toggle('on',b.getAttribute('data-u')===n);});};
+  var sheet=document.getElementById('sheet');
+  var openReport=function(n){sheet.querySelector('.sh-body').innerHTML=window.__radar.report(n);sheet.classList.add('on');document.body.style.overflow='hidden';
+    sheet.querySelector('.sh-x').onclick=closeReport;};
+  var closeReport=function(){sheet.classList.remove('on');document.body.style.overflow='';};
+  sheet.onclick=function(e){if(e.target===sheet)closeReport();};
   if(sel){ sel.onchange=function(){showUnit(sel.value);}; showUnit(sel.value);
-    Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.onclick=function(){showUnit(b.getAttribute('data-u'));};}); }
+    Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.onclick=function(){showUnit(b.getAttribute('data-u'));openReport(b.getAttribute('data-u'));};});
+    main.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('.rlink');if(a){e.preventDefault();openReport(a.getAttribute('data-u'));}}); }
 }
 (function () {
   var TOKEN = q('t');
