@@ -16,7 +16,7 @@
 
 /** 欄位權重：越是「人在找的東西」越重。 */
 var FIELD_W = {
-  subject: 5, category: 4, name: 3.5, date: 3, content: 2.5,
+  gist: 5, category: 4, name: 3.5, date: 3, content: 2.5,
   unit: 2, kind: 1.5, error: 1.5, batchId: 1, num: 1,
   userId: 1, attach: 1, platform: 1,
 };
@@ -115,7 +115,7 @@ function indexBatch(batch) {
   var t = batch.tally || { ok: 0, bad: 0, skip: 0 };
   var d = String(batch.time || '');
   return {
-    subject: [norm(batch.subject)],
+    gist: [norm(batch.gist)],
     category: [norm(batch.categoryLabel), norm(batch.source)],
     name: names.map(norm),
     unit: units.map(norm),

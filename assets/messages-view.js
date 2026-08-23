@@ -59,15 +59,56 @@ function col(header, row, name) {
 }
 
 /**
- * 主旨：資料表**沒有主旨欄**，只能從「訊息內容」取。
- * 單則純文字時取第一行；多則會被 hub 存成 JSON，那時候顯示型別比顯示 JSON 有用。
+ * 稱呼行：「林俊宏 您好：」「您好，」這類。**只認開頭很短又以您好/你好收尾的行**——
+ * 放寬到「含有您好」會把「…如有問題請洽您好…」這種正文也吃掉。
  */
-function subjectOf(content, kind) {
+var GREETING_LINE = /^.{0,12}[您你]好[：:，,、。\s]*$/;
+
+/**
+ * 卡面摘要：**跳過稱呼行**之後的第一行。
+ *
+ * 2026-08-23 使用者指定。原本取的是內容第一行，而這些訊息是套版產生的，
+ * 第一行永遠是「○○您好：」——每張卡長得一模一樣，等於沒有資訊。
+ * 跳過它就看得出這批在講什麼（「您 8/18 的補登申請已核准。」）。
+ *
+ * ⚠️ 純規則，**不做語意判讀**：只認稱呼行、只跳稱呼行，其餘照抄。
+ *    整段都是稱呼行時保留最後一行——寧可顯示「您好」也不要留白，
+ *    留白會讓人以為這批沒有內容。
+ * ⚠️ 同一批裡每個人的內文不一樣（套版帶各自姓名年資），取第一個人的；
+ *    使用者 2026-08-22 拍板不標明是誰的。
+ *
+ * 上限 40 字是**防呆不是排版**：真正的截斷交給 CSS 的 ellipsis（手機與桌機
+ * 放得下的字數不同，寫死字數會在其中一邊切得太早或太晚）。
+ */
+/**
+ * 多則訊息被 hub 的 messageContentOf 存成 JSON 字串（`JSON.stringify(messages)`）。
+ * 裡面就有文字，挖出來比顯示「（text+image）」有用——那跟顯示 JSON 一樣沒資訊。
+ * 解析不出來就回 null，讓呼叫端退回顯示型別（截斷的內容、flex 這種沒有 text 的都會走這條）。
+ */
+function textInPayload(s) {
+  var v;
+  try { v = JSON.parse(s); } catch (e) { return null; }
+  var list = Array.isArray(v) ? v : [v];
+  for (var i = 0; i < list.length; i++) {
+    var m = list[i];
+    if (m && m.type === 'text' && m.text) return String(m.text);
+  }
+  return null;
+}
+
+function gistOf(content, kind) {
   var s = String(content == null ? '' : content).trim();
   if (!s) return '（無內容）';
-  if (s.charAt(0) === '[' || s.charAt(0) === '{') return '（' + (kind || '訊息') + '）';
-  var first = s.split('\n')[0].trim();
-  return first.length > 60 ? first.slice(0, 60) + '…' : first;
+  if (s.charAt(0) === '[' || s.charAt(0) === '{') {
+    s = textInPayload(s);
+    if (!s) return '（' + (kind || '訊息') + '）';
+  }
+  var lines = s.split('\n').map(function (t) { return t.trim(); })
+    .filter(function (t) { return t; });
+  var i = 0;
+  while (i < lines.length - 1 && GREETING_LINE.test(lines[i])) i++;
+  var out = lines[i] || '';
+  return out.length > 40 ? out.slice(0, 40) + '…' : out;
 }
 
 /** 則數＝訊息型別用 + 拆開加總。一列＝發給一個人，但一次可送多則。 */
@@ -124,7 +165,7 @@ function groupBatches(header, rows) {
       platform: col(header, g[0], '平台'),
       source: src,
       categoryLabel: CATEGORY[src] || src || '（未申報）',
-      subject: subjectOf(col(header, g[0], '訊息內容'), col(header, g[0], '訊息型別')),
+      gist: gistOf(col(header, g[0], '訊息內容'), col(header, g[0], '訊息型別')),
       rows: rs,
       tally: t,
       lamp: lamp,
@@ -193,11 +234,8 @@ function stripHtml(batch) {
 /**
  * 下拉：訊息全文 ＋ 收件名單 ＋ 批次號，收在**同一個**三角形底下。
  *
- * 2026-08-23 使用者拍板合併。原本是兩個下拉：卡面先給一小段主旨（訊息內容第一行），
- * 點開看全文；名單另一個三角形。但這些訊息是套版產生的，第一行每一則都長得一樣
- * （「○○您好」），那一小段**認不出這批是什麼**，只是佔掉一列。
- * 分類徽章已經說了這批是哪一種，所以卡面不再放主旨，要看內容就點開。
- * ⚠️ subject 仍留在搜尋索引裡（權重 5）——看不見不等於不能搜。
+ * 2026-08-23 使用者拍板合併。原本是兩個下拉：一個看全文、一個看名單。
+ * 卡面現在有內容摘要（gistOf，跳過稱呼行），要看**完整**內容與收件人就點這一個。
  *
  * ⚠️ 同一批裡每個人的內文不一樣（套版帶各自姓名年資），這裡固定拿第一個人的；
  *    使用者 2026-08-22 拍板不標明是誰的。
@@ -229,27 +267,19 @@ function fullMessageOf(batch) {
 }
 
 /**
- * 一張批次卡：卡面兩列（分類·日期·時間·燈號／人數·則數·狀態列），底下一個下拉。
+ * 一張批次卡：三列（分類·日期·時間·燈號／人數·則數·狀態列／內容摘要）。
  *
- * 第二列**只在多人批次才畫**（2026-08-23 使用者拍板）。單人單則時它印的是
- * 「1 人 1 則」——兩個數字恆為 1，說不出任何這張卡以外的事；而人數的用途本來就是
- * 「一眼看出這批的規模」，一個人的批次沒有規模可言。狀態則由第一列的燈號負責。
- * 「則數」也只在**與人數不同**時才印：一人一則是常態，相等的時候印它等於印廢話，
- * 印出來就代表「有人收到不只一則」，那才是要讓人看見的例外。
+ * ⚠️ 人數與則數**無條件顯示**。2026-08-23 曾改成「單人批次不畫」，理由是
+ *    「1 人 1 則」兩個數字恆為 1，但使用者當場否決：他問的是那一列在呈現什麼，
+ *    不是要把它拿掉——**問題出在卡面沒有內容摘要，不是數字多餘**。
+ *    補上第三列的摘要之後，那一列就不再是卡片上唯一的東西了。
+ *
+ * 摘要是**靜態文字不是下拉**：全文與名單都在底下那個唯一的三角形裡。
+ * 字級比照日期時間（12.5px），它是附註不是標題。
  *
  * @param {string} [anchorId] 當天第一張卡才給——滑桿的「日」模式靠它跳。
  */
 function cardHtml(batch, toks, anchorId) {
-  var people = batch.rows.length;
-  var scale = people > 1
-    ? '<div class="ln">'
-      +   '<span class="num">' + people + '<u>\u4eba</u></span>'
-      +   (batch.msgCount !== people
-            ? '<span class="num">' + batch.msgCount + '<u>\u5247</u></span>' : '')
-      +   stripHtml(batch)
-      + '</div>'
-    : '';
-
   return '<div class="card"' + (anchorId ? ' id="' + esc(anchorId) + '"' : '') + '><div class="head">'
     + '<div class="ln">'
     +   '<span class="tag ' + esc(batch.source) + '">'
@@ -259,7 +289,12 @@ function cardHtml(batch, toks, anchorId) {
     +   '<i class="lamp ' + batch.lamp + '" role="img" aria-label="'
     +     batch.statusLabel + '"></i>'
     + '</div>'
-    + scale
+    + '<div class="ln">'
+    +   '<span class="num">' + batch.rows.length + '<u>\u4eba</u></span>'
+    +   '<span class="num">' + batch.msgCount + '<u>\u5247</u></span>'
+    +   stripHtml(batch)
+    + '</div>'
+    + '<div class="gist">' + highlight(batch.gist, toks) + '</div>'
     + '</div>' + foldHtml(batch, toks) + '</div>';
 }
 
@@ -355,7 +390,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     CATEGORY: CATEGORY, SKIP_RESULT: SKIP_RESULT, STATUS_LABEL: STATUS_LABEL,
     sinceWarning: sinceWarning, railTicks: railTicks, fullMessageOf: fullMessageOf,
-    esc: esc, col: col, statusOf: statusOf, subjectOf: subjectOf,
+    esc: esc, col: col, statusOf: statusOf, gistOf: gistOf, textInPayload: textInPayload,
     msgCountOf: msgCountOf, tallyOf: tallyOf, lampOf: lampOf,
     groupBatches: groupBatches, monthGroups: monthGroups,
     highlight: highlight, stripHtml: stripHtml, foldHtml: foldHtml,

@@ -165,8 +165,17 @@
   .bar span { height: 100%; }
   .bar .ok { background: var(--g); } .bar .bad { background: var(--bad); } .bar .skip { background: #d8d8d5; }
 
-  /* 訊息全文：在下拉裡，名單的上方。
-     2026-08-23 合併——卡面不再有主旨那一列（套版訊息的第一行每則都一樣，認不出批次）。 */
+  /* 卡面第三列：內容摘要（跳過稱呼行後的第一行，見 messages-view.js 的 gistOf）。
+     字級比照 .dt／.tm（12.5px）——使用者 2026-08-23 指定「跟日期時間差不多」。
+     它是附註不是標題：上一版做成 14.5px 的可點主旨，看起來像卡片抬頭，
+     而內容其實只是「○○您好」。
+     ⚠️ 單行省略號，截斷交給 CSS 不寫死字數：手機與桌機放得下的字數不同。 */
+  .gist {
+    font-size: 12.5px; line-height: 1.6; color: var(--ink2); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* 訊息全文：在下拉裡，名單的上方（2026-08-23 與名單併成同一個下拉）。 */
   .fullmsg {
     margin: 2px 0 10px; padding: 9px 11px; border-radius: 3px;
     background: #f7f7f5; border: 1px solid var(--ln);
@@ -174,7 +183,7 @@
     white-space: pre-wrap; overflow-wrap: break-word;
   }
 
-  /* 名單：預設收起，只給一個三角形，不放文字 */
+  /* 下拉：訊息全文＋名單，預設收起，只給一個三角形，不放文字 */
   .card details { border-top: 1px solid #f4f4f2; }
   .fold-sum {
     list-style: none; cursor: pointer; padding: 7px 13px;
