@@ -21,13 +21,20 @@
 <!-- viewport-fit=cover：不加的話 env(safe-area-inset-*) 全部回 0（2026-08-23 實測前提）。
      加了之後可視區明確延伸到整個螢幕，fixed／sticky 的 top:0 才真的是螢幕頂端；
      代價是安全區要自己留，見下方 --sat／--sal／--sar／--sab。 -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- ⚠️ 這一份刻意**長得跟 stats.html 一樣**（2026-08-23 對照實驗）：
+     stats 也有 sticky 標題列、也在同一個 App 裡，而使用者從沒抱怨過它穿透。
+     三個 messages 沒有的標籤一次補齊，並把 viewport 的 cover 參數拿掉。
+     這一份若不穿透，答案就在這組標籤裡；若照樣穿透，就把它們排除。 -->
+<link rel="manifest" href="assets/app.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!-- 加到主畫面（standalone）時的狀態列底色。使用者 2026-08-23 就是這樣開這一頁的。
      不設的話 iOS 會自己取頁面頂端的顏色，捲動時那一條會跟著內容變色。
      值＝ --bg #fbfbfa（頁面底色）；⚠️ 這裡是**寫死的字面值**，CSS 變數在 meta 裡讀不到，
      改 --bg 的話這一行要跟著改，否則狀態列會與頁面差一階而沒有任何錯誤訊息。 -->
 <meta name="theme-color" content="#fbfbfa">
-<title>訊息紀錄（診斷版）</title>
+<title>診斷版（比照 stats 設定）</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
   /* ═══════════════════════════════════════════════════════════════
