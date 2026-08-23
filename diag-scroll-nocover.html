@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta id="vp" name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fbfbfa">
+<title>捲動實驗（無 cover）</title>
+<style>
+  /* ⚠️ 一次性實驗頁（2026-08-23）。量完就刪。
+     為何存在：狀態列穿透改了三次都沒好，而剩下的兩個變因要組合起來試——
+     一次試一個要來回四趟，全部擺在同一頁點兩下就試完。
+
+     實測前提（使用者的 iPhone 16 Pro / iOS 26.6.1 / standalone）：
+       env(safe-area-inset-top) = 0px   ← WebKit bug 301994
+       env(safe-area-inset-bottom) = 34px
+       screen 402×874 / innerHeight 812 ⇒ 狀態列佔 62px，且**不在可視區內**
+     所以 fixed 的 top:0 是在狀態列下方，CSS 碰不到那 62px。
+     muffinman.io 2026-08 的更新也說「viewport 外的 fixed 遮罩不再被繪製」。 */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: -apple-system, "Noto Sans TC", sans-serif;
+    background: #fbfbfa; color: #2c2c2b;
+  }
+  /* 內容最上面放一條**很鮮豔**的橫幅。捲動時如果狀態列後面出現這個顏色，
+     就代表這個組合仍然穿透——比讀文字快得多。 */
+  .flag {
+    background: #d81b60; color: #fff; font-weight: 700; font-size: 15px;
+    padding: 14px 16px; line-height: 1.5;
+  }
+  .bar {
+    position: sticky; top: 0; z-index: 30; background: #fbfbfa;
+    border-bottom: 1px solid #ececea; padding: 12px 16px;
+  }
+  h1 { font-size: 17px; margin: 0 0 8px; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  button, .lnk {
+    font: inherit; font-size: 14px; padding: 8px 12px; border-radius: 6px;
+    border: 1px solid #c9c9c5; background: #fff; color: #2c2c2b;
+    cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  button.on { background: #2f4858; color: #fff; border-color: #2f4858; }
+  .now {
+    font-size: 14px; color: #2c2c2b; background: #eef3f6;
+    padding: 10px 16px; line-height: 1.6; border-bottom: 1px solid #ececea;
+  }
+  .now b { font-size: 15px; }
+  .row { padding: 13px 16px; border-bottom: 1px solid #ececea; font-size: 15px; }
+
+  /* ── 模式二：捲動發生在內部容器，body 不捲 ──
+     推論：body 捲動時 Safari 把整份文件的圖層畫到可視區之外（也就是狀態列那 62px）；
+     改成內部容器捲動的話，那個容器有明確邊界，內容不該溢出。**待實測驗證。** */
+  body.inner, html.inner { height: 100%; overflow: hidden; }
+  body.inner #scroller { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  body:not(.inner) #scroller { height: auto; overflow: visible; }
+</style>
+</head>
+<body>
+<div id="scroller">
+  <div class="bar">
+    <h1>捲動實驗（無 cover）</h1>
+    <div class="btns">
+      <button id="b1" type="button">body 捲動</button>
+      <button id="b2" type="button">容器捲動</button>
+      <a class="lnk" href="diag-scroll.html">← 切回「有 cover」版</a>
+    </div>
+  </div>
+  <div class="now" id="now"></div>
+  <div class="flag">↑ 往上捲。<b>狀態列後面如果出現這個桃紅色</b>，代表這個組合還是會穿透。</div>
+  <div id="fill"></div>
+</div>
+<script>
+(function () {
+  var mq = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  function px(n) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:absolute;visibility:hidden;height:env(' + n + ',0px)';
+    document.body.appendChild(d);
+    var v = getComputedStyle(d).height;
+    d.parentNode.removeChild(d);
+    return v;
+  }
+  function paint() {
+    var inner = document.body.classList.contains('inner');
+    document.getElementById('now').innerHTML =
+      '目前組合：<b>沒有 viewport-fit ＋ ' + (inner ? '容器捲動' : 'body 捲動') + '</b><br>'
+      + 'env top ' + px('safe-area-inset-top')
+      + '　screen ' + screen.height + '　inner ' + window.innerHeight
+      + '　差 ' + (screen.height - window.innerHeight)
+      + '<br>' + (mq ? '✅ standalone（量對環境）' : '🔴 不是主畫面 App，這樣量不算數');
+    document.getElementById('b1').className = inner ? '' : 'on';
+    document.getElementById('b2').className = inner ? 'on' : '';
+  }
+  function set(inner) {
+    document.body.classList.toggle('inner', inner);
+    document.documentElement.classList.toggle('inner', inner);
+    document.getElementById('scroller').scrollTop = 0;
+    window.scrollTo(0, 0);
+    paint();
+  }
+  document.getElementById('b1').addEventListener('click', function () { set(false); });
+  document.getElementById('b2').addEventListener('click', function () { set(true); });
+
+  var rows = '';
+  for (var i = 1; i <= 40; i++) rows += '<div class="row">填充列 ' + i + '　往上捲，看狀態列後面</div>';
+  document.getElementById('fill').innerHTML = rows;
+  paint();
+})();
+</script>
+</body>
+</html>
