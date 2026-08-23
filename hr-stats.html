@@ -274,6 +274,8 @@ function colChart(bins,opts){
       // 末端只標一個值（選擇性直接標示，不每點都標）；疊在柱子數字上方時往上讓 4px
       var e=pts[pts.length-1], last=l.values[l.values.length-1];
       var tag=l.endLabel?'<text x="'+e[0]+'" y="'+(parseFloat(e[1])-7)+'" font-size="11" fill="'+l.color+'" text-anchor="end" font-weight="600">'+esc(String(last))+'</text>':'';
+      // labelAll：每個點上方標值（灰色小字）——⑮ 合計線（2026-08-23 使用者）
+      if(l.labelAll) tag=pts.map(function(q,i){return '<text x="'+q[0]+'" y="'+(parseFloat(q[1])-5)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+esc(String(l.values[i]))+'</text>';}).join('');
       return seg+dots+tag;
     }).join('')+'</svg>';
   }
@@ -369,7 +371,7 @@ function areaChart(labels,values,color,fill,lines,cum){
     +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width=".8" stroke-linejoin="round"/>'
     +'<line x1="'+PX+'" y1="'+y(0)+'" x2="'+(W-PX)+'" y2="'+y(0)+'" stroke="#ececea"/>';
   lines.forEach(function(l){
-    svg+='<polyline points="'+l.values.map(function(v,i){return x(i).toFixed(1)+','+y(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+l.color+'" stroke-width=".8" stroke-linejoin="round"/>';
+    svg+='<polyline points="'+l.values.map(function(v,i){return x(i).toFixed(1)+','+y(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+l.color+'" stroke-width=".8" stroke-dasharray="3 2" stroke-linejoin="round"/>';
     l.values.forEach(function(v,i){svg+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="1.4" fill="'+l.color+'" stroke="#fff" stroke-width=".6"><title>'+esc(l.label)+' '+esc(labels[i])+'：'+v+' 人</title></circle>';});
   });
   values.forEach(function(v,i){
@@ -383,6 +385,7 @@ function areaChart(labels,values,color,fill,lines,cum){
     var cmax=Math.max.apply(null,cum.values.concat([1]));
     var cy=function(v){return PT+(1-v/cmax)*(H-PT-PB);};
     svg+='<polyline points="'+cum.values.map(function(v,i){return x(i).toFixed(1)+','+cy(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+cum.color+'" stroke-width="1.2" stroke-dasharray="1 3" stroke-linecap="round" stroke-linejoin="round"/>'
+      +cum.values.map(function(v,i){return (n-1-i)%2===0?'<text x="'+x(i).toFixed(1)+'" y="'+(cy(v)+12).toFixed(1)+'" font-size="9.5" fill="#9a9a96" text-anchor="'+(i===n-1?'end':'middle')+'">'+v+'</text>':'';}).join('')
       +'<text x="'+(W-2)+'" y="'+(cy(cmax)+3.5).toFixed(1)+'" font-size="9.5" fill="'+cum.color+'" text-anchor="end">'+cmax+'</text>'
       +'<text x="'+(W-2)+'" y="'+(cy(0)-3).toFixed(1)+'" font-size="9.5" fill="#9a9a96" text-anchor="end">0</text>';
   }
@@ -544,7 +547,7 @@ function renderHr(r){
         +(u.retire.now.length?'<span class="rdn">已滿 65 歲 '+u.retire.now.length+' 人</span>':'')+((u.retire.y1||[]).length?'<span class="rdn">1 年內 '+u.retire.y1.length+' 人</span>':'')+'</div>'
         +radars(n,false)
         +defs('分類規則',[['接班警訊','5 年退休率 ≥20%，或有已滿 65 歲者'],['年輕型','均齡低於同組平均 3 歲以上，且新人比 ≥50%'],['資深型','均資高於同組平均 2 年以上，且資深比 ≥40%'],['新舊斷層','新人比 ≥50% 且 5 年退休率 ≥15%'],['均衡','以上皆無']])
-        +defs('六軸定義',[['新人比','0–3 年年資占單位人數'],['資深比','10 年以上年資占單位人數'],['5 年退休率','（已滿 65＋60–64 歲）占單位人數'],['同組平均','該組（總公司或工地）所有人合併計算；「單位人數」＝該組總人數÷單位數']]);};
+        +defs('體質六軸定義',[['新人比','0–3 年年資占單位人數'],['資深比','10 年以上年資占單位人數'],['5 年退休率','（已滿 65＋60–64 歲）占單位人數'],['同組平均','該組（總公司或工地）所有人合併計算；「單位人數」＝該組總人數÷單位數']]);};
     // 定義表：左欄名詞等寬右對齊、右欄說明，一律用「：」（2026-08-23 使用者）
     var defs=function(title,rows){return '<div class="wft" style="margin-top:14px">'+esc(title)+'</div><table class="df">'+rows.map(function(r){return '<tr><th>'+esc(r[0])+'：</th><td>'+esc(r[1])+'</td></tr>';}).join('')+'</table>';};
     window.__radar={draw:draw,report:report};
@@ -623,7 +626,7 @@ function renderHr(r){
   if(jys.length){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
-    html+='<div class="card"><div class="sec-h"><b>⑩ 入社年度趨勢</b><small>淺藍面積＝每年新進人數（現仍在職者），標最高三年；深線＝總公司、灰線＝工地'+(s.joinYearsByGroup?'':'（由年資回推入社年，±1 年）')+'；點線＝累計在職人數（右軸）</small></div>'
+    html+='<div class="card"><div class="sec-h"><b>⑩ 入社年度趨勢</b><small>淺藍面積＝每年新進人數（現仍在職者），標最高三年；虛線＝總公司（深）／工地（灰）'+(s.joinYearsByGroup?'':'（由年資回推入社年，±1 年）')+'；點線＝累計在職人數（右軸）</small></div>'
         +areaChart(trend.labels,trend.counts,'#a9cde6','#e1eef7',(function(){
           if(s.joinYearsByGroup){   // 後端直接算的真值（2026-08-23 加）；沒有才退回用年資回推
             var byY=function(g){return trend.labels.map(function(lb,i){return (s.joinYearsByGroup[g]||{})[String(y0+i)]||0;});};
@@ -690,11 +693,10 @@ function renderHr(r){
     var sumV=function(arr){return arr.reduce(function(a,x){return a+x.v;},0);};
     // 排行清單：細條＋人數，總公司／工地兩欄（2026-08-23 使用者否決樹狀圖）
     // 每列加「全公司同職稱人數」的點並上下連成點線，跟本組條長比（2026-08-23 使用者）。尺度＝全公司最大職稱人數
-    var rank=function(arr,max){return '<div class="ovl rkw">'+arr.map(function(it){var all=s.titles[it.nm].count;
-        return '<div class="rk hrow"><span class="nm">'+esc(it.nm)+'</span><span class="bar"><i style="width:'+(it.v/max*100).toFixed(1)+'%;background:'+it.c+'"></i><em style="left:'+(all/max*100).toFixed(1)+'%" title="全公司 '+all+' 人"></em></span><span class="v">'+it.v+'<u>/'+all+'</u></span></div>';}).join('')
-      +rowLinks([{color:'#6b6b68',xs:arr.map(function(it){return s.titles[it.nm].count/max*100;})}],arr.length,44)+'</div>';};
-    var rmax=Math.max.apply(null,tl.map(function(k){return s.titles[k].count;}).concat([1]));
-    html+='<div class="card"><div class="sec-h"><b>⑬ 職稱分布</b><small>條＝本組人數、灰點＝全公司同職稱人數（點線相連）；右側 本組/全公司</small></div><div class="tms">'
+    var rank=function(arr,max){return '<div class="rkw">'+arr.map(function(it){
+        return '<div class="rk"><span class="nm">'+esc(it.nm)+'</span><span class="bar"><i style="width:'+(it.v/max*100).toFixed(1)+'%;background:'+it.c+'"></i></span><span class="v">'+it.v+'</span></div>';}).join('')+'</div>';};
+    var rmax=Math.max.apply(null,tmHq.concat(tmSite).map(function(x){return x.v;}).concat([1]));
+    html+='<div class="card"><div class="sec-h"><b>⑬ 職稱分布</b><small>人數降冪；總公司與工地分開（職稱體系不同），條長同一尺度</small></div><div class="tms">'
         +'<div class="tmw"><div class="wft">總公司 '+sumV(tmHq)+' 人・'+tmHq.length+' 種</div>'+rank(tmHq,rmax)+'</div>'
         +'<div class="tmw"><div class="wft">工地 '+sumV(tmSite)+' 人・'+tmSite.length+' 種</div>'+rank(tmSite,rmax)+'</div>'
         +'</div></div>';
@@ -729,7 +731,7 @@ function renderHr(r){
           return colChart(rc,{ramp:SHADE.retire,lollipop:true,rightAxis:true,height:300,lines:[
             {label:'總公司累計 '+ch[L],color:'#2f6fae',values:ch},
             {label:'工地累計 '+cs[L],color:'#4a5563',values:cs},
-            {label:'合計 '+ca[L],color:'#b95f85',values:ca}]});})()+'</div>';
+            {label:'合計 '+ca[L],color:'#b95f85',labelAll:true,values:ca}]});})()+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
