@@ -160,6 +160,9 @@
   .sh-h b{font-size:17px;font-weight:600}
   .sh-x{margin-left:auto;font:inherit;font-size:20px;line-height:1;border:none;background:none;color:var(--ink3);cursor:pointer;padding:2px 6px}
   .cmp.rules{font-size:12.5px;color:var(--ink2)}
+  .df{border-collapse:collapse;font-size:12.5px;line-height:1.6;margin-top:2px}
+  .df th{font-weight:600;color:var(--ink);text-align:right;white-space:nowrap;padding:2px 4px 2px 0;vertical-align:top;width:1%}
+  .df td{color:var(--ink2);padding:2px 0;vertical-align:top}
   /* 雷達上方 */
   .rdtop{margin:4px 0 8px;display:flex;align-items:baseline;gap:10px}
   .rlink{margin-left:auto;font-size:12.5px;color:var(--b);text-decoration:none;white-space:nowrap}
@@ -540,8 +543,10 @@ function renderHr(r){
         +'<div class="tags">'+classify(u,p).map(function(t){return '<span class="chip" style="background:'+t.c+';color:#fff">'+t.t+'</span>';}).join('')
         +(u.retire.now.length?'<span class="rdn">已滿 65 歲 '+u.retire.now.length+' 人</span>':'')+((u.retire.y1||[]).length?'<span class="rdn">1 年內 '+u.retire.y1.length+' 人</span>':'')+'</div>'
         +radars(n,false)
-        +'<div class="wft" style="margin-top:14px">分類規則</div><ul class="cmp rules"><li>接班警訊：5 年退休率 ≥20%，或有已滿 65 歲者</li><li>年輕型：均齡低於同組平均 3 歲以上，且新人比 ≥50%</li><li>資深型：均資高於同組平均 2 年以上，且資深比 ≥40%</li><li>新舊斷層：新人比 ≥50% 且 5 年退休率 ≥15%</li><li>均衡：以上皆無</li></ul>'
-        +'<div class="wft" style="margin-top:10px">六軸定義</div><ul class="cmp rules"><li>新人比＝0–3 年年資占單位人數</li><li>資深比＝10 年以上年資占單位人數</li><li>5 年退休率＝（已滿 65＋60–64 歲）占單位人數</li><li>同組平均＝該組（總公司或工地）所有人合併計算；「單位人數」＝該組總人數÷單位數</li></ul>';};
+        +defs('分類規則',[['接班警訊','5 年退休率 ≥20%，或有已滿 65 歲者'],['年輕型','均齡低於同組平均 3 歲以上，且新人比 ≥50%'],['資深型','均資高於同組平均 2 年以上，且資深比 ≥40%'],['新舊斷層','新人比 ≥50% 且 5 年退休率 ≥15%'],['均衡','以上皆無']])
+        +defs('六軸定義',[['新人比','0–3 年年資占單位人數'],['資深比','10 年以上年資占單位人數'],['5 年退休率','（已滿 65＋60–64 歲）占單位人數'],['同組平均','該組（總公司或工地）所有人合併計算；「單位人數」＝該組總人數÷單位數']]);};
+    // 定義表：左欄名詞等寬右對齊、右欄說明，一律用「：」（2026-08-23 使用者）
+    var defs=function(title,rows){return '<div class="wft" style="margin-top:14px">'+esc(title)+'</div><table class="df">'+rows.map(function(r){return '<tr><th>'+esc(r[0])+'：</th><td>'+esc(r[1])+'</td></tr>';}).join('')+'</table>';};
     window.__radar={draw:draw,report:report};
     var first=byCount[0];
     // 全單位標籤總覽：一眼看哪些單位有警訊
