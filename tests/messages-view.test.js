@@ -319,30 +319,112 @@ test('cardHtml：卡面第三列是摘要，不是「○○您好」那一行', 
   assert.equal(m[1], '真正的內容在第二行');
 });
 
-test('cardHtml：單人批次照樣印「1 人 1 則」（2026-08-23 使用者否決隱藏）', () => {
-  // 曾經改成單人不畫那一列，理由是兩個數字恆為 1。使用者當場否決：
-  // 他問的是那一列在呈現什麼，不是要拿掉——問題出在卡面沒有內容摘要。
+test('cardHtml：只印人數，不再印則數（使用者 2026-08-23：「改成 1 人就好」）', () => {
   const b = V.groupBatches(H, [row({ 對象姓名: '林淑芬' })])[0];
   const html = V.cardHtml(b, []);
   assert.ok(html.indexOf('1<u>人</u>') >= 0);
-  assert.ok(html.indexOf('1<u>則</u>') >= 0);
+  assert.equal(html.indexOf('<u>則</u>'), -1, '則數那一格已撤除');
 });
 
-test('cardHtml：多人批次印人數與則數', () => {
-  const b = V.groupBatches(H, Array.from({ length: 137 }, (_, i) => row({ 對象姓名: 'N' + i })))[0];
-  const html = V.cardHtml(b, []);
-  assert.ok(html.indexOf('137<u>人</u>') >= 0);
-  assert.ok(html.indexOf('137<u>則</u>') >= 0);
-});
-
-test('cardHtml：一人收到多則時，則數大於人數', () => {
+test('cardHtml：人數旁邊列出名字，不列單位', () => {
   const b = V.groupBatches(H, [
-    row({ 對象姓名: 'A', 訊息型別: 'text+image' }),
-    row({ 對象姓名: 'B', 訊息型別: 'text+image' }),
+    row({ 對象姓名: '林俊宏', 對象單位: '工務管理組' }),
+    row({ 對象姓名: '黃淑芬', 對象單位: '業務部' }),
+  ])[0];
+  const m = V.cardHtml(b, []).match(/<span class="names">([\s\S]*?)<\/span>/);
+  assert.ok(m, '卡面要有名字那一格');
+  assert.equal(m[1], '林俊宏、黃淑芬');
+  assert.equal(m[1].indexOf('工務管理組'), -1, '單位不進卡面');
+});
+
+test('namesLine：名字全部輸出，截斷交給 CSS（JS 不算字寬）', () => {
+  const b = V.groupBatches(H, Array.from({ length: 40 }, (_, i) => row({ 對象姓名: '員工' + i })))[0];
+  const line = V.namesLine(b, []);
+  assert.equal(line.split('、').length, 40, '40 個名字一個都不能少——少了就搜不到');
+  assert.ok(line.indexOf('員工39') >= 0);
+});
+
+test('cardHtml：那排每人一顆的點已撤除（統一用右上角燈號）', () => {
+  const b = V.groupBatches(H, Array.from({ length: 10 }, (_, i) => row({ 對象姓名: 'N' + i })))[0];
+  const html = V.cardHtml(b, []);
+  assert.equal(html.indexOf('class="strip"'), -1);
+  assert.equal(html.indexOf('class="dot'), -1);
+  assert.equal(html.indexOf('class="bar"'), -1);
+});
+
+test('failNote：全成功回空字串——燈號已經綠了，再寫一次是廢話', () => {
+  const b = V.groupBatches(H, [row({ 對象姓名: 'A' }), row({ 對象姓名: 'B' })])[0];
+  assert.equal(b.tally.bad, 0);
+  assert.equal(V.failNote(b), '');
+  assert.equal(V.cardHtml(b, []).indexOf('class="fail"'), -1);
+});
+
+test('failNote：有失敗要講出幾個——燈號三色分不出 3 個失敗與全滅', () => {
+  const rows = Array.from({ length: 137 }, (_, i) => row({ 對象姓名: 'N' + i }));
+  rows[0] = row({ 對象姓名: 'N0', 結果: '失敗', 錯誤: 'not a friend' });
+  rows[1] = row({ 對象姓名: 'N1', 結果: '失敗', 錯誤: 'not a friend' });
+  rows[2] = row({ 對象姓名: 'N2', 結果: '失敗', 錯誤: 'not a friend' });
+  const b = V.groupBatches(H, rows)[0];
+  assert.equal(V.failNote(b), '3 失敗');
+  assert.ok(V.cardHtml(b, []).indexOf('3 失敗') >= 0);
+});
+
+test('failNote：略過也要講，而且與失敗分開列（三態不是兩態）', () => {
+  const b = V.groupBatches(H, [
+    row({ 對象姓名: 'A', 結果: '失敗' }),
+    row({ 對象姓名: 'B', 結果: V.SKIP_RESULT }),
+    row({ 對象姓名: 'C' }),
+  ])[0];
+  assert.equal(V.failNote(b), '1 失敗・1 略過');
+});
+
+/* ── 訊息型別 ────────────────────────────────────────── */
+
+test('kindLabel：代號翻成中文，組合用全形加號', () => {
+  assert.equal(V.kindLabel('text'), '文字');
+  assert.equal(V.kindLabel('text+image'), '文字＋圖片');
+  assert.equal(V.kindLabel('flex'), '圖文');
+});
+
+test('kindLabel：沒收錄的代號照原樣顯示，不吞掉也不寫死成「其他」', () => {
+  // 顯示「其他」會讓「LINE 多了一種型別」這件事永遠沒人發現
+  assert.equal(V.kindLabel('brandnew'), 'brandnew');
+  assert.equal(V.kindLabel('text+brandnew'), '文字＋brandnew');
+});
+
+test('kindLabel：空值回空字串（呼叫端據此決定不畫那一格）', () => {
+  assert.equal(V.kindLabel(''), '');
+  assert.equal(V.kindLabel(null), '');
+});
+
+test('cardHtml：型別出現在第一列，不在名單的人名旁邊', () => {
+  const b = V.groupBatches(H, [
+    row({ 對象姓名: '林俊宏', 訊息型別: 'text+image' }),
+    row({ 對象姓名: '黃淑芬', 訊息型別: 'text+image' }),
   ])[0];
   const html = V.cardHtml(b, []);
-  assert.ok(html.indexOf('2<u>人</u>') >= 0);
-  assert.ok(html.indexOf('4<u>則</u>') >= 0);
+  assert.ok(html.indexOf('<span class="kind">文字＋圖片</span>') >= 0);
+  // 名單那半（下拉之後）不可以再出現型別
+  const fold = html.slice(html.indexOf('<details'));
+  assert.equal(fold.indexOf('text+image'), -1, '型別不該在名單裡重複一次');
+  assert.equal(fold.indexOf('文字＋圖片'), -1);
+});
+
+test('foldHtml：名單用燈點表示狀態，不用「成功」二字', () => {
+  const b = V.groupBatches(H, [
+    row({ 對象姓名: '林俊宏' }),
+    row({ 對象姓名: '黃淑芬', 結果: '失敗', 錯誤: 'not a friend' }),
+  ])[0];
+  const fold = V.foldHtml(b, []);
+  assert.ok(fold.indexOf('<i class="lamp ok"') >= 0);
+  assert.ok(fold.indexOf('<i class="lamp bad"') >= 0);
+  assert.equal(fold.indexOf('>成功<'), -1, '「成功」二字已改成燈點');
+  assert.ok(fold.indexOf('not a friend') >= 0, '錯誤訊息仍要留著');
+});
+
+test('foldHtml：單位留在名單裡（只有卡面不列單位）', () => {
+  const b = V.groupBatches(H, [row({ 對象姓名: '林俊宏', 對象單位: '工務管理組' })])[0];
+  assert.ok(V.foldHtml(b, []).indexOf('工務管理組') >= 0);
 });
 
 /* ── sinceWarning ────────────────────────────────────── */
@@ -405,14 +487,6 @@ test('listHtml：搜尋結果不分段（分月會打散相關性排序）', () 
 
 test('listHtml：沒有結果時給明確字樣，不是空白', () => {
   assert.ok(V.listHtml([], [], true).indexOf('沒有符合的紀錄') >= 0);
-});
-
-test('cardHtml：24 則以內畫點，超過改畫比例條', () => {
-  const small = V.groupBatches(H, Array.from({ length: 10 }, (_, i) => row({ 對象姓名: 'N' + i })))[0];
-  const big = V.groupBatches(H, Array.from({ length: 30 }, (_, i) => row({ 對象姓名: 'N' + i })))[0];
-  assert.ok(V.stripHtml(small).indexOf('class="dot') >= 0);
-  assert.equal(V.stripHtml(small).indexOf('class="bar"'), -1);
-  assert.ok(V.stripHtml(big).indexOf('class="bar"') >= 0);
 });
 
 test('cardHtml：分類代號會變成 class，讓 CSS 上得了色', () => {

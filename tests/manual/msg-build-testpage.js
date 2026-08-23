@@ -102,6 +102,11 @@ const BATCHES = [
     messages: text('{name} 您好：\n\n您已完成報到，座位為 A 區 12 桌。') },
 ];
 
+// ⑥ 3 人：名字列放得下、但要看逗號串起來的樣子
+BATCHES.push({ n: 3, seed: 500, source: 'checkin_done', batchId: 'line-platform-20260821101000-c3',
+  sentAt: '2026-08-21 10:10:00',
+  messages: text('{name} 您好：\n\n您已完成報到。') });
+
 const rows = BATCHES.reduce((acc, o) => acc.concat(batch(o)), []);
 const payload = { ok: true, header: LOG_HEADER, rows: rows, logSince: '2026-07-01' };
 

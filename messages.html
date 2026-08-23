@@ -69,6 +69,18 @@
        box-shadow 不參與版面，也不被 hit-test 命中，所以不影響點擊。 */
     box-shadow: -100vw 0 0 var(--bg), 100vw 0 0 var(--bg);
   }
+  /* ⚠️ 往上延伸蓋掉標題列**上方**那一帶（使用者 2026-08-23 真機截圖）。
+     iPhone 上 sticky 的 top:0 貼的是可視區頂端，但頁面內容一路鋪到狀態列底下，
+     於是「10:45／電量／動態島」那一條的背後看得到卡片在滑。
+     做法：偽元素從標題列上緣（bottom:100%）往上鋪 100vh。
+     ⚠️ 不用 env(safe-area-inset-top)：這頁的 viewport 沒有 viewport-fit=cover，
+        那個變數在這裡是 0，寫了等於沒寫；而加 cover 會連帶改動整頁的左右安全區。
+     ⚠️ absolute 往上溢出不會生出捲軸（瀏覽器不允許負向捲動），已實測 scrollWidth 無變化。 */
+  .stickytop::before {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 100vh;
+    background: var(--bg); box-shadow: -100vw 0 0 var(--bg), 100vw 0 0 var(--bg);
+  }
+
   /* 🔑 分隔線才是這次真正修好問題的那一條。卡片是白的、頁面底是 #fbfbfa，
      兩色太近，沒有線就看不出「標題列到哪裡為止」，捲動時卡片邊界從標題下方穿過，
      看起來就像背景在標題後面滑。線也要滿版，理由同上。 */
@@ -183,12 +195,28 @@
   .num { font-size: 13px; color: var(--ink); white-space: nowrap; flex: none; }
   .num u { text-decoration: none; color: var(--ink3); font-size: 11.5px; }
 
-  .strip { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-  .dot.ok { background: var(--g); } .dot.bad { background: var(--bad); } .dot.skip { background: #d8d8d5; }
-  .bar { display: flex; height: 6px; width: 100%; max-width: 180px; border-radius: 2px; overflow: hidden; background: #eeeeec; }
-  .bar span { height: 100%; }
-  .bar .ok { background: var(--g); } .bar .bad { background: var(--bad); } .bar .skip { background: #d8d8d5; }
+  /* 訊息型別（文字／圖片／文字＋圖片…）。2026-08-23 從名單的人名旁搬到第一列——
+     整批共用一種型別，逐人重複一次沒有意義。
+     刻意不做成 .tag：那一列最左邊已經有一顆分類徽章，再來一顆同形狀的會分不出主從。 */
+  .kind { font-size: 11.5px; color: var(--ink3); white-space: nowrap; flex: none; }
+
+  /* 收件人名字。放得下幾個就顯示幾個——截斷交給 CSS，不在 JS 算字寬
+     （字寬隨字型／字級／裝置／使用者縮放變動，算出來的數字在某一台一定是錯的）。
+     ⚠️ min-width:0 一定要有：flex 子項預設不會縮到內容寬以下，沒有它 ellipsis 永不觸發。
+     ⚠️ 字級與 .num 同為 13px、**顏色也要同為 --ink**（2026-08-23 使用者：「應該可以跟
+        人數的字大小一致」）。實測當時兩者字級本來就都是 13px，差的是顏色：
+        名字用 --ink2 rgb(107,107,104)、數字用 --ink rgb(44,44,43)——
+        **淺色小字讀起來就是比較細、比較小**，所以那句「大小不一致」講的是顏色。
+        日後想調這一格時先量 computed fontSize，別直接動字級。 */
+  .names {
+    flex: 1; min-width: 0; font-size: 13px; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* 失敗／略過的規模。全成功時 JS 根本不輸出這個節點——燈號綠了就不必再說一次。
+     為何需要：統一燈號只有三色，137 人裡 3 人失敗與 137 人全滅都是同一顆紅點。 */
+  .fail { font-size: 11.5px; color: var(--r-dim); white-space: nowrap; flex: none; }
+
 
   /* 卡面第三列：內容摘要（跳過稱呼行後的第一行，見 messages-view.js 的 gistOf）。
      字級比照 .dt／.tm（12.5px）——使用者 2026-08-23 指定「跟日期時間差不多」。
@@ -233,6 +261,10 @@
   .prow:last-child { border-bottom: none; }
   .prow .nm { font-size: 15px; font-weight: 600; color: var(--ink); min-width: 58px; }
   .prow .sp { flex: 1; }
+  /* 每個人的狀態用燈點，不用「成功」二字（使用者 2026-08-23）。
+     同一個資訊用兩種語彙表達，讀的人要換兩次腦；燈點跟卡面第一列的總燈號同一套顏色。
+     .lamp 本身有 margin-left:auto，在這裡不需要（前面已有 .sp 撐開），歸零。 */
+  .prow .lamp { margin-left: 0; }
   .prow .err { font-size: 12px; color: var(--ink3); flex-basis: 100%; }
   .bid {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
