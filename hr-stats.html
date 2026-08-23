@@ -95,6 +95,7 @@
   .rt td,.rt th{white-space:nowrap}
   .rt td{padding:2px 6px;text-align:right;border-top:1px solid var(--ln);color:var(--ink2)}
   .rt td:first-child{text-align:left;color:var(--ink)}
+  .rt td.up{color:#b95f85}.rt td.dn{color:#4f90bf}
   .sel{font:inherit;font-size:13px;color:var(--ink);padding:5px 8px;border:1px solid var(--ln);border-radius:3px;background:#fff;margin-bottom:6px}
   /* 熱力圖 */
   .hmwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -393,7 +394,8 @@ function waffle(items,total,title){
 }
 /** 雷達：多變量輪廓比對。axes=[{label, max, fmt}]，series=[{label, color, values[]（原始值）}]。
  *  每軸各自以 max 正規化到 0–1，軸末端印原始值範圍。只比「形狀」，精準讀數看旁邊的表。 */
-function radar(axes,series){
+function radar(axes,series,opts){
+  opts=opts||{};
   var cx=140, cy=120, R=82, n=axes.length, svg='';
   var pt=function(i,f){var a=-Math.PI/2+i/n*Math.PI*2;return [cx+R*f*Math.cos(a),cy+R*f*Math.sin(a)];};
   [0.25,0.5,0.75,1].forEach(function(f){svg+='<polygon points="'+axes.map(function(_,i){return pt(i,f).map(function(v){return v.toFixed(1);}).join(',');}).join(' ')+'" fill="none" stroke="#ececea"/>';});
@@ -405,8 +407,11 @@ function radar(axes,series){
     svg+='<polygon points="'+pts.map(function(q){return q.map(function(v){return v.toFixed(1);}).join(',');}).join(' ')+'" fill="'+(sr.ref?'none':sr.color)+'" fill-opacity=".18" stroke="'+sr.color+'" stroke-width="'+(sr.ref?1.5:2)+'"'+(sr.ref?' stroke-dasharray="4 3"':'')+' stroke-linejoin="round"/>'
        +pts.map(function(q,i){return '<circle cx="'+q[0].toFixed(1)+'" cy="'+q[1].toFixed(1)+'" r="3" fill="'+sr.color+'" stroke="#fff" stroke-width="1.5"><title>'+esc(sr.label)+'・'+esc(axes[i].label)+'：'+esc(axes[i].fmt(sr.values[i]))+'</title></circle>';}).join('');
   });
-  var tbl='<table class="rt"><tr><th></th>'+series.map(function(sr){return '<th style="color:'+sr.color+'">'+esc(sr.label)+'</th>';}).join('')+'</tr>'
-    +axes.map(function(ax,i){return '<tr><td>'+esc(ax.label)+'</td>'+series.map(function(sr){return '<td>'+esc(ax.fmt(sr.values[i]))+'</td>';}).join('')+'</tr>';}).join('')+'</table>';
+  // opts.diff：多一欄「差異」＝最後一個系列減第一個系列（單位減全公司），用該軸的 fmt 顯示、帶正負號
+  var tbl='<table class="rt"><tr><th></th>'+series.map(function(sr){return '<th style="color:'+sr.color+'">'+esc(sr.label)+'</th>';}).join('')+(opts.diff?'<th>差異</th>':'')+'</tr>'
+    +axes.map(function(ax,i){var d=series[series.length-1].values[i]-series[0].values[i];
+      return '<tr><td>'+esc(ax.label)+'</td>'+series.map(function(sr){return '<td>'+esc(ax.fmt(sr.values[i]))+'</td>';}).join('')
+        +(opts.diff?'<td class="'+(d>0?'up':d<0?'dn':'')+'">'+(d>0?'+':d<0?'−':'')+esc(ax.fmt(Math.abs(d)))+'</td>':'')+'</tr>';}).join('')+'</table>';
   return '<div class="rd"><svg viewBox="0 0 280 240">'+svg+'</svg>'+tbl+'</div>';
 }
 function legend(labels,colors,asLine){
@@ -470,9 +475,9 @@ function renderHr(r){
         +radar(axes,[{label:'全公司（單位平均）',color:'#6b6b68',ref:true,values:avg},{label:n,color:col,values:p}]);};
     var report=function(n){var u=s.units[n],p=prof(u),col=u.group==='總公司'?C_HQ:C_SITE;
       return '<div class="sh-h"><b>'+esc(n)+'</b><span class="rdn">'+esc(u.group)+'・'+u.count+' 人</span><button type="button" class="sh-x" aria-label="關閉">×</button></div>'
-        +'<div class="tags">'+classify(u,p).map(function(t){return '<span class="chip" style="background:'+t.c+';color:#fff">'+t.t+'</span>';}).join('')+'</div>'
-        +'<ul class="cmp">'+cmp(u,p).map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>'
-        +radar(axes,[{label:'全公司（單位平均）',color:'#6b6b68',ref:true,values:avg},{label:n,color:col,values:p}])
+        +'<div class="tags">'+classify(u,p).map(function(t){return '<span class="chip" style="background:'+t.c+';color:#fff">'+t.t+'</span>';}).join('')
+        +(u.retire.now.length?'<span class="rdn">已滿 65 歲 '+u.retire.now.length+' 人</span>':'')+'</div>'
+        +radar(axes,[{label:'全公司',color:'#6b6b68',ref:true,values:avg},{label:n,color:col,values:p}],{diff:true})
         +'<div class="wft" style="margin-top:14px">分類規則</div><ul class="cmp rules"><li>接班警訊：5 年退休率 ≥20%，或有已滿 65 歲者</li><li>年輕型：均齡低於全公司 3 歲以上，且新人比 ≥50%</li><li>資深型：均資高於全公司 2 年以上，且資深比 ≥40%</li><li>新舊斷層：新人比 ≥50% 且 5 年退休率 ≥15%</li><li>均衡：以上皆無</li></ul>'
         +'<div class="wft" style="margin-top:10px">六軸定義</div><ul class="cmp rules"><li>新人比＝0–3 年年資占單位人數</li><li>資深比＝10 年以上年資占單位人數</li><li>5 年退休率＝（已滿 65＋60–64 歲）占單位人數</li><li>全公司的「單位人數」＝總人數÷單位數</li></ul>';};
     window.__radar={draw:draw,report:report};
