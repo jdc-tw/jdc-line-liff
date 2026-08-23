@@ -99,8 +99,25 @@
   add('screen.height − innerHeight', String(screen.height - window.innerHeight));
   add('devicePixelRatio', String(window.devicePixelRatio));
 
+  sec('這一頁自己的 meta');
+  var mv = document.querySelector('meta[name=viewport]');
+  add('viewport', mv ? mv.content : '（無）');
+  var mt = document.querySelector('meta[name=theme-color]');
+  add('theme-color', mt ? mt.content : '（無）');
+  var sb = document.querySelector('meta[name=apple-mobile-web-app-status-bar-style]');
+  add('status-bar-style', sb ? sb.content : '（無，這一頁刻意沒設）');
+
   sec('系統');
   add('userAgent', navigator.userAgent);
+  // 一眼判斷這份數字量對環境沒有——CriOS＝Chrome for iOS 的一般分頁，不是主畫面 App
+  var ua = navigator.userAgent;
+  var kind = /CriOS/.test(ua) ? '🔴 Chrome for iOS（不是 App，這份數字不算數）'
+           : /FxiOS/.test(ua) ? '🔴 Firefox for iOS（同上）'
+           : /Line\//.test(ua) ? '🔴 LINE 內建瀏覽器（同上）'
+           : (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches)
+             ? '✅ 主畫面 App（standalone）——這才是要量的環境'
+             : '🔴 Safari 一般分頁（不是 App，這份數字不算數）';
+  add('量對環境了嗎', kind, 'big');
 
   var html = rows.map(function (r) {
     if (r[0] === '##') return '<tr><td colspan="2"><h2>' + r[1] + '</h2></td></tr>';

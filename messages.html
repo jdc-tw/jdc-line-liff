@@ -394,6 +394,18 @@
   .brandmark { position: fixed; left: calc(12px + var(--sal)); top: calc(14px + var(--sat)); z-index: 31; width: 28px; }
   .brandmark img { width: 100%; height: auto; display: block; }
 
+  /* 暫時的診斷入口（2026-08-23）。**用完即拆**。
+     為何非要一個連結不可：那個 App 是 standalone、**沒有網址列**，使用者無法在裡面
+     手動輸入網址；而點外部連結會用預設瀏覽器開（實測他第一次量到的是
+     `CriOS`＝Chrome for iOS 的一般分頁，`navigator.standalone` false，
+     那份數字量的不是出問題的環境）。
+     manifest 的 scope 是 "/"，同 scope 的連結從 App 點進去會留在 App 內。 */
+  .diaglink {
+    display: block; text-align: center; margin: 26px 0 0;
+    font-size: 12px; color: var(--ink3); text-decoration: none;
+  }
+  .diaglink:active { color: var(--ink2); }
+
   @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }
 
   @media (min-width: 768px) {
@@ -432,6 +444,8 @@
   <div class="warnbar" id="warnbar"></div>
   <div id="msg">載入中…</div>
   <div id="list"></div>
+  <!-- ⚠️ 暫時的，量完就拆（2026-08-23）。刻意不帶 token——診斷頁只讀瀏覽器環境。 -->
+  <a class="diaglink" href="diag-safearea.html">版面診斷</a>
 </div>
 
 <script src="assets/board-cache.js"></script>
