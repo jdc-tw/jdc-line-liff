@@ -522,10 +522,9 @@ function renderHr(r){
     var item=function(n){var u=s.units[n];return '<button type="button" class="uchip" data-u="'+esc(n)+'">'+esc(n)+'<span>'+classify(u,prof(u)).map(function(t){return '<i style="background:'+t.c+'" title="'+t.t+'"></i>';}).join('')+'</span></button>';};
     var grp=function(g){var L=s.unitOrder.filter(function(n){return s.units[n].group===g;});return L.length?'<div class="wft">'+g+'</div><div class="ugrid">'+L.map(item).join('')+'</div>':'';};
     var overview=grp('總公司')+grp('工地');
-    html+='<div class="card"><div class="sec-h"><b>① 單位體質雷達</b><small>點單位切換，點「看健康報告」看數字；虛線＝同組平均（總公司或工地）</small></div>'
-        +'<div id="rdsel" data-first="'+esc(first)+'">'+overview+'</div>'
-        +'<div class="legend" style="margin:6px 0 10px">'+[['接班警訊','#b95f85'],['年輕型','#4f90bf'],['資深型','#6c7886'],['新舊斷層','#8f7fd6'],['均衡','#3aa693']].map(function(x){return '<span><i style="background:'+x[1]+';border-radius:50%"></i>'+x[0]+'</span>';}).join('')+'</div>'
-        +'<div id="rdbox">'+draw(first)+'</div></div>';
+    html+='<div class="card"><div class="sec-h"><b>① 單位健康報告</b><small>點單位看該單位的雷達、數字與分類；色點＝分類</small></div>'
+        +'<div id="rdsel">'+overview+'</div>'
+        +'<div class="legend" style="margin:6px 0 10px">'+[['接班警訊','#b95f85'],['年輕型','#4f90bf'],['資深型','#6c7886'],['新舊斷層','#8f7fd6'],['均衡','#3aa693']].map(function(x){return '<span><i style="background:'+x[1]+';border-radius:50%"></i>'+x[0]+'</span>';}).join('')+'</div></div>';
   })();
   // 2 年資分佈
   html+='<div class="card"><div class="sec-h"><b>② 全公司年資分佈</b><small>柱＝全公司；線＝總公司／工地各自人數（只含有入社日者）</small></div>'
@@ -729,15 +728,14 @@ function renderHr(r){
   html+='</div>';
   main.innerHTML=html;
   var sel=document.getElementById('rdsel');
-  var showUnit=function(n){document.getElementById('rdbox').innerHTML=window.__radar.draw(n);
-    Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.classList.toggle('on',b.getAttribute('data-u')===n);});};
+  var showUnit=function(n){Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.classList.toggle('on',b.getAttribute('data-u')===n);});};
   var sheet=document.getElementById('sheet');
   var openReport=function(n){sheet.querySelector('.sh-body').innerHTML=window.__radar.report(n);sheet.classList.add('on');document.body.style.overflow='hidden';
     sheet.querySelector('.sh-x').onclick=closeReport;};
   var closeReport=function(){sheet.classList.remove('on');document.body.style.overflow='';};
   sheet.onclick=function(e){if(e.target===sheet)closeReport();};
-  if(sel){ showUnit(sel.getAttribute('data-first'));
-    Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.onclick=function(){showUnit(b.getAttribute('data-u'));};});
+  if(sel){
+    Array.prototype.forEach.call(main.querySelectorAll('.uchip'),function(b){b.onclick=function(){showUnit(b.getAttribute('data-u'));openReport(b.getAttribute('data-u'));};});
     main.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('.rlink');if(a){e.preventDefault();openReport(a.getAttribute('data-u'));}}); }
 }
 (function () {
