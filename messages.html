@@ -11,6 +11,10 @@
      值＝ --bg #fbfbfa（頁面底色）；⚠️ 這裡是**寫死的字面值**，CSS 變數在 meta 裡讀不到，
      改 --bg 的話這一行要跟著改，否則狀態列會與頁面差一階而沒有任何錯誤訊息。 -->
 <meta name="theme-color" content="#fbfbfa">
+<!-- ⚠️ GitHub Pages 的 HTML 回 `Cache-Control: max-age=600`，改不了（Pages 不支援自訂 header）。
+     這行讓瀏覽器**第二次起**不要用快取——第一次仍可能拿到舊版，
+     所以另外還有下面那段「有新版就跳橫幅」的主動檢查，兩道一起。 -->
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>LINE 訊息紀錄</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
@@ -417,6 +421,22 @@
      為何存在：2026-08-23 反覆出現「他看到的是不是新版」這個疑問——
      Cache-Control 是 600 秒，改完馬上看很可能拿到舊版，而畫面上完全看不出來。
      有這一行就能一眼確認，不必再靠猜或等。 */
+  /* 有新版時跳出來的橫幅。使用者 2026-08-23：「我每次的這樣子確認」——
+     每次都要自己關 App、重開、比對版本時間，那是把負擔丟給他。
+     改成頁面自己去問伺服器有沒有新版，有就把按鈕放到眼前。
+     ⚠️ 放在 .stickytop 裡（頁首固定區），**不可以塞進 #list**——
+        那個容器每次重繪都會被 innerHTML 清空，警語會靜靜消失。 */
+  .newver {
+    display: none; margin: 0 0 8px; padding: 9px 11px; border-radius: 3px;
+    background: var(--warn-bg); color: var(--warn); font-size: 13px; line-height: 1.6;
+    align-items: center; gap: 10px;
+  }
+  .newver.on { display: flex; }
+  .newver button {
+    flex: none; font: inherit; font-size: 12.5px; padding: 5px 10px;
+    border: none; border-radius: 3px; background: var(--warn); color: #fff;
+  }
+
   .verstamp {
     display: block; text-align: center; margin: 18px 0 0;
     font-size: 10.5px; color: var(--ink3);
@@ -461,6 +481,10 @@
   <div class="searchbar" id="searchbar">
     <input id="q" type="search" autocomplete="off" spellcheck="false" tabindex="-1"
            placeholder="姓名・單位・內容・分類・日期・批次・錯誤" aria-label="搜尋 LINE 訊息紀錄">
+  </div>
+  <div class="newver" id="newver">
+    <span>這一頁有新版本了</span><span style="flex:1"></span>
+    <button type="button" id="reloadBtn">重新載入</button>
   </div>
   </div>
   <div class="shint" id="shint"></div>
@@ -790,6 +814,32 @@ function adopt(data, force) {
 (function () {
   var el = document.getElementById('ver');
   if (el) el.textContent = '版本 ' + document.lastModified;
+})();
+
+/* 主動問伺服器有沒有新版；有就把橫幅與按鈕放到眼前，不必使用者自己去比對時間。
+   ⚠️ 只提示、**不自動重新載入**——自動重載會在他正在讀或正在搜尋時打斷他
+      （同一個道理見 memory feedback_swr_repaint_eats_user_input）。
+   ⚠️ HEAD ＋ cache:'no-store' 才問得到伺服器上的真實時間；
+      少了 no-store 會拿到快取的回應，永遠回報「沒有新版」＝這個檢查等於不存在。 */
+(function () {
+  function check() {
+    fetch(location.pathname, { method: 'HEAD', cache: 'no-store' })
+      .then(function (r) { return r.headers.get('Last-Modified'); })
+      .then(function (lm) {
+        if (!lm) return;                       // 拿不到就安靜跳過，不誤報
+        var server = new Date(lm).getTime();
+        var mine = new Date(document.lastModified).getTime();
+        if (!server || !mine) return;
+        if (server > mine + 1000) {            // 1 秒容差，避免時鐘誤差誤報
+          document.getElementById('newver').classList.add('on');
+        }
+      })
+      .catch(function () { /* 離線或被擋：不提示，維持現況 */ });
+  }
+  var rb = document.getElementById('reloadBtn');
+  if (rb) rb.addEventListener('click', function () { location.reload(); });
+  check();
+  setInterval(check, 5 * 60 * 1000);           // 開著不動時每五分鐘再問一次
 })();
 
 cacheBootstrap(TOKEN).then(function () {
