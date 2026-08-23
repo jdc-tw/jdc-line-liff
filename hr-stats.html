@@ -15,7 +15,7 @@
     --ink: #2c2c2b; --ink2: #6b6b68; --ink3: #9a9a96;
     --bg: #fbfbfa; --ln: #ececea;
     --warn: #8a6a2f; --warn-bg: #f7f2e6;
-    --r-dim: #c76b7e; --r-bg: #fdf0f3;
+    --r-dim: #b95f85; --r-bg: #f8eef3;
     --b: #2f4858;
   }
   *,*::before,*::after{box-sizing:border-box}
@@ -40,7 +40,7 @@
   .cols{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px;position:relative}
   .cols .ol{position:absolute;left:0;right:0;top:16px;width:100%;pointer-events:none;overflow:visible}
   .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-  .col .bar{width:100%;max-width:46px;background:#5b8fd6;border-radius:3px 3px 0 0;min-height:2px}
+  .col .bar{width:100%;max-width:46px;background:#7a7dd6;border-radius:3px 3px 0 0;min-height:2px}
   .col .n{font-size:12px;line-height:16px;height:16px;color:var(--ink);font-variant-numeric:tabular-nums}
   .col .lb{font-size:10.5px;line-height:18px;height:18px;color:var(--ink3);white-space:nowrap}
   /* 橫條 */
@@ -156,18 +156,17 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 //   （彩度下限 0.10 是驗證器硬門檻——messages.html 徽章的 0.05 在色塊上會讀成灰）。
 // 序列段＝同一色相（230）只動明度 L .78→.38，每階差 0.10；不是彩虹。
 // 紅只留給退休預警（訊息紀錄表的規則：紅＝例外與注意）。
-// 2026-08-23 第四版（使用者：「整體的顏色輕一點，不要被大地色系綁住」「支店跟工地的顏色好醜」）：
-//   全部往淺、冷走，褐色拿掉。總公司＝藍、工地＝珊瑚（validate_palette：CVD 17.6／正常 25.6 PASS，
-//   珊瑚對白底 2.3:1 是 WARN——每處都有圖例與數字標籤當第二編碼）。
-//   年資＝藍階、年齡＝青綠階、入社＝藍灰、退休＝玫瑰紅（紅仍只給退休）。
-var C_HQ='#4f86d0', C_SITE='#e8957f';
-var RAMP4=['#d6e4f7','#9dbde8','#5b8fd6','#2f5f99'];                  // 年資段（藍）
-var RAMP5=['#d5ece8','#a9d5cc','#79b8ab','#4b9688','#2f6f64'];        // 年齡段（青綠）
-var C_RET=['#c76b7e','#e09aa8','#f2cfd6'];                             // 已滿65 / 5年內 / 10年內（玫瑰）
-var SHADE={tenure:['#9dbde8','#79a5df','#5b8fd6','#3f74bd'],
-           age:['#79b8ab','#63a899','#4b9688','#3a8275'],
-           join:['#8fa5c4','#7790b5','#5f7ba5','#4a6791'],
-           retire:['#e09aa8','#d4889a','#c76b7e','#b0566a']};
+// 2026-08-23 第五版（使用者：「我喜歡偏冷色調」）：全部冷色。
+//   總公司＝靛藍、工地＝青（validate_palette 五項 PASS：CVD 21.2／正常 23.6／對比 ≥3:1）。
+//   年資＝靛藍階、年齡＝鋼藍階、入社＝鋼藍、退休＝冷玫瑰（紅仍只給退休）。
+var C_HQ='#5b5fc9', C_SITE='#3aa693';
+var RAMP4=['#dcdcf5','#a9abe6','#7a7dd6','#4a4ea8'];                  // 年資段（靛藍）
+var RAMP5=['#dde6ef','#b3c6d9','#8aa6c2','#5f83a6','#3c5f80'];        // 年齡段（鋼藍）
+var C_RET=['#b95f85','#d49ab4','#eed3df'];                             // 已滿65 / 5年內 / 10年內（冷玫瑰）
+var SHADE={tenure:['#a9abe6','#8c8fdc','#7a7dd6','#5b5fc9'],
+           age:['#8aa6c2','#739ab8','#5f83a6','#4a6f92'],
+           join:['#8aa6c2','#739ab8','#5f83a6','#4a6f92'],
+           retire:['#d49ab4','#c77c9d','#b95f85','#9c4a6e']};
 // 直方圖依值深淺（越多越深＝量感一眼可比）
 function shade(v,max,R){R=R||SHADE.tenure;
   return R[Math.min(R.length-1,Math.floor(v/Math.max(max,1)*(R.length-0.01)))];}
@@ -401,7 +400,7 @@ function renderHr(r){
       +treemap(byCount.map(function(nm){var u=s.units[nm];return {nm:nm,v:u.count,c:u.group==='總公司'?C_HQ:C_SITE,dark:u.group!=='總公司',sub:'均 '+u.avgAge+' 歲・'+u.avgTenure+' 年'};}),s.total,260)+'</div>';
   // 4 組成：格子圖，1 格＝1 人（使用者 2026-08-23 否決甜甜圈）。同一批格子先照總公司／工地上色，再照職能上色
   var roleKeys=Object.keys(s.roleCounts||{}).sort(function(a,b){return s.roleCounts[b]-s.roleCounts[a];});
-  var roleCol=['#4f86d0','#79b8ab','#b08bd6','#e8957f','#9a9a96'];
+  var roleCol=['#5b5fc9','#3aa693','#5f83a6','#9b8fd9','#9a9a96'];
   html+='<div class="card"><div class="sec-h"><b>④ 人力組成</b><small>1 格＝1 人，共 '+s.total+' 格；同一批人分兩種看法</small></div><div class="wfs">'
       +waffle([{nm:'總公司',v:hqN,c:C_HQ},{nm:'工地',v:s.total-hqN,c:C_SITE}],s.total,'總公司／工地')
       +(roleKeys.length?waffle(roleKeys.map(function(k,i){return {nm:k,v:s.roleCounts[k],c:roleCol[i%roleCol.length]};}),s.total,'職能'):'')
@@ -427,7 +426,7 @@ function renderHr(r){
     var y0=jys[0],y1=jys[jys.length-1],trend={labels:[],counts:[]};
     for(var y=y0;y<=y1;y++){trend.labels.push(String(y).slice(2));trend.counts.push(s.joinYears[y]||0);}
     html+='<div class="card"><div class="sec-h"><b>⑧ 入社年度趨勢</b><small>面積＝每年新進人數（現仍在職者），標最高三年；細線＝總公司／工地'+(s.joinYearsByGroup?'':'（由年資回推入社年，±1 年）')+'</small></div>'
-        +areaChart(trend.labels,trend.counts,'#5f7ba5','#eef2f8',(function(){
+        +areaChart(trend.labels,trend.counts,'#5f83a6','#eef3f8',(function(){
           if(s.joinYearsByGroup){   // 後端直接算的真值（2026-08-23 加）；沒有才退回用年資回推
             var byY=function(g){return trend.labels.map(function(lb,i){return (s.joinYearsByGroup[g]||{})[String(y0+i)]||0;});};
             return [{label:'總公司',values:byY('總公司'),color:C_HQ},{label:'工地',values:byY('工地'),color:C_SITE}];
@@ -446,13 +445,13 @@ function renderHr(r){
     var tMax=Math.ceil(Math.max.apply(null,s.unitOrder.map(function(n){return s.units[n].avgTenure;})))+2;
     var xs=function(a){return PX+(a-aMin)/(aMax-aMin)*(W-PX-16);};
     var ys=function(t){return H-PY-(t/tMax)*(H-PY-16);};
-    var svg='<rect x="'+xs(s.avgAge)+'" y="14" width="'+(W-16-xs(s.avgAge))+'" height="'+(ys(s.avgTenure)-14)+'" fill="#c76b7e" opacity="0.06"/>';
+    var svg='<rect x="'+xs(s.avgAge)+'" y="14" width="'+(W-16-xs(s.avgAge))+'" height="'+(ys(s.avgTenure)-14)+'" fill="#b95f85" opacity="0.06"/>';
     for(var a=Math.ceil(aMin/5)*5;a<aMax;a+=5) svg+='<line x1="'+xs(a)+'" y1="'+(H-PY)+'" x2="'+xs(a)+'" y2="12" stroke="#ececea"/><text x="'+xs(a)+'" y="'+(H-6)+'" font-size="10" fill="#9a9a96" text-anchor="middle">'+a+'歲</text>';
     for(var t=2;t<tMax;t+=2) svg+='<line x1="'+PX+'" y1="'+ys(t)+'" x2="'+(W-16)+'" y2="'+ys(t)+'" stroke="#ececea"/><text x="'+(PX-4)+'" y="'+(ys(t)+3)+'" font-size="10" fill="#9a9a96" text-anchor="end">'+t+'年</text>';
-    svg+='<line x1="'+xs(s.avgAge)+'" y1="12" x2="'+xs(s.avgAge)+'" y2="'+(H-PY)+'" stroke="#c76b7e" stroke-dasharray="4 3"/>'
-       +'<text x="'+(xs(s.avgAge)+3)+'" y="24" font-size="9.5" fill="#c76b7e">全司均齡 '+s.avgAge+'</text>'
-       +'<line x1="'+PX+'" y1="'+ys(s.avgTenure)+'" x2="'+(W-16)+'" y2="'+ys(s.avgTenure)+'" stroke="#c76b7e" stroke-dasharray="4 3"/>'
-       +'<text x="'+(W-18)+'" y="'+(ys(s.avgTenure)-4)+'" font-size="9.5" fill="#c76b7e" text-anchor="end">均資 '+s.avgTenure+'</text>';
+    svg+='<line x1="'+xs(s.avgAge)+'" y1="12" x2="'+xs(s.avgAge)+'" y2="'+(H-PY)+'" stroke="#b95f85" stroke-dasharray="4 3"/>'
+       +'<text x="'+(xs(s.avgAge)+3)+'" y="24" font-size="9.5" fill="#b95f85">全司均齡 '+s.avgAge+'</text>'
+       +'<line x1="'+PX+'" y1="'+ys(s.avgTenure)+'" x2="'+(W-16)+'" y2="'+ys(s.avgTenure)+'" stroke="#b95f85" stroke-dasharray="4 3"/>'
+       +'<text x="'+(W-18)+'" y="'+(ys(s.avgTenure)-4)+'" font-size="9.5" fill="#b95f85" text-anchor="end">均資 '+s.avgTenure+'</text>';
     s.unitOrder.forEach(function(nm){
       var u=s.units[nm],col=u.group==='總公司'?C_HQ:C_SITE,r=4+Math.sqrt(u.count)*1.7;
       svg+='<circle cx="'+xs(u.avgAge).toFixed(1)+'" cy="'+ys(u.avgTenure).toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+col+'" fill-opacity="0.85" stroke="#fff" stroke-width="1.5"><title>'+esc(nm)+'：均齡 '+u.avgAge+'・均資 '+u.avgTenure+'・'+u.count+' 人</title></circle>'
@@ -539,7 +538,7 @@ function renderHr(r){
           return colChart(rc,{ramp:SHADE.retire,lollipop:true,lines:[
             {label:'總公司累計 '+ch[L],color:C_HQ,values:ch},
             {label:'工地累計 '+cs[L],color:C_SITE,values:cs},
-            {label:'合計 '+ca[L],color:'#c76b7e',endLabel:true,values:ca}]});})()+'</div>';
+            {label:'合計 '+ca[L],color:'#b95f85',endLabel:true,values:ca}]});})()+'</div>';
   }
   // 10 退休衝擊率：5年內(含已滿65)退休人數 ÷ 單位人數——哪個單位會被掏空
   (function(){
@@ -550,8 +549,8 @@ function renderHr(r){
     if(rows.length){
       var maxR=Math.max.apply(null,rows.map(function(x){return x.rate10;}));
       html+='<div class="card"><div class="sec-h"><b>⑮ 退休衝擊率</b><small>實心＝5 年內退休（含已滿65）÷ 單位人數，空心＝放寬到 10 年內；比例越高越先被掏空</small></div>'
-        +'<div class="legend"><span><i style="background:#c76b7e;border-radius:50%"></i>5 年內</span><span><i style="border:2px solid #c76b7e;border-radius:50%;background:#fff"></i>10 年內</span></div>'
-        +dotRows(rows,maxR,'#c76b7e')+'</div>';
+        +'<div class="legend"><span><i style="background:#b95f85;border-radius:50%"></i>5 年內</span><span><i style="border:2px solid #b95f85;border-radius:50%;background:#fff"></i>10 年內</span></div>'
+        +dotRows(rows,maxR,'#b95f85')+'</div>';
     }
   })();
   // 11 退休預警名單
