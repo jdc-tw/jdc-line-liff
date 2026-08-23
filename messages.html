@@ -55,13 +55,26 @@
   }
   *, *::before, *::after { box-sizing: border-box; }
 
+  /* ⚠️ **body 不可以有左右 padding**（2026-08-23，使用者用二分搜尋在真機定位出來的）。
+     iPhone standalone 下，body 帶左右內距時，捲動的內容會被繪製到狀態列那一帶
+     （env(safe-area-inset-top) 回 0、那 62px 不在可視區內，CSS 碰不到它，
+     所以三種遮罩全部無效——偽元素、box-shadow、viewport 外的 fixed 都試過了）。
+     佐證：stats.html／board.html 的 body 也有 padding（20px 16px 40px）卻不穿透，
+     差別在數值與寫法；但本頁只要把左右內距從 body 挪走，穿透就消失。
+     讓位改由下面的 .shell 承擔——版面計算完全等價（wrap 仍在剩餘空間置中）。 */
   body {
-    /* 左欄要把左安全區也讓出來，否則橫向持機時滑桿會被瀏海吃掉 */
-    margin: 0; padding-left: calc(var(--rail-w) + var(--sal)); padding-right: var(--sar);
+    margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
     font-size: 16px; line-height: 1.65; color: var(--ink); background: var(--bg);
     -webkit-font-smoothing: antialiased;
   }
+  /* 左欄的讓位：原本掛在 body，2026-08-23 移到這裡（見上方 body 的註解）。
+     左安全區也要讓，否則橫向持機時滑桿會被瀏海吃掉。 */
+  .shell {
+    padding-left: calc(var(--rail-w) + var(--sal));
+    padding-right: var(--sar);
+  }
+
   .wrap {
     --pad-y: 20px;
     max-width: 480px; margin: 0 auto;
@@ -424,6 +437,7 @@
 
 <nav class="rail" id="rail" aria-label="依月份跳轉" hidden></nav>
 
+<div class="shell">
 <div class="wrap">
   <div class="stickytop">
   <div class="topbar">
@@ -449,6 +463,7 @@
   <a class="diaglink" href="diag-scroll.html">捲動實驗</a>
   <a class="diaglink" href="diag-msg.html">本頁診斷版</a>
   <a class="diaglink" href="diag-msg-stats.html">診斷版（比照 stats）</a>
+</div>
 </div>
 
 <script src="assets/board-cache.js"></script>
