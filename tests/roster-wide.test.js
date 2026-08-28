@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { buildRosterWide } = require('../assets/roster-wide.js');
+const { buildRosterWide, jdcIsSeparated, jdcIsOnDuty } = require('../assets/roster-wide.js');
 
 const OPTS = [
   { type: '單位', name: '管理部', group: '總公司' },
@@ -54,4 +54,25 @@ test('留停者預設就列出，姓名加「（留停）」標記；不計入�
   const aoa = buildRosterWide(rows, [{ type: '單位', name: '管理部', group: '總公司' }], '2026/08/28');
   assert.deepStrictEqual([aoa[1][1], aoa[2][1]], ['甲一', '留停乙（留停）']);
   assert.strictEqual(aoa[1][aoa[1].length - 1], 1);   // 員工總人數只數在勤
+});
+
+// jdcIsSeparated／jdcIsOnDuty：語意須與後端 binding.js 的 isSeparated／isOnDuty 完全一致（Ruling R15）。
+test('jdcIsSeparated：只有「離職」為 true，含 null／undefined／空白／前後空白', () => {
+  assert.strictEqual(jdcIsSeparated('離職'), true);
+  assert.strictEqual(jdcIsSeparated('  離職  '), true);
+  assert.strictEqual(jdcIsSeparated('留職停薪'), false);
+  assert.strictEqual(jdcIsSeparated('在職'), false);
+  assert.strictEqual(jdcIsSeparated(''), false);
+  assert.strictEqual(jdcIsSeparated(null), false);
+  assert.strictEqual(jdcIsSeparated(undefined), false);
+});
+
+test('jdcIsOnDuty：離職與留職停薪皆 false，空白＝在職＝true，含 null／undefined／前後空白', () => {
+  assert.strictEqual(jdcIsOnDuty('離職'), false);
+  assert.strictEqual(jdcIsOnDuty('留職停薪'), false);
+  assert.strictEqual(jdcIsOnDuty('  留職停薪  '), false);
+  assert.strictEqual(jdcIsOnDuty('在職'), true);
+  assert.strictEqual(jdcIsOnDuty(''), true);
+  assert.strictEqual(jdcIsOnDuty(null), true);
+  assert.strictEqual(jdcIsOnDuty(undefined), true);
 });
