@@ -54,7 +54,7 @@ function annivPaint_(r, emptyText) {
                 return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;'
                   + 'padding:5px 0;border-bottom:1px solid #f4f4f2">'
                   + '<span style="font-size:15.5px;font-weight:600;color:#2c2c2b">'
-                  + annivEsc_(o.name) + '</span>'
+                  + annivEsc_(o.name) + (o.onLeave ? '（留停）' : '') + '</span>'
                   + '<span style="' + TAG + '">' + annivEsc_(o.unit) + '</span>'
                   + '<span style="' + TAG + '">' + annivEsc_(o.date) + '</span></div>';
               }).join('');

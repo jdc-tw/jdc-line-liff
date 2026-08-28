@@ -59,6 +59,7 @@
   .r-count b { color: #1a1a1a; font-size: 20px; }
   .r-search { margin-bottom: 12px; }
   .st-off { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fdecea; color: #b71c1c; margin-left: 8px; }
+  .st-leave { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fff4e5; color: #b26a00; margin-left: 8px; }
   .resend { background: none; border: 1px solid #ddd; border-radius: 8px; color: #555; font-size: 13px;
     padding: 4px 10px; cursor: pointer; font-family: inherit; margin-top: 6px; -webkit-appearance: none; }
   .resend-msg { font-size: 13px; margin-top: 4px; }
@@ -495,7 +496,7 @@ function showTab(t){
 }
 
 // ── 異動紀錄分頁（公告異動＋資料修正，最新在上）──────────────────────────
-var CAT_COLOR={'離職':'#b71c1c','調動':'#b26a00','晉升':'#1a7d44','新進':'#1a56c4','資料修正':'#666','整批轉移':'#6d28d9'};
+var CAT_COLOR={'離職':'#b71c1c','留職停薪':'#b26a00','復職':'#1a7d44','調動':'#b26a00','晉升':'#1a7d44','新進':'#1a56c4','資料修正':'#666','整批轉移':'#6d28d9'};
 function westEff_(v){
   var m=String(v||'').match(/^(\d{3})\.(\d{2})\.(\d{2})$/);
   return m?(+m[1]+1911)+'/'+m[2]+'/'+m[3]:v;
@@ -860,7 +861,12 @@ function paintRoster(r){
   rosterRows.filter(function(o){return o.updatedMs>0;})
     .sort(function(a,b){return b.updatedMs-a.updatedMs;})
     .slice(0,20).forEach(function(o){o._recent=true;});
-  document.getElementById('r-count').innerHTML='在職 <b>'+r.activeCount+'</b> 人（名冊共 '+r.total+' 筆）';
+  // ⚠️ R13：舊快取（部署前存的）沒有 onLeave／separated 兩個新欄位，一律用 ||0 容忍缺席，
+  // 否則有舊快取的人會看到 NaN 或整段渲染失敗——且重整就好、最難重現。
+  document.getElementById('r-count').innerHTML='在職 <b>'+(r.activeCount||0)+'</b> 人'
+    +((r.onLeave||0)?'　留停 <b>'+r.onLeave+'</b> 人':'')
+    +((r.separated||0)?'　離職 <b>'+r.separated+'</b> 人':'')
+    +'（名冊共 '+r.total+' 筆）';
   renderRoster(rosterRows);
 }
 function loadRoster(){
@@ -884,7 +890,7 @@ function loadRoster(){
   });
 }
 function rosterItemHtml(o){
-  var badge=o.status==='離職'?'<span class="st-off">離職</span>':'';
+  var badge=jdcIsSeparated(o.status)?'<span class="st-off">離職</span>':(jdcIsOnDuty(o.status)?'':'<span class="st-leave">留停</span>');
   var upd=o._recent?'<span class="upd">更新 '+esc(o.updatedAt)+'</span>':'';
   return '<div class="done-item"><div class="done-head"><span class="done-name'+(o._recent?' hot':'')+'">'+esc(o.name)+'</span>'+upd+badge+'<span class="done-date" style="margin-left:auto">'+esc(o.empNo)+'</span></div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
 }
