@@ -48,3 +48,10 @@ test('includeLeavers=true：離職者列入並加（離職）標記、總人數�
   assert.deepStrictEqual([aoa[1][1], aoa[2][1]], ['甲一', '離人（離職）']);
   assert.deepStrictEqual(aoa[1].slice(-2), ['員工總人數', 1]);
 });
+
+test('留停者預設就列出，姓名加「（留停）」標記；不計入員工總人數', () => {
+  const rows = [p('甲一', '管理部'), p('留停乙', '管理部', '留職停薪')];
+  const aoa = buildRosterWide(rows, [{ type: '單位', name: '管理部', group: '總公司' }], '2026/08/28');
+  assert.deepStrictEqual([aoa[1][1], aoa[2][1]], ['甲一', '留停乙（留停）']);
+  assert.strictEqual(aoa[1][aoa[1].length - 1], 1);   // 員工總人數只數在勤
+});
