@@ -31,6 +31,10 @@ const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name:
 function run(opt) {
   opt = opt || {};
   const log = [], gasCalls = [], writes = [], clears = [];
+  // 2026-08-28 起 startPass 會裝一支保險絲並在各出口呼叫 passDone_。
+  // setTimeout 用**假的**（只記不跑）：真的排一支 10 秒計時器會讓 node --test 空等，
+  // 而且 passDone_ 被 stub 掉之後真正的 clearTimeout 也不會執行。
+  const doneCalls = [], timers = [];
   const els = {};
   const el = (id) => (els[id] = els[id] || { style: {}, textContent: '', innerHTML: '', appendChild() {} });
   const ctx = {
@@ -38,6 +42,9 @@ function run(opt) {
     lg: (m) => log.push(m),
     document: { getElementById: el },
     show: () => {},
+    passDone_: () => doneCalls.push(1),
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout: () => {},
     showMsg: () => {},
     escHtml: (s) => s,
     getAct: () => (opt.act || ''),
@@ -57,7 +64,7 @@ function run(opt) {
   vm.createContext(ctx);
   vm.runInContext(extractFn('startPass'), ctx);
   ctx.startPass('U73069bf');
-  return { log, gasCalls, writes, clears };
+  return { log, gasCalls, writes, clears, doneCalls, timers };
 }
 
 test('★快取命中：一次 GAS 都不打，而且紀錄留得下來', async () => {
@@ -121,6 +128,7 @@ test('對照組：把命中那行 lg 拿掉，★那條必須翻紅', () => {
     passCacheWrite: () => {}, passCacheClear: () => {},
     renderPass: () => {}, loadLottery: () => {},
     jsonp: () => Promise.resolve(RES),
+    passDone_: () => {}, setTimeout: () => 1, clearTimeout: () => {},
   };
   vm.createContext(ctx);
   vm.runInContext(mutated, ctx);
@@ -200,6 +208,7 @@ test('對照組：把 today 從呼叫裡拿掉，★那條必須翻紅', () => {
     passCacheWrite: () => {}, passCacheClear: () => {},
     renderPass: () => {}, loadLottery: () => {},
     jsonp: () => { gasCalls.push(1); return Promise.resolve(RES); },
+    passDone_: () => {}, setTimeout: () => 1, clearTimeout: () => {},
   };
   vm.createContext(ctx);
   vm.runInContext(mutated, ctx);

@@ -511,11 +511,32 @@
       try { localStorage.removeItem(passCacheKey(userId, act)); } catch (e) {}
     }
 
-    // 通行證模式（?mode=pass）：秀個人報到 QR，不走綁定/roster 主流程。
-    function startPass(userId) {
+    // 通行證收場：關動畫、顯示通行證區。**冪等**——六條出口都叫它，重複叫沒有副作用。
+    //
+    // ⚠️ 為何每條出口都要自己叫（2026-08-28）：startPass 有六條出口，其中**四條永遠不會
+    //    出現 QR**（快取命中但桌次未發佈、打 GAS 但未發佈、GAS 回失敗如查無員編、網路錯誤）。
+    //    只把收場放在「QR 畫完」那一條，那四條會永遠停在轉圈，而且看不到任何錯誤訊息——
+    //    比原本「動畫太早結束」嚴重得多。
+    // ⚠️ 順序：錯誤路徑要**先**叫這支再 showMsg——訊息畫在 #main 裡，main 還沒顯示就等於沒顯示。
+    var passFuse_ = null, passDoneCalled_ = false;
+    function passDone_() {
+      if (passDoneCalled_) return;
+      passDoneCalled_ = true;
+      if (passFuse_) { clearTimeout(passFuse_); passFuse_ = null; }
       document.getElementById('loading').style.display = 'none';
       document.getElementById('main').style.display = 'block';
       show('section-pass');
+    }
+
+    // 通行證模式（?mode=pass）：秀個人報到 QR，不走綁定/roster 主流程。
+    function startPass(userId) {
+      // 動畫留到「QR 真的畫進畫面」才收（2026-08-28 使用者要求：QR 沒出現前動畫不要結束）。
+      // 保險絲是最後一道防線：任何我沒列到的路徑，10 秒後無條件放行，最壞退回改動前的行為。
+      // 活動現場寧可提早收場，也不能卡死。
+      passFuse_ = setTimeout(function () {
+        lg('⑦ 保險絲觸發：10s 沒有人收場，強制放行');
+        passDone_();
+      }, 10000);
       // act 可省略：圖文選單那顆是常駐按鈕、活動 ID 每場不同，故不帶 act 時由伺服器
       // 挑「今天(含)之後最早的一場」（pickDefaultAct）。挑到哪一場一律顯示在 #pass-act。
       var act = getAct(), urlV = getParam('v');
@@ -537,6 +558,7 @@
         lg('⑥ getEventCheckinPass 回 ok=' + !!(res && res.ok)
            + ' published=' + !!(res && res.published));
         if (!res || !res.ok) {
+          passDone_();   // 出口②：先收場再顯示訊息，否則訊息畫在還沒顯示的 #main 裡
           showMsg(msgEl, escHtml((res && res.msg) || '取得報到碼失敗，請稍後再試。'), 'err');
           return;
         }
@@ -559,6 +581,7 @@
         loadLottery(userId, res.actId || act);   // 伺服器挑的場次為準，否則獎金卡會查錯場
       }).catch(function (err) {
         lg('⑥ getEventCheckinPass catch: ' + (err && err.message));
+        passDone_();   // 出口③：同上，先收場再顯示訊息
         showMsg(msgEl, escHtml('網路錯誤：' + (err && err.message ? err.message : err)), 'err');
       });
     }
@@ -583,6 +606,7 @@
         qrEl.innerHTML = '';
         hintEl.textContent = '桌次公布後，您的報到 QR 就會出現在這裡。';
         lg('⑦ 未發佈 → 不出 QR');
+        passDone_();   // 出口④：這條**永遠不會有 QR**，不自己收場就會永遠轉圈
         return;
       }
 
@@ -607,11 +631,13 @@
         var cv = qrBadgeCanvas(res.code, res.name || '', a.name || '');
         cv.style.cssText = 'width:100%;max-width:280px;height:auto;display:block;margin:0 auto';
         qrEl.appendChild(cv);
+        passDone_();   // 出口①：QR 真的進到畫面了才收動畫——這就是本次改動的目的
       }).catch(function () {
         lg('⑦ QR 畫完（膠囊版失敗，退陽春版）');
         // logo 拿不到也不能讓人沒有 QR：退回沒有膠囊的陽春版（掃出來的碼一樣）
         var qr = qrcode(0, 'H'); qr.addData(res.code); qr.make();
         qrEl.innerHTML = qr.createImgTag(6, 8);
+        passDone_();   // 出口⑤：陽春版也是 QR，一樣要收
       });
     }
 
