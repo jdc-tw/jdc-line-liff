@@ -24,9 +24,16 @@ function __rdlToday() {
   return d.getFullYear() + '/' + z(d.getMonth() + 1) + '/' + z(d.getDate());
 }
 function inclLeavers_() { var el = document.getElementById(__rdl.leaversId); return !!(el && el.checked); }
-function dlDoneMsg_(active, total) { return '已下載 ✅（在職 ' + active + ' 人' + (total > active ? '，含離職 ' + (total - active) + ' 人' : '') + '）'; }
+// active＝非離職（含留停，見 filterRosterExport 的 JSDoc）；在勤＝active - onLeave，三段各自為 0 時不出現該段。
+function dlDoneMsg_(active, onLeave, total) {
+  var onDuty = active - onLeave;
+  return '已下載 ✅（在勤 ' + onDuty + ' 人'
+    + (onLeave > 0 ? '，留停 ' + onLeave + ' 人' : '')
+    + (total > active ? '，含離職 ' + (total - active) + ' 人' : '')
+    + '）';
+}
 
-// 單位總表：getRosterList＋listOptions → buildRosterWide（恆只列在職；含離職只在逐人明細）
+// 單位總表：getRosterList＋listOptions → buildRosterWide（恆列在職與留停；含離職只在逐人明細）
 function downloadRoster() {
   __rdl.msg('產生中…', 'info');
   Promise.all([__rdlXlsx(), __rdl.jsonp('getRosterList', { token: __rdl.token }), __rdl.jsonp('listOptions', { token: __rdl.token })]).then(function (rs) {
@@ -50,7 +57,7 @@ function downloadRosterFlat() {
     if (!r.rows || !r.rows.length) { __rdl.msg('名冊沒有在職資料，暫不產檔。', 'err'); return; }
     var aoa = [r.hdr].concat(r.rows);
     writeStyledXlsx_(aoa, '逐人明細', { leftAlign: ['信箱'], headerRow: true });
-    __rdl.msg(dlDoneMsg_(r.active, r.rows.length), 'ok');
+    __rdl.msg(dlDoneMsg_(r.active, r.onLeave || 0, r.rows.length), 'ok');
   }).catch(function (e) { __rdl.msg(String(e && e.message || e), 'err'); });
 }
 // 產檔共用：格線＋置中（指定欄靠左）＋欄寬自適應＋表頭粗體
@@ -79,3 +86,4 @@ function styleWs_(ws, aoa, opts) {
   }
   ws['!cols'] = widths.map(function (w) { return { wch: Math.min(Math.max(w + 2, 6), 40) }; });
 }
+if (typeof module !== 'undefined') module.exports = { dlDoneMsg_: dlDoneMsg_ };
