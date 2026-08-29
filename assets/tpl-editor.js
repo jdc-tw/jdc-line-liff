@@ -44,7 +44,20 @@ function registerPhSet(name, list) { PH_SETS[name] = list; }
 
 /** 哪幾組要畫 emoji。一期只有 welfare；二期 bc 與 sn 才 enableEmoji。 */
 var EMOJI_SETS = {};
-function enableEmoji(setName, palette) { EMOJI_SETS[setName] = palette || true; }
+/** 「更多」展開時要翻的完整組別清單（選用）。沒給就只有常用一排。 */
+var EMOJI_GROUPS = {};
+/**
+ * @param {string} setName 佔位符組名
+ * @param {object[]} palette 常用一排
+ * @param {object[]} [groups] 完整組別清單（`assets/line-emoji.js` 的 LINE_EMOJI_GROUPS）
+ *
+ * ⚠️ groups 由呼叫端傳進來，本檔**不去讀 line-emoji.js 的全域**——
+ *    那樣這支就綁死在一份特定資料上，而且 node 測試環境裡那個全域不存在。
+ */
+function enableEmoji(setName, palette, groups) {
+  EMOJI_SETS[setName] = palette || true;
+  if (groups) EMOJI_GROUPS[setName] = groups;
+}
 
 /** 只接受 productId 為十六進位、emojiId 為三位數字。不合格式的當普通文字。 */
 var MIRROR_EMOJI_RE = /\[\[e:([0-9a-f]+):(\d{3})\]\]/g;
@@ -149,6 +162,116 @@ function phPopup(taId,set){
 function closePhPop(){var p=document.getElementById('ph-pop');if(p)p.remove();}
 
 /**
+ * 把 palette 畫成一排可點的 emoji；點一下在游標處插入 `[[e:pid:eid]]`。
+ *
+ * 🔴 **形狀照抄同檔的 `renderPhs`**（佔位符碼標）——它是同一件事：
+ *    「一排可點的東西，點了在游標處插入一段文字」。
+ *    連事件都照抄：**`mousedown` + `touchstart` + `preventDefault`，不用 `click`**
+ *    ——click 之前 textarea 已經失焦，行動裝置上游標位置會跑掉，
+ *    插到的地方不是你按之前的位置。（這個理由是既有註解就寫著的，已經付過代價。）
+ *
+ * 🔴 **插入一律走 `insertAtCursor`**，不要自己動 `ta.value`——
+ *    它已經處理好「`focus()` 之後才設 `selectionStart`」（否則會被 focus 重置到尾端）
+ *    以及補派 `input` 事件（不派的話髒旗標與鏡像層都不會更新）。
+ *
+ * 兩層（2026-08-25 拍板，T306）：常用一排 ＋「更多」展開全部 45 組。
+ * 只有一排的話，承辦人想要第 41 顆就走進死路。
+ */
+function renderEmojiPalette(setName, boxId, taId) {
+  var box = document.getElementById(boxId);
+  if (!box) return;
+  var palette = EMOJI_SETS[setName];
+  box.innerHTML = '';
+  if (!palette || palette === true) return;      // 這一組沒開 emoji，或沒給資料
+
+  var lead = document.createElement('span');
+  lead.className = 'ph-lead';
+  lead.textContent = '點一下插入';
+  box.appendChild(lead);
+
+  /** 一顆可點的 emoji。常用一排與「更多」的格子共用同一個插入路徑。 */
+  function emoBtn(pid, eid, label) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'emo-btn';
+    b.title = label || ('emoji ' + eid);
+    var img = document.createElement('img');
+    img.className = 'emo';
+    img.loading = 'lazy';                        // 九千張圖不可以一次拉
+    img.alt = label || ('emoji ' + eid);
+    img.src = 'https://stickershop.line-scdn.net/sticonshop/v1/sticon/'
+            + pid + '/iPhone/' + eid + '.png';
+    b.appendChild(img);
+    var ins = function (ev) {
+      ev.preventDefault();
+      insertAtCursor(taId, '[[e:' + pid + ':' + eid + ']]');
+    };
+    b.addEventListener('mousedown', ins);
+    b.addEventListener('touchstart', ins, { passive: false });
+    return b;
+  }
+
+  palette.forEach(function (e) {
+    box.appendChild(emoBtn(e.productId, e.emojiId, e.label));
+  });
+
+  var groups = EMOJI_GROUPS[setName];
+  if (!groups || !groups.length) return;         // 沒給完整清單就只有常用一排
+
+  var panel = null;
+  var more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'emo-more-btn';
+  more.textContent = '更多…';
+  var toggle = function (ev) {
+    ev.preventDefault();
+    if (panel) { panel.remove(); panel = null; more.textContent = '更多…'; return; }
+    panel = buildPanel();
+    box.appendChild(panel);
+    more.textContent = '收起';
+  };
+  more.addEventListener('mousedown', toggle);
+  more.addEventListener('touchstart', toggle, { passive: false });
+  box.appendChild(more);
+
+  /** 「更多」的面板：組別選單 ＋ 該組的格子。 */
+  function buildPanel() {
+    var p = document.createElement('div');
+    p.className = 'emo-panel';
+    var sel = document.createElement('select');
+    sel.className = 'emo-grp';
+    groups.forEach(function (g, i) {
+      var o = document.createElement('option');
+      o.value = String(i);
+      // 43 組沒有名字（LINE 不公開），只能顯示序號與顆數讓人自己翻。
+      o.textContent = (g.label ? g.label : '第 ' + (i + 1) + ' 組')
+                    + '（' + g.count + ' 顆）';
+      sel.appendChild(o);
+    });
+    // 預設停在第一個有名字的組（符號組）——那一組最常用，省一次翻找。
+    var def = 0;
+    for (var i = 0; i < groups.length; i++) { if (groups[i].label) { def = i; break; } }
+    sel.value = String(def);
+
+    var grid = document.createElement('div');
+    grid.className = 'emo-grid';
+    var paint = function () {
+      var g = groups[Number(sel.value) || 0];
+      grid.innerHTML = '';
+      if (!g) return;
+      for (var j = 1; j <= g.count; j++) {
+        grid.appendChild(emoBtn(g.productId, ('00' + j).slice(-3), ''));
+      }
+    };
+    sel.addEventListener('change', paint);
+    p.appendChild(sel);
+    p.appendChild(grid);
+    paint();
+    return p;
+  }
+}
+
+/**
  * 本檔宣告的全域名稱。**放在 module.exports 之前**（全域衝突檢查會讀它；
  * 放在 export 之後會拿到 undefined，那條檢查呼叫 .filter() 時直接炸）。
  * 加新的頂層 function／var 時要同步加進來——有一條測試用 deepStrictEqual 比對。
@@ -156,16 +279,16 @@ function closePhPop(){var p=document.getElementById('ph-pop');if(p)p.remove();}
  * 🔴 **`GLOBALS_DECLARED` 自己也是一個頂層 var，所以它自己也要列進去。**
  */
 var GLOBALS_DECLARED = ['GLOBALS_DECLARED', 'tplEsc', 'PH_SETS', 'phList',
-  'registerPhSet', 'EMOJI_SETS', 'enableEmoji', 'MIRROR_EMOJI_RE', 'renderMirrorHtml',
-  'paintMirror', 'renderPhs', 'insertAtCursor', 'phPopup', 'closePhPop'];
+  'registerPhSet', 'EMOJI_SETS', 'EMOJI_GROUPS', 'enableEmoji', 'MIRROR_EMOJI_RE',
+  'renderMirrorHtml', 'paintMirror', 'renderPhs', 'insertAtCursor', 'phPopup',
+  'closePhPop', 'renderEmojiPalette'];
 
 if (typeof module !== 'undefined' && module.exports) {
-  // 🔴 **只匯出這個 commit 裡已經存在的東西。** renderEmojiPalette 還沒寫——
-  //    現在寫進來的話，module.exports 求值時就是 ReferenceError。
   module.exports = {
     tplEsc: tplEsc, phList: phList, registerPhSet: registerPhSet,
     enableEmoji: enableEmoji, renderMirrorHtml: renderMirrorHtml,
     insertAtCursor: insertAtCursor, PH_SETS: PH_SETS,
     MIRROR_EMOJI_RE: MIRROR_EMOJI_RE, GLOBALS_DECLARED: GLOBALS_DECLARED,
+    renderEmojiPalette: renderEmojiPalette, EMOJI_GROUPS: EMOJI_GROUPS,
   };
 }

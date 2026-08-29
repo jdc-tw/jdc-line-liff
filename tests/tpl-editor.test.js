@@ -8,8 +8,8 @@
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { tplEsc, phList, renderMirrorHtml, registerPhSet,
-        GLOBALS_DECLARED } = require('../assets/tpl-editor.js');
+const { tplEsc, phList, renderMirrorHtml, registerPhSet, enableEmoji,
+        renderEmojiPalette, GLOBALS_DECLARED } = require('../assets/tpl-editor.js');
 
 test('對照組：模組真的匯出得到（assets/*.js 沒有自動 shim）', () => {
   assert.equal(typeof renderMirrorHtml, 'function', '忘了寫 module.exports');
@@ -206,4 +206,203 @@ test('對照組：這四條量法真的分得出差異（不是恆綠）', () =>
   assert.deepStrictEqual(g('var f = function (a, b = 1) {};'), ['f'], '預設參數被誤判了');
   // 而 const 確實看不見——這就是上面那條 regex 補洞測試存在的理由
   assert.deepStrictEqual(g('const esc = 1;'), [], 'const 竟然抓得到？那條補洞測試可以拿掉了');
+});
+
+/* ── emoji palette ────────────────────────────────────────────────────
+   受測的只有「產生了幾個節點、綁了哪些事件、觸發後插入什麼字串」，
+   用不到真的排版 ⇒ **不引入 jsdom**，本檔自己十來行假 DOM。
+   真正的 DOM 行為在 Playwright 場景驗。 */
+
+/** 假 DOM。只實作 renderEmojiPalette 與 insertAtCursor 真的會呼叫的那幾支。 */
+function makeDomStub(ids) {
+  function node(tag) {
+    const n = {
+      tagName: tag, children: [], listeners: {}, _html: '',
+      value: '', selectionStart: null, selectionEnd: null,
+      appendChild(c) { this.children.push(c); c._parent = this; return c; },
+      addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); },
+      remove() {
+        const p = this._parent;
+        if (p) p.children = p.children.filter((x) => x !== this);
+      },
+      dispatchEvent() { return true; },
+      focus() {},
+    };
+    Object.defineProperty(n, 'innerHTML', {
+      get() { return this._html; },
+      set(v) { this._html = v; if (v === '') this.children = []; },
+    });
+    return n;
+  }
+  const store = {};
+  (ids || []).forEach((id) => { store[id] = node('div'); });
+  return {
+    document: { getElementById: (id) => store[id] || null, createElement: node },
+    get: (id) => store[id],
+    /** 深度優先攤平，方便找按鈕 */
+    all(root) {
+      const out = [];
+      (function walk(n) { out.push(n); n.children.forEach(walk); })(root);
+      return out;
+    },
+  };
+}
+
+/** 借用假 DOM 跑一段，跑完一定還原全域 document。 */
+function withStub(stub, fn) {
+  const saved = global.document;
+  global.document = stub.document;
+  try { return fn(); } finally { global.document = saved; }
+}
+
+test('🔴 點一下插入的是合格式的標記（renderMirrorHtml 認得的那種）', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  const ta = stub.get('ta');
+  ta.selectionStart = ta.selectionEnd = 0;
+  registerPhSet('wf2', []);
+  enableEmoji('wf2', [{ productId: '670e0cce840a8236ddd4ee4c', emojiId: '001', label: '測試' }]);
+  withStub(stub, () => {
+    renderEmojiPalette('wf2', 'box', 'ta');
+    const btn = stub.all(stub.get('box')).find((n) => n.tagName === 'button');
+    assert.ok(btn, '一顆按鈕都沒畫出來');
+    btn.listeners.mousedown[0]({ preventDefault() {} });
+  });
+  assert.equal(ta.value, '[[e:670e0cce840a8236ddd4ee4c:001]]');
+  // 🔴 對照組：插進去的東西，鏡像層真的認得
+  assert.ok(renderMirrorHtml(ta.value, 'wf2').indexOf('<img') >= 0,
+    '插入的標記鏡像層不認得——兩邊的 regex 對不上');
+});
+
+test('🔴 插入走 insertAtCursor：插在游標處、游標跟著移到後面', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  const ta = stub.get('ta');
+  ta.value = '前後'; ta.selectionStart = ta.selectionEnd = 1;
+  enableEmoji('wf2b', [{ productId: 'abc123', emojiId: '007' }]);
+  registerPhSet('wf2b', []);
+  withStub(stub, () => {
+    renderEmojiPalette('wf2b', 'box', 'ta');
+    stub.all(stub.get('box')).find((n) => n.tagName === 'button')
+      .listeners.mousedown[0]({ preventDefault() {} });
+  });
+  assert.equal(ta.value, '前[[e:abc123:007]]後', '沒插在游標處');
+  assert.equal(ta.selectionStart, 1 + '[[e:abc123:007]]'.length, '游標沒跟著移');
+});
+
+test('🔴 用 mousedown/touchstart 不用 click（行動裝置游標會跑掉）', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  enableEmoji('wf2c', [{ productId: 'abc123', emojiId: '001' }]);
+  registerPhSet('wf2c', []);
+  withStub(stub, () => renderEmojiPalette('wf2c', 'box', 'ta'));
+  const btn = stub.all(stub.get('box')).find((n) => n.tagName === 'button');
+  const evs = Object.keys(btn.listeners);
+  assert.ok(evs.indexOf('mousedown') >= 0 && evs.indexOf('touchstart') >= 0, evs.join(','));
+  assert.ok(evs.indexOf('click') < 0, '用了 click——照抄 renderPhs 的理由，不要改');
+});
+
+test('沒開 emoji 的組畫出空的（bc / sn 一期不受影響）', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  withStub(stub, () => renderEmojiPalette('bc', 'box', 'ta'));
+  assert.equal(stub.get('box').children.length, 0);
+});
+
+test('palette 是空陣列或缺欄位時不炸', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  enableEmoji('wf3', []); registerPhSet('wf3', []);
+  assert.doesNotThrow(() => withStub(stub, () => renderEmojiPalette('wf3', 'box', 'ta')));
+  enableEmoji('wf4', [{ productId: 'x' }]); registerPhSet('wf4', []);
+  assert.doesNotThrow(() => withStub(stub, () => renderEmojiPalette('wf4', 'box', 'ta')));
+});
+
+test('🔴「更多」：沒給 groups 就不畫那顆按鈕（不留死按鈕）', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  enableEmoji('wf5', [{ productId: 'abc123', emojiId: '001' }]);   // 沒給第三個參數
+  registerPhSet('wf5', []);
+  withStub(stub, () => renderEmojiPalette('wf5', 'box', 'ta'));
+  const more = stub.all(stub.get('box')).filter((n) => n.tagName === 'button')
+    .filter((b) => b.textContent === '更多…');
+  assert.equal(more.length, 0, '沒有完整清單卻畫了「更多」，點下去是空的');
+});
+
+test('🔴「更多」：展開後畫出該組的全部顆數，再點一次收起', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  enableEmoji('wf6', [{ productId: 'abc123', emojiId: '001' }],
+    [{ productId: 'ggg111', count: 3 }, { productId: 'hhh222', count: 2, label: '符號' }]);
+  registerPhSet('wf6', []);
+  withStub(stub, () => {
+    renderEmojiPalette('wf6', 'box', 'ta');
+    const more = stub.all(stub.get('box')).find((b) => b.textContent === '更多…');
+    assert.ok(more, '沒畫出「更多」按鈕');
+    more.listeners.mousedown[0]({ preventDefault() {} });
+    const panel = stub.get('box').children.find((c) => c.className === 'emo-panel');
+    assert.ok(panel, '展開後沒有面板');
+    const sel = panel.children.find((c) => c.tagName === 'select');
+    assert.equal(sel.children.length, 2, '組別選單少了組');
+    assert.equal(sel.value, '1', '沒有預設停在有名字的那一組（符號組）');
+    const grid = panel.children.find((c) => c.className === 'emo-grid');
+    assert.equal(grid.children.length, 2, '格子數不等於該組顆數');
+    // 再點一次收起
+    more.listeners.mousedown[0]({ preventDefault() {} });
+    assert.equal(stub.get('box').children.filter((c) => c.className === 'emo-panel').length, 0,
+      '再點一次沒收起來');
+  });
+});
+
+test('🔴「更多」：換組會重畫，格子數跟著換', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  enableEmoji('wf7', [{ productId: 'abc123', emojiId: '001' }],
+    [{ productId: 'ggg111', count: 3 }, { productId: 'hhh222', count: 7, label: '符號' }]);
+  registerPhSet('wf7', []);
+  withStub(stub, () => {
+    renderEmojiPalette('wf7', 'box', 'ta');
+    stub.all(stub.get('box')).find((b) => b.textContent === '更多…')
+      .listeners.mousedown[0]({ preventDefault() {} });
+    const panel = stub.get('box').children.find((c) => c.className === 'emo-panel');
+    const sel = panel.children.find((c) => c.tagName === 'select');
+    const grid = panel.children.find((c) => c.className === 'emo-grid');
+    assert.equal(grid.children.length, 7, '預設組（符號）的格子數不對');
+    sel.value = '0';
+    sel.listeners.change[0]({});
+    assert.equal(grid.children.length, 3, '換組之後沒重畫');
+  });
+});
+
+test('🔴「更多」的格子點下去，插入的是那一組的 id（不是常用一排的）', () => {
+  const stub = makeDomStub(['box', 'ta']);
+  const ta = stub.get('ta');
+  ta.selectionStart = ta.selectionEnd = 0;
+  enableEmoji('wf8', [{ productId: 'abc123', emojiId: '001' }],
+    [{ productId: 'ggg111', count: 2 }]);
+  registerPhSet('wf8', []);
+  withStub(stub, () => {
+    renderEmojiPalette('wf8', 'box', 'ta');
+    stub.all(stub.get('box')).find((b) => b.textContent === '更多…')
+      .listeners.mousedown[0]({ preventDefault() {} });
+    const grid = stub.get('box').children.find((c) => c.className === 'emo-panel')
+      .children.find((c) => c.className === 'emo-grid');
+    grid.children[1].listeners.mousedown[0]({ preventDefault() {} });   // 第二顆
+  });
+  assert.equal(ta.value, '[[e:ggg111:002]]', '插到的不是「更多」那一組的第二顆');
+});
+
+test('🔴 tpl-editor.js 與 line-emoji.js 的全域不得重疊（welfare.html 會同頁載入）', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const A = path.join(__dirname, '..', 'assets');
+  const g = (f) => globalsAddedBy(fs.readFileSync(path.join(A, f), 'utf8'), browserStub(), f);
+  const mine = new Set(g('tpl-editor.js'));
+  const clash = g('line-emoji.js').filter((n) => mine.has(n));
+  assert.deepStrictEqual(clash, [], '同名全域，後載入者贏且零錯誤訊息：' + clash.join(', '));
+});
+
+test('🔴 line-emoji.js 也不得與 stats.html 已載入的九支重疊', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const A = path.join(__dirname, '..', 'assets');
+  const ctx = browserStub();
+  const theirs = new Set();
+  LOADED_BEFORE_INLINE.forEach((f) => {
+    globalsAddedBy(fs.readFileSync(path.join(A, f), 'utf8'), ctx, f).forEach((n) => theirs.add(n));
+  });
+  const clash = globalsAddedBy(
+    fs.readFileSync(path.join(A, 'line-emoji.js'), 'utf8'), browserStub(), 'line-emoji.js')
+    .filter((n) => theirs.has(n));
+  assert.deepStrictEqual(clash, [], clash.join(', '));
 });
