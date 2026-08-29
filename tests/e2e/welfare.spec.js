@@ -598,35 +598,66 @@ test('全選／全部取消真的有反應，而且不可發送的不會被拉�
 
 /* ══════════════ 既有看板不得受影響 ══════════════ */
 
-test('🔴 stats.html 的兩個編輯器行為不變，而且 [[e:…]] 不會變成圖', async ({ page }) => {
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
+/**
+ * 🔴 **兩個編輯器各跑一次。**
+ *    2026-08-29 codex G3 低嚴重度：這條原本只測 `sn`，整份 e2e 沒有出現過 `bc-*`
+ *    ⇒ 報到碼那個編輯器的 DOM id、初始化或事件接線壞掉，這條仍然會綠。
+ *    而 `bc` 是**報到碼通知**——它掛掉的話同仁點不到自己的報到碼。
+ */
+const STATS_EDITORS = [
+  { set: 'sn', tab: 'staff',   phs: 5, typo: '{年資2}', known: '{姓名}' },
+  { set: 'bc', tab: 'checkin', phs: 6, typo: '{桌次2}', known: '{活動名}' },
+];
+
+for (const ed of STATS_EDITORS) {
+  test(`🔴 stats.html 的 ${ed.set} 編輯器行為不變，而且 [[e:…]] 不會變成圖`, async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto('/stats.html');
+    await page.evaluate((tab) => {
+      const ov = document.getElementById('jdc-revoked'); if (ov) ov.remove();
+      showTab(tab);
+    }, ed.tab);
+    const r = await page.evaluate((e) => {
+      const ta = document.getElementById(e.set + '-tpl');
+      const mi = document.getElementById(e.set + '-mirror');
+      if (!ta || !mi) return { missing: true };
+      ta.value = e.known + '您好，' + e.typo + ' [[e:5ac21a18040ab15980c9b43e:028]]';
+      paintMirror(e.set + '-tpl', e.set + '-mirror', e.set);
+      renderPhs(e.set, e.set + '-phs', e.set + '-tpl');
+      return {
+        missing: false,
+        known: mi.innerHTML.indexOf('<mark>' + e.known + '</mark>') >= 0,
+        typo: mi.innerHTML.indexOf('<mark>' + e.typo + '</mark>') >= 0,
+        imgs: mi.querySelectorAll('img').length,
+        emoMark: mi.innerHTML.indexOf('emo-mark') >= 0,
+        phs: document.querySelectorAll('#' + e.set + '-phs button.ph').length,
+        aligned: mi.textContent.replace(/\n$/, '').length === ta.value.length,
+        escKeeps: typeof esc === 'function' ? esc('<a & "b">') : 'esc 不見了',
+      };
+    }, ed);
+    expect(r.missing, `找不到 ${ed.set} 編輯器的 DOM——id 改名了或分頁沒開`).toBe(false);
+    expect(r.known, '認得的佔位符沒上色').toBe(true);
+    expect(r.typo, '打錯字的上色了——她就看不出打錯').toBe(false);
+    expect(r.imgs, '一期兩個看板不開 emoji，不該畫圖').toBe(0);
+    expect(r.emoMark, '沒開 emoji 的組不該標 emo-mark').toBe(false);
+    expect(r.phs, '碼標數量不對').toBe(ed.phs);
+    expect(r.aligned, '鏡像層與 textarea 對不齊 ⇒ 底色標到別的字上').toBe(true);
+    expect(r.escKeeps, '全域 esc 被 tpl-editor 覆寫了——那支有 74 處呼叫')
+      .toBe('&lt;a & "b">');
+    expect(errors).toEqual([]);
+  });
+}
+
+test('對照組：兩個編輯器的佔位符組真的不同（證明上面不是同一組跑兩次）', async ({ page }) => {
   await page.goto('/stats.html');
-  await page.evaluate(() => {
-    const ov = document.getElementById('jdc-revoked'); if (ov) ov.remove();
-    showTab('staff');
-  });
-  const r = await page.evaluate(() => {
-    const ta = document.getElementById('sn-tpl');
-    const mi = document.getElementById('sn-mirror');
-    ta.value = '{姓名}您好，年資 {年資2} 年 [[e:5ac21a18040ab15980c9b43e:028]]';
-    paintMirror('sn-tpl', 'sn-mirror', 'sn');
-    renderPhs('sn', 'sn-phs', 'sn-tpl');
-    return { known: mi.innerHTML.indexOf('<mark>{姓名}</mark>') >= 0,
-             typo: mi.innerHTML.indexOf('<mark>{年資2}</mark>') >= 0,
-             imgs: mi.querySelectorAll('img').length,
-             emoMark: mi.innerHTML.indexOf('emo-mark') >= 0,
-             phs: document.querySelectorAll('#sn-phs button.ph').length,
-             escKeeps: typeof esc === 'function' ? esc('<a & "b">') : 'esc 不見了' };
-  });
-  expect(r.known, '認得的佔位符沒上色').toBe(true);
-  expect(r.typo, '打錯字的上色了').toBe(false);
-  expect(r.imgs, '一期兩個看板不開 emoji，不該畫圖').toBe(0);
-  expect(r.emoMark, '沒開 emoji 的組不該標 emo-mark').toBe(false);
-  expect(r.phs).toBe(5);
-  expect(r.escKeeps, '全域 esc 被 tpl-editor 覆寫了——那支有 74 處呼叫')
-    .toBe('&lt;a & "b">');
-  expect(errors).toEqual([]);
+  const r = await page.evaluate(() => ({
+    sn: phList('sn').map((p) => p.k),
+    bc: phList('bc').map((p) => p.k),
+  }));
+  expect(r.sn).toEqual(['姓名', '單位', '年資', '年度', '入社日']);
+  expect(r.bc).toEqual(['姓名', '單位', '活動名', '日期', '桌次', '連結']);
+  expect(r.sn, '兩組一樣的話，參數化跑兩次等於跑同一件事').not.toEqual(r.bc);
 });
 
 /* ══════════════ 程式化切換：下拉必須跟上 ══════════════
