@@ -1,0 +1,13 @@
+# 🔴 這個 repo 是 PUBLIC，而且它本身就是 GitHub Pages 的站台
+#    ——根目錄的東西會被公開提供出去。而在 2026-08-29 之前它一直是零相依、
+#    連 .gitignore 都沒有。直接 npm install 會把 node_modules 整包 commit 進公開 repo
+#    並發布到網路上。所以這個檔要在裝任何東西**之前**建好。
+node_modules/
+
+# Playwright 的產物
+test-results/
+playwright-report/
+.playwright-mcp/
+
+# macOS
+.DS_Store

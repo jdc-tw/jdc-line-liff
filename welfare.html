@@ -45,7 +45,15 @@
   .num.green { color: var(--g); } .num.red { color: var(--r); } .num.grey { color: var(--ink3); }
   .cap { font-size: 12px; color: var(--ink3); }
 
-  /* 名單：依部門收合。summary 一律看得到人數，不必展開就知道規模。 */
+  /* 名單：依部門分組，**預設展開**（理由見 renderAudience）。
+     每組標頭一律顯示「N / M 可發送」，她自己收起來之後也還看得到規模。
+
+     🔴 **名單自己捲，不撐長整頁。** 137 人全展開時整頁是 7363px＝7.7 個畫面高
+     （2026-08-29 用真實人數量的，6 個人的假資料看不出來）——她要捲七個畫面
+     才碰得到範本編輯區與送出鈕。固定高度之後，展開或收合都不影響頁面總長。 */
+  #audience-list { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain;
+                   border: 1px solid var(--ln); border-radius: 3px; padding: 8px; }
+  #audience-list .grp:last-child { margin-bottom: 0; }
   .grp { background: #fff; border: 1px solid var(--ln); border-radius: 3px; margin-bottom: 8px; overflow: hidden; }
   .grp summary { padding: 10px 12px; cursor: pointer; font-weight: 600; font-size: 14.5px;
                  list-style: none; display: flex; align-items: baseline; gap: 8px; }
@@ -313,6 +321,9 @@ function renderAudience(r) {
     var okN = items.filter(function (it) { return it.row.status === 'ok'; }).length;
     var d = document.createElement('details');
     d.className = 'grp';
+    // 預設展開：她來這一頁就是要選人，收著等於多一道手續；而且「哪幾個人收不到、
+    // 為什麼」正是她需要看到的東西，收起來就看不到。要精簡畫面可以自己收。
+    d.open = true;
     var s = document.createElement('summary');
     s.appendChild(document.createTextNode(u));
     var cnt = document.createElement('span');
@@ -569,6 +580,16 @@ function loadStatus(templateId) {
     .then(function (r) {
       if (templateId !== CURRENT_TPL) return;      // 已經切走了，這份是舊的
       if (!r || !r.ok) { LAST_STATUS = null; renderStatus(); return; }
+      // 🔴 **不可降級。** 我們剛剛才送出成功，而 hub 回「沒有發送紀錄」
+      //    ⇒ 它的紀錄還沒寫完（寫入有延遲），不是真的沒發過。
+      //    覆蓋下去會把「已經發過」洗成「沒有發送紀錄」——而那句話正是
+      //    確認框用來防重複整批發送的那一句。
+      //    （2026-08-29 e2e 抓到。計畫只警告了 recording_failed 那一半，
+      //      但即使紀錄有寫，「還沒寫完」同樣會把事實洗掉。）
+      //    切換範本時 LAST_STATUS 會歸零，所以真的「沒發過」仍顯示得出來。
+      if (LAST_STATUS && LAST_STATUS.templateId === templateId
+          && (LAST_STATUS.state === 'sent' || LAST_STATUS.state === 'partial')
+          && r.state === 'unsent') return;
       LAST_STATUS = { templateId: templateId, state: r.state,
                       stateLabel: welfareStateLabel(r), lastSentAt: r.lastSentAt };
       renderStatus();
@@ -762,7 +783,8 @@ function loadAudience() {
     .then(function (r) {
       if (!r || !r.ok) { setNote('audience-note',
         '名單讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
-      onAudienceLoaded(r);
+      setNote('audience-note', '');     // ← 成功要清掉上一次的錯誤，否則畫面同時說
+      onAudienceLoaded(r);              //    「讀不到」又列出 123 個人
     });
 }
 
@@ -775,6 +797,7 @@ function loadTemplates() {
     .then(function (r) {
       if (!r || !r.ok) { setNote('tpl-note',
         '範本讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
+      setNote('tpl-note', '');          // ← 同上
       TEMPLATES = {}; TPL_ORDER = [];
       (r.items || []).forEach(function (t) { TEMPLATES[t.id] = t; TPL_ORDER.push(t.id); });
       renderTemplateSelector();                       // 只畫下拉；事件已委派好

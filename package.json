@@ -1,0 +1,13 @@
+{
+  "name": "jdc-line-liff",
+  "private": true,
+  "version": "0.0.0",
+  "description": "LINE LIFF 前端（GitHub Pages 站台）。2026-08-29 之前這個 repo 是零相依的，本檔只為了 e2e 測試而存在——正式頁面仍然不依賴任何 npm 套件。",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0"
+  }
+}
