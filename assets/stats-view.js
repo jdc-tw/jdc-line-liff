@@ -74,7 +74,12 @@ function renderStatsHtml(r, opts){
         +'<div><div class="num green">'+c.attend+'</div><div class="cap">參加</div></div>'
         +'<div><div class="num red">'+c.absent+'</div><div class="cap">不參加</div></div>'
         +'<div><div class="num grey">'+noReply+'</div><div class="cap">未填</div></div>'
-      +'</div><div class="sub">全員 '+c.total+'・已回覆 '+c.replied+'・葷 '+c.meat+'／素 '+c.veg+'</div></div>'
+      +'</div><div class="sub">全員 '+c.total+'・已回覆 '+c.replied+'・葷 '+c.meat+'／素 '+c.veg+'</div>'
+      // extraAttend＝母數外但特許填答的留停者（見 jdc-line-gas stats.js computeActivityStats）。
+      // 「參加」數已含他們、但「已回覆」分母刻意不含 ⇒ 兩數對不上時要講清楚原因，不然像算錯。
+      // 為 0 或欄位缺席（舊快取沒有這欄）整段不顯示，比照本卡三段人數的既有慣例。
+      +(c.extraAttend?'<div class="sub">其中留停 '+c.extraAttend+' 人為特許填答（不列入回覆率分母）</div>':'')
+      +'</div>'
       +'<div class="sec">意見（'+(r.opinions||[]).length+'）— 參加與不參加者填的意見</div>'+opinionsHtml(r.opinions||[])
       +'<div class="sec">不參加（'+c.absent+'）</div>'+listHtml(r.absentList)
       +'<div class="sec">已綁定未填（'+c.boundNoReply+'）— 催填問卷連結即可</div>'+listHtml(r.boundNoReply)

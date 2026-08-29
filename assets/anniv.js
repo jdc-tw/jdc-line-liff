@@ -19,6 +19,22 @@ function annivInit(jsonpFn, token, opts) {
     if ((r && r.ok) || !painted) annivPaint_(r, emptyText);
   });
 }
+/**
+ * 這一列是不是「留職停薪」（年資里程碑卡的（留停）標記）。
+ *
+ * ⚠️ 2026-08-28（I4）改吃 o.status：原本讀的是 `o.onLeave`，但 getAnniversaries 回的是
+ * pickAnniversaries 的列，那支只加了 `status`、**從來沒有 onLeave 這個欄位**
+ * ⇒ 恆為 undefined、標記永遠不出現，而且零錯誤訊息。
+ * 判定一律走 roster-wide.js 的 jdcIsSeparated／jdcIsOnDuty（禁止在前端重建字面比對，Ruling R15）；
+ * board.html 的 <script> 順序是 roster-wide.js(216) → anniv.js(218)，載入時序已確認。
+ * typeof 守門的另一半是給 node 測試用（瀏覽器不會走到 require 那支）。
+ */
+function annivOnLeave_(o) {
+  var sep = (typeof jdcIsSeparated === 'function') ? jdcIsSeparated : require('./roster-wide.js').jdcIsSeparated;
+  var duty = (typeof jdcIsOnDuty === 'function') ? jdcIsOnDuty : require('./roster-wide.js').jdcIsOnDuty;
+  var st = o && o.status;
+  return !sep(st) && !duty(st);
+}
 // 只負責畫。成功與失敗兩種輸入都收，快取與網路兩條路才能共用同一份繪製邏輯。
 function annivPaint_(r, emptyText) {
   {
@@ -54,7 +70,7 @@ function annivPaint_(r, emptyText) {
                 return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;'
                   + 'padding:5px 0;border-bottom:1px solid #f4f4f2">'
                   + '<span style="font-size:15.5px;font-weight:600;color:#2c2c2b">'
-                  + annivEsc_(o.name) + '</span>'
+                  + annivEsc_(o.name) + (annivOnLeave_(o) ? '（留停）' : '') + '</span>'
                   + '<span style="' + TAG + '">' + annivEsc_(o.unit) + '</span>'
                   + '<span style="' + TAG + '">' + annivEsc_(o.date) + '</span></div>';
               }).join('');
@@ -63,3 +79,4 @@ function annivPaint_(r, emptyText) {
   }
 }
 function annivEsc_(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+if (typeof module !== 'undefined') module.exports = { annivPaint_: annivPaint_, annivOnLeave_: annivOnLeave_ };

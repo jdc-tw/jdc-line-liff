@@ -48,6 +48,12 @@
   .msg-ok { background: #e6f9ee; color: #1a7d44; }
   .msg-err { background: #fdecea; color: #b71c1c; }
   .msg-info { background: #e8f0fe; color: #1a56c4; }
+  /* 員編撞號警語（C1）：核准前就要看得到「覆寫的是誰」。用琥珀色＋左粗邊，
+     和 .msg-err 的紅（送出失敗）區隔——這不是錯誤，是「按下去會發生什麼」的預告。 */
+  .empwarn { display: none; margin: -4px 0 12px; padding: 10px 12px; border-radius: 8px;
+    background: #fff4e5; border-left: 4px solid #e08a00; color: #8a5300;
+    font-size: 14px; line-height: 1.6; font-weight: 700; }
+  .empwarn.show { display: block; }
   .empty { text-align: center; color: #888; padding: 40px 0; font-size: 15px; }
   .sec { font-size: 15px; color: #666; margin: 28px 0 10px; }
   /* tabs（2026-07-15 員工名冊分頁） */
@@ -59,6 +65,7 @@
   .r-count b { color: #1a1a1a; font-size: 20px; }
   .r-search { margin-bottom: 12px; }
   .st-off { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fdecea; color: #b71c1c; margin-left: 8px; }
+  .st-leave { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: #fff4e5; color: #b26a00; margin-left: 8px; }
   .resend { background: none; border: 1px solid #ddd; border-radius: 8px; color: #555; font-size: 13px;
     padding: 4px 10px; cursor: pointer; font-family: inherit; margin-top: 6px; -webkit-appearance: none; }
   .resend-msg { font-size: 13px; margin-top: 4px; }
@@ -420,6 +427,33 @@ function buildTitleField(box, cur){
   toSelect(cur);   // 哨兵「找不到」也保留顯示，讓人事一眼看出是新人按了找不到、需主動補
 }
 
+// 名冊「非在勤」列的員編索引，由 getCheckinPending 帶回（{ 員編: {name,status} }）。
+// 後端的 offDutyEmpNoIndex 與 classifyRosterEmpNo 用同一個謂詞，
+// 所以「會跳警語」＝「核准真的會覆寫那一列」，兩者不會各說各話。
+var gEmpConflicts={};
+/**
+ * 查一個員編撞到的非在勤名冊列；查不到回 null。
+ * @param {string} empNo   輸入框當下的值
+ * @param {string} origNo  這一列**存檔的**員編
+ * @param {Object} orig    後端對存檔員編算好的 empNoConflict
+ * ⚠️ 舊快取（部署前存的）沒有 empNoConflicts，gEmpConflicts 會是空物件——這時退回
+ * 後端算好的那一筆，不要讓整張卡完全沒有警語（同 R13 對缺欄位的容忍原則）。
+ * 但只在「輸入值＝存檔值」時才退回，否則人事改了員編、畫面還掛著上一個人的名字。
+ */
+function empConflictOf(empNo, origNo, orig){
+  var k=String(empNo==null?'':empNo).trim();
+  if(!k)return null;
+  if(gEmpConflicts[k])return gEmpConflicts[k];
+  if(orig&&k===String(origNo==null?'':origNo).trim())return orig;
+  return null;
+}
+/** 撞號警語的文字（純函式，好測）。c＝empConflictOf 的結果；null 代表不顯示。 */
+function empWarnText(c){
+  if(!c)return '';
+  var st=String(c.status||'').trim();
+  return '⚠️ 此員編屬'+(jdcIsSeparated(st)?'已離職':st)+'同仁 '
+    +(String(c.name||'').trim()||'（名冊未填姓名）')+'，核准將覆寫該列。';
+}
 function renderRow(o){
   var d=document.createElement('div');d.className='card';
   d.innerHTML=
@@ -430,10 +464,27 @@ function renderRow(o){
     +'<label>生日</label><input type="date" data-k="生日" value="'+esc(o['生日'])+'">'
     +'<label>公司信箱</label><div class="email-row"><input data-k="email-prefix" value="'+esc(emailPrefix(o['公司信箱']))+'" placeholder="請補上信箱帳號"><span class="suffix">'+EMAIL_DOMAIN+'</span></div>'
     +'<label>員工編號</label><input data-k="員編" value="'+esc(o['員編'])+'" placeholder="請補上員編">'
+    +'<div class="empwarn" data-empwarn></div>'
     +'<div class="msg"></div>'
     +'<button class="btn btn-primary">核准報到</button>';
   buildTitleField(d.querySelector('[data-tf]'), o['職稱']);
   function val(k){var el=d.querySelector('[data-k="'+k+'"]');return el?el.value:'';}
+  // 員編撞號警語（C1）：核准＝覆寫名冊上那一列，按之前就要指名道姓講清楚覆寫的是誰。
+  // 刻意**不做二次確認的往返**——拍板是放行，只是要先看得見。
+  // ⚠️ 兩個時機都要畫：①開卡當下（曾核准過又重送報到的列，員編是存檔的）
+  //   ②人事在這張卡上打員編的當下——**這才是主要情境**：新人報到表單不收員編，
+  //   留停者換 LINE 帳號重報到時這一格是空的，員編是她當場打的。
+  //   只畫①的話，警語在最該出現的那一次永遠不會出現（零錯誤訊息）。
+  var warnBox=d.querySelector('[data-empwarn]');
+  var empInput=d.querySelector('[data-k="員編"]');
+  function paintEmpWarn(){
+    var t=empWarnText(empConflictOf(val('員編'), o['員編'], o.empNoConflict));
+    warnBox.className=t?'empwarn show':'empwarn';
+    warnBox.textContent=t;
+  }
+  if(empInput)empInput.addEventListener('input',paintEmpWarn);
+  paintEmpWarn();
+  d._paintEmpWarn=paintEmpWarn;   // R22：SWR 背景重繪被髒旗標擋下時，靠這個掛勾補畫警語（見 repaintEmpWarnings）
   var msg=d.querySelector('.msg');
   d.querySelector('.btn').onclick=function(){
     var nonce=newNonce();   // ⚠️ 點擊當下產生，在處理器內、jsonp 之外。理由見 newNonce 上方。
@@ -495,7 +546,7 @@ function showTab(t){
 }
 
 // ── 異動紀錄分頁（公告異動＋資料修正，最新在上）──────────────────────────
-var CAT_COLOR={'離職':'#b71c1c','調動':'#b26a00','晉升':'#1a7d44','新進':'#1a56c4','資料修正':'#666','整批轉移':'#6d28d9'};
+var CAT_COLOR={'離職':'#b71c1c','留職停薪':'#b26a00','復職':'#1a7d44','調動':'#b26a00','晉升':'#1a7d44','新進':'#1a56c4','資料修正':'#666','整批轉移':'#6d28d9'};
 function westEff_(v){
   var m=String(v||'').match(/^(\d{3})\.(\d{2})\.(\d{2})$/);
   return m?(+m[1]+1911)+'/'+m[2]+'/'+m[3]:v;
@@ -860,7 +911,12 @@ function paintRoster(r){
   rosterRows.filter(function(o){return o.updatedMs>0;})
     .sort(function(a,b){return b.updatedMs-a.updatedMs;})
     .slice(0,20).forEach(function(o){o._recent=true;});
-  document.getElementById('r-count').innerHTML='在職 <b>'+r.activeCount+'</b> 人（名冊共 '+r.total+' 筆）';
+  // ⚠️ R13：舊快取（部署前存的）沒有 onLeave／separated 兩個新欄位，一律用 ||0 容忍缺席，
+  // 否則有舊快取的人會看到 NaN 或整段渲染失敗——且重整就好、最難重現。
+  document.getElementById('r-count').innerHTML='在職 <b>'+(r.activeCount||0)+'</b> 人'
+    +((r.onLeave||0)?'　留停 <b>'+r.onLeave+'</b> 人':'')
+    +((r.separated||0)?'　離職 <b>'+r.separated+'</b> 人':'')
+    +'（名冊共 '+r.total+' 筆）';
   renderRoster(rosterRows);
 }
 function loadRoster(){
@@ -884,7 +940,7 @@ function loadRoster(){
   });
 }
 function rosterItemHtml(o){
-  var badge=o.status==='離職'?'<span class="st-off">離職</span>':'';
+  var badge=jdcIsSeparated(o.status)?'<span class="st-off">離職</span>':(jdcIsOnDuty(o.status)?'':'<span class="st-leave">留停</span>');
   var upd=o._recent?'<span class="upd">更新 '+esc(o.updatedAt)+'</span>':'';
   return '<div class="done-item"><div class="done-head"><span class="done-name'+(o._recent?' hot':'')+'">'+esc(o.name)+'</span>'+upd+badge+'<span class="done-date" style="margin-left:auto">'+esc(o.empNo)+'</span></div><div class="done-meta">'+esc(o.title||'')+'</div></div>';
 }
@@ -942,10 +998,22 @@ function load(){
     // ⚠️ 這裡是 SWR 的第二次繪製。這幾張卡上有四個可編輯欄位（姓名／生日／公司信箱／員編），
     // 人事正在補打時直接重繪會**靜默抹掉她打的字**，欄位回到後端舊值，她按核准就寫錯資料進名冊。
     // 2026-08-20 stats.html 的資深通知就是同一形狀出事的（19 人誤發），只是那邊是吵的、這邊是安靜的。
-    if(isDirty('pending')){hintStale('pending');return;}
+    // ⚠️ R22：撞號索引 gEmpConflicts 只在這裡（網路那一發）被賦值，且非在勤員編索引跟輸入欄位
+    // 無關——不是「使用者正在打的字」，是「畫面上該不該掛警語」的判斷依據。所以就算下面因為
+    // isDirty 整段跳過重繪，索引仍要先收下來，再把已開的卡重畫一次警語（只動警語框，不動 input）。
+    // 不接住的話：部署後第一次開看板、人事在這批回來前就開始打員編 ⇒ gEmpConflicts 停在
+    // 快取版的 {}，那一整場都不會出現警語，且不重整頁面永遠不會補出現。
+    if(rs[1]&&rs[1].ok)gEmpConflicts=rs[1].empNoConflicts||gEmpConflicts;
+    if(isDirty('pending')){hintStale('pending');repaintEmpWarnings();return;}
     if(rs[1]&&rs[1].ok)renderLoad(rs);
     else if(!(co&&cp))renderLoad(rs);
     watchDirty('pending');
+  });
+}
+/** R22：SWR 因髒旗標跳過整段重繪時，把已開的卡重畫一次警語框——只動 .empwarn，不碰任何 input。 */
+function repaintEmpWarnings(){
+  document.querySelectorAll('#pending .card').forEach(function(c){
+    if(typeof c._paintEmpWarn==='function')c._paintEmpWarn();
   });
 }
 function renderLoad(rs){
@@ -956,6 +1024,7 @@ function renderLoad(rs){
     if(!r||!r.ok){box.innerHTML='<div class="empty">'+((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
     document.getElementById('who').textContent='核准人：'+r.who;
     showAdminSwitch(r.admin);
+    gEmpConflicts=r.empNoConflicts||{};
     box.innerHTML='';
     if(!r.rows.length) box.innerHTML='<div class="empty">目前沒有待確認的報到 🎉</div>';
     else r.rows.forEach(function(o){box.appendChild(renderRow(o));});

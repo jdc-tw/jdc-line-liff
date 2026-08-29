@@ -744,13 +744,13 @@ function fillRefillPeople(){
   var html='<option value="">請選擇同仁</option>';
   if(v.length){
     html+='<optgroup label="已完成 LINE 驗證（立即開放補填）">'+v.map(function(p){
-      return '<option value="U:'+esc(p.userId)+'">'+esc(p.name)+'</option>';
+      return '<option value="U:'+esc(p.userId)+'">'+esc(p.name)+(p.onLeave?'（留停）':'')+'</option>';
     }).join('')+'</optgroup>';
   }
   if(u.length){
     html+='<optgroup label="尚未完成 LINE 驗證（改寄綁定邀請信）">'+u.map(function(p){
       return '<option value="E:'+esc(p.empNo)+'"'+(p.hasEmail?'':' disabled')+'>'
-        +esc(p.name)+(p.hasEmail?'':'（名冊缺公司信箱·無法寄信）')+'</option>';
+        +esc(p.name)+(p.onLeave?'（留停）':'')+(p.hasEmail?'':'（名冊缺公司信箱·無法寄信）')+'</option>';
     }).join('')+'</optgroup>';
   }
   sel.innerHTML=html;
@@ -1210,7 +1210,7 @@ function renderSenior(r){
             return '<label class="tag-row" style="'+(bad?'opacity:.5;':'')+'font-weight:400">'
               +'<input type="checkbox" class="sn-ck" data-uid="'+esc(p.userId)+'" '
               +(bad?'disabled':(keepChecked[p.userId]?'checked':''))+' style="width:auto;margin:0">'
-              +'<span class="nm-lg">'+esc(p.name)+'</span>'
+              +'<span class="nm-lg">'+esc(p.name)+(p.onLeave?'（留停）':'')+'</span>'
               +'<span class="tag">'+esc(p.unit)+'</span>'
               +(note?'<span class="tag r">'+esc(note)+'</span>':'')
               +'</label>';
