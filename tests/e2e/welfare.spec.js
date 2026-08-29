@@ -777,6 +777,48 @@ test('🔴 送出後的校正查詢失敗，不得清掉剛拿到的權威結果
   await expect(page.locator('#status-line')).toContainText('130');
 });
 
+/* ── absent：hub 可能還在背景送（2026-08-29 codex G2 高嚴重度）──────────────
+ * 137 則的時候 GAS 約 60 秒放棄等待，而 hub 還在逐則打 LINE API。
+ * 這一態最貴的失敗是「畫面叫她再試一次」——重發會疊在還沒跑完的原批次上。
+ */
+test('🔴 送出後 137 則查不到結果 ⇒ 畫面兩處都要說「可能還在送」，不可說「送不出去」', async ({ page }) => {
+  await open(page, { responses: { sendWelfareBroadcast: {
+    ok: true, state: 'unknown', sentCount: 0, failedCount: 0, absentCount: 137,
+    recordingFailed: false,
+    msg: '⚠️ 有 137 則查不到送達結果——訊息平台可能還在背景送。**請不要重按**，'
+       + '請先到訊息紀錄確認這一批的實際狀態，或聯絡工務管理組。' } } });
+  await armed(page, null);
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#btn-send').click();
+  // send-note 用後端組的 msg
+  await expect(page.locator('#send-note')).toContainText('還在背景送');
+  await expect(page.locator('#send-note')).toContainText('不要重按');
+  // status-line 用前端的 welfareStateLabel——兩處必須說同一件事
+  await expect(page.locator('#status-line')).toContainText('137');
+  await expect(page.locator('#status-line')).toContainText('還在送');
+  const line = await page.locator('#status-line').textContent();
+  expect(line, '「訊息紀錄讀不到」會讓她去查錯的東西——紀錄表其實讀得到')
+    .not.toContain('訊息紀錄讀不到');
+});
+
+test('🔴 unknown 之後 hub 回 unsent，不可把它洗成「沒有發送紀錄」', async ({ page }) => {
+  await open(page, { responses: {
+    sendWelfareBroadcast: { ok: true, state: 'unknown', sentCount: 0, failedCount: 0,
+      absentCount: 137, recordingFailed: false, msg: '⚠️ 有 137 則查不到送達結果。' },
+    getWelfareStatus: { ok: true, state: 'unsent', lastSentAt: '',
+                        sentCount: 0, failedCount: 0 } } });
+  await armed(page, null);
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#btn-send').click();
+  await expect(page.locator('#send-note')).toContainText('137');
+  // 送出時 unknown 不會自動校正，所以主動觸發一次——切走再切回來就是這條路徑
+  await page.evaluate(() => loadStatus(CURRENT_TPL));
+  await page.waitForTimeout(600);
+  const st = await page.evaluate(() => LAST_STATUS && LAST_STATUS.state);
+  expect(st, '被洗成「沒有發送紀錄」⇒ 確認框會說沒發過 ⇒ 她整批重發，疊上還在跑的原批次')
+    .toBe('unknown');
+});
+
 test('對照組：本來就沒有同一則的結果時，讀取失敗仍要顯示「尚未取得」', async ({ page }) => {
   await open(page, { responses: { getWelfareStatus: { __abort: true } } });
   await page.evaluate(() => { LAST_STATUS = null; loadStatus(CURRENT_TPL); });

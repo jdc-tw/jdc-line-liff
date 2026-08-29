@@ -205,6 +205,45 @@ test('對照組：沒有 recordingFailed 時不加那句（證明上一條不是
   assert.ok(out.indexOf('訊息紀錄沒有記到') < 0, out);
 });
 
+/* ── absent：畫面與 send-note 必須說同一件事（2026-08-29 codex G2 高的下游）──
+ * 後端把「重問後仍查無」從 failed 拆出來之後，狀態列若只講 failedCount，
+ * 就會與 send-note 那句（後端組的 r.msg）說不同的話——而她看的是畫面。
+ * memory `feedback_fire_and_forget_hides_outage` 的「告警管道分歧」形態。
+ */
+test('🔴 unknown 帶 absentCount ⇒ 不可說「訊息紀錄讀不到」，那是另一件事', () => {
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext(
+    'welfareStateLabel({state:"unknown", absentCount:137, failedCount:0})', ctx);
+  assert.ok(out.indexOf('137') >= 0, '沒講出有幾則查不到：' + out);
+  assert.ok(out.indexOf('還在送') >= 0, '沒講出「可能還在送」，她會以為是失敗：' + out);
+  assert.ok(out.indexOf('訊息紀錄讀不到') < 0,
+    '紀錄表其實讀得到，是那些人查不到——這句話會讓她去查錯的東西：' + out);
+});
+
+test('對照組：unknown 沒有 absentCount（hub 完全沒回應）仍講原本那句', () => {
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext('welfareStateLabel({state:"unknown"})', ctx);
+  assert.ok(out.indexOf('訊息紀錄讀不到') >= 0, out);
+});
+
+test('🔴 partial 要同時講失敗幾則與查不到幾則', () => {
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext(
+    'welfareStateLabel({state:"partial", sentCount:95, failedCount:5, absentCount:37})', ctx);
+  assert.ok(out.indexOf('95') >= 0 && out.indexOf('5') >= 0, out);
+  assert.ok(out.indexOf('37') >= 0, '漏講查不到的那 37 個人：' + out);
+  assert.ok(out.indexOf('不要整批重發') >= 0, out);
+});
+
+test('對照組：getWelfareStatus 那條路徑沒有 absentCount ⇒ 文案與改動前一致', () => {
+  // welfareStatusFrom 是三態、沒有這個欄位。它不可以因為這次改動長出多餘的字。
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext(
+    'welfareStateLabel({state:"partial", sentCount:130, failedCount:7})', ctx);
+  assert.ok(out.indexOf('查不到結果') < 0, '沒有 absent 卻多講了一段：' + out);
+  assert.ok(out.indexOf('失敗 7') >= 0, out);
+});
+
 /* ── ⑤ 按鈕真的有接上 click ── */
 test('🔴 儲存／寄碼／送出三顆鈕都接上了 click（第六輪之前一顆都沒接）', () => {
   const { ctx, el } = ctxWith(['wireButtons']);

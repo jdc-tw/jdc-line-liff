@@ -575,12 +575,22 @@ function otpBindingStillValid() {
  *    那時旗標是 undefined ⇒ 不附加。兩個來源共用這一支。
  */
 function welfareStateLabel(r) {
+  // 🔴 **「查不到送達結果」與「失敗」要分開講**（2026-08-29 codex G2 高嚴重度的下游）。
+  //    後端把 absent 從 failed 拆出來之後，狀態列若還是只講 failedCount，
+  //    就會與 send-note 那句（後端組的 r.msg）說不同的話——而她看的是畫面。
+  //    ⚠️ getWelfareStatus 走 welfareStatusFrom，那支沒有 absentCount ⇒ 一律 0，
+  //       所以這兩個分支對它而言行為不變。
+  var ab = Number(r.absentCount || 0);
   var head = ({
     sent:    '已發送（' + (r.lastSentAt || '') + '）',
-    partial: '⚠️ 上次部分成功（成功 ' + r.sentCount + '、失敗 ' + r.failedCount + '）'
+    partial: '⚠️ 上次部分成功（成功 ' + r.sentCount
+           + (r.failedCount ? '、失敗 ' + r.failedCount : '')
+           + (ab ? '、查不到結果 ' + ab : '') + '）'
            + '——請不要整批重發，成功的人會收到第二次',
     unsent:  '沒有發送紀錄',
-    unknown: '⚠️ 狀態不明（訊息紀錄讀不到）'
+    unknown: ab
+           ? ('⚠️ 有 ' + ab + ' 則查不到送達結果——訊息平台可能還在送，請不要重按')
+           : '⚠️ 狀態不明（訊息紀錄讀不到）'
   })[r.state] || '狀態不明';
   // 紀錄狀態是獨立的一軸，附在後面，不可蓋掉上面那句。
   return head + (r.recordingFailed === true
@@ -633,8 +643,11 @@ function loadStatus(templateId) {
       //    （2026-08-29 e2e 抓到。計畫只警告了 recording_failed 那一半，
       //      但即使紀錄有寫，「還沒寫完」同樣會把事實洗掉。）
       //    切換範本時 LAST_STATUS 會歸零，所以真的「沒發過」仍顯示得出來。
+      //    ⚠️ `unknown` 也要納入保護（2026-08-29 codex G2 之後）：那一態現在還包含
+      //       「hub 可能還在背景送」，被洗成「沒有發送紀錄」的話她會直接重發。
       if (LAST_STATUS && LAST_STATUS.templateId === templateId
-          && (LAST_STATUS.state === 'sent' || LAST_STATUS.state === 'partial')
+          && (LAST_STATUS.state === 'sent' || LAST_STATUS.state === 'partial'
+              || LAST_STATUS.state === 'unknown')
           && r.state === 'unsent') return;
       LAST_STATUS = { templateId: templateId, state: r.state,
                       stateLabel: welfareStateLabel(r), lastSentAt: r.lastSentAt };
