@@ -226,6 +226,35 @@ test('對照組：unknown 沒有 absentCount（hub 完全沒回應）仍講原�
   assert.ok(out.indexOf('訊息紀錄讀不到') >= 0, out);
 });
 
+/* ── 讀不到就要講「為什麼」（2026-08-29 上線當天）─────────────────────────
+ * 後端的 readHubLog_ 五條失敗路徑各自帶了可讀的原因，getWelfareStatus 也把它
+ * 放進 `why`，**而前端原本沒有用它**——使用者看到「狀態不明」，
+ * 而真正的原因（例如 HUB_READER_TOKEN 過期）被丟掉，只能靠一輪一輪打 API 猜。
+ */
+test('🔴 unknown 帶 why 時要把原因講出來（不然診斷成本全轉嫁給人）', () => {
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext(
+    'welfareStateLabel({state:"unknown", why:"hub 回 HTTP 401（HUB_READER_TOKEN 過期或被輪換）"})', ctx);
+  assert.ok(out.indexOf('訊息紀錄讀不到') >= 0, out);
+  assert.ok(out.indexOf('401') >= 0, '狀態碼沒帶出來：' + out);
+  assert.ok(out.indexOf('HUB_READER_TOKEN') >= 0, '真正的原因被丟掉了：' + out);
+});
+
+test('對照組：沒有 why 時不可以多出一行空的「原因：」', () => {
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext('welfareStateLabel({state:"unknown"})', ctx);
+  assert.ok(out.indexOf('原因') < 0, '沒有原因卻印了「原因：」：' + out);
+});
+
+test('對照組：absentCount 那條路徑不受影響（它講的是別件事，不該附 why）', () => {
+  const { ctx } = ctxWith(['welfareStateLabel']);
+  const out = vm.runInContext(
+    'welfareStateLabel({state:"unknown", absentCount:137, why:"不該出現"})', ctx);
+  assert.ok(out.indexOf('137') >= 0 && out.indexOf('還在送') >= 0, out);
+  assert.ok(out.indexOf('不該出現') < 0,
+    '「hub 還在送」跟「紀錄表讀不到」是兩件事，把讀取失敗的原因附上去會誤導：' + out);
+});
+
 test('🔴 partial 要同時講失敗幾則與查不到幾則', () => {
   const { ctx } = ctxWith(['welfareStateLabel']);
   const out = vm.runInContext(
