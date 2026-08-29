@@ -451,7 +451,7 @@ function empConflictOf(empNo, origNo, orig){
 function empWarnText(c){
   if(!c)return '';
   var st=String(c.status||'').trim();
-  return '⚠️ 此員編屬'+(st==='離職'?'已離職':st)+'同仁 '
+  return '⚠️ 此員編屬'+(jdcIsSeparated(st)?'已離職':st)+'同仁 '
     +(String(c.name||'').trim()||'（名冊未填姓名）')+'，核准將覆寫該列。';
 }
 function renderRow(o){
@@ -484,6 +484,7 @@ function renderRow(o){
   }
   if(empInput)empInput.addEventListener('input',paintEmpWarn);
   paintEmpWarn();
+  d._paintEmpWarn=paintEmpWarn;   // R22：SWR 背景重繪被髒旗標擋下時，靠這個掛勾補畫警語（見 repaintEmpWarnings）
   var msg=d.querySelector('.msg');
   d.querySelector('.btn').onclick=function(){
     var nonce=newNonce();   // ⚠️ 點擊當下產生，在處理器內、jsonp 之外。理由見 newNonce 上方。
@@ -997,10 +998,22 @@ function load(){
     // ⚠️ 這裡是 SWR 的第二次繪製。這幾張卡上有四個可編輯欄位（姓名／生日／公司信箱／員編），
     // 人事正在補打時直接重繪會**靜默抹掉她打的字**，欄位回到後端舊值，她按核准就寫錯資料進名冊。
     // 2026-08-20 stats.html 的資深通知就是同一形狀出事的（19 人誤發），只是那邊是吵的、這邊是安靜的。
-    if(isDirty('pending')){hintStale('pending');return;}
+    // ⚠️ R22：撞號索引 gEmpConflicts 只在這裡（網路那一發）被賦值，且非在勤員編索引跟輸入欄位
+    // 無關——不是「使用者正在打的字」，是「畫面上該不該掛警語」的判斷依據。所以就算下面因為
+    // isDirty 整段跳過重繪，索引仍要先收下來，再把已開的卡重畫一次警語（只動警語框，不動 input）。
+    // 不接住的話：部署後第一次開看板、人事在這批回來前就開始打員編 ⇒ gEmpConflicts 停在
+    // 快取版的 {}，那一整場都不會出現警語，且不重整頁面永遠不會補出現。
+    if(rs[1]&&rs[1].ok)gEmpConflicts=rs[1].empNoConflicts||gEmpConflicts;
+    if(isDirty('pending')){hintStale('pending');repaintEmpWarnings();return;}
     if(rs[1]&&rs[1].ok)renderLoad(rs);
     else if(!(co&&cp))renderLoad(rs);
     watchDirty('pending');
+  });
+}
+/** R22：SWR 因髒旗標跳過整段重繪時，把已開的卡重畫一次警語框——只動 .empwarn，不碰任何 input。 */
+function repaintEmpWarnings(){
+  document.querySelectorAll('#pending .card').forEach(function(c){
+    if(typeof c._paintEmpWarn==='function')c._paintEmpWarn();
   });
 }
 function renderLoad(rs){
