@@ -660,3 +660,107 @@ test('🔴 程式化呼叫 selectTemplate，下拉也要跟上（不只有點下
   expect(r.selectValue, '又一個「畫面說 A、實際是 B」').toBe('t2');
   expect(r.textarea).toBe(TPL_B);
 });
+
+/* ══════════════ codex G3 的四條高嚴重度 ══════════════
+   共同形態：**非同步回應抵達時，狀態被寫到錯的地方。**
+   四條的對照組都照 codex 給的形狀——只給失敗案例的話，
+   分不出是程式碼壞了還是重現方式壞了。 */
+
+/** 換序之後的同一批人（A/B 對調），用來驗勾選是跟著員編還是跟著索引。 */
+const ROWS_SWAPPED = [ROWS[1], ROWS[0]].concat(ROWS.slice(2));
+
+test('🔴 名單換序後重繪，勾選要跟著「人」走，不是跟著位置走', async ({ page }) => {
+  await open(page);
+  await pick(page, 0);                                   // 勾第一個人（甲 A001）
+  const before = await page.evaluate(() => ROWS[0].empNo);
+  await page.evaluate((rows) => onAudienceLoaded({
+    ok: true, rows: rows, audienceRev: 'REV2',
+    counts: { ok: 3, unbound: 1, no_email: 1, ambiguous: 1 }, msgLogToken: 'MT-abc' }),
+    ROWS_SWAPPED);
+  const after = await page.evaluate(() => ROWS.filter((r, i) => {
+    const cb = document.getElementById('cb-' + i); return cb && cb.checked;
+  }).map((r) => r.empNo));
+  expect(after, '換序之後勾到別人身上了——之後驗證碼與送出都會綁錯人')
+    .toEqual([before]);
+});
+
+test('對照組：順序不變時當然也要保留（證明上一條不是「永遠只剩一個」）', async ({ page }) => {
+  await open(page);
+  await pick(page, 0);
+  await page.evaluate((rows) => onAudienceLoaded({
+    ok: true, rows: rows, audienceRev: 'REV1',
+    counts: { ok: 3, unbound: 1, no_email: 1, ambiguous: 1 }, msgLogToken: 'MT-abc' }),
+    ROWS);
+  const after = await page.evaluate(() => ROWS.filter((r, i) => {
+    const cb = document.getElementById('cb-' + i); return cb && cb.checked;
+  }).map((r) => r.empNo));
+  expect(after).toEqual(['A001']);
+});
+
+test('🔴 較舊的狀態查詢晚回，不得蓋掉本次的 partial（那 7 個人會被藏起來）', async ({ page }) => {
+  // 第一次查詢慢、第二次快 ⇒ 舊的最後才到。只比 templateId 是擋不住的。
+  await open(page, { responses: { getWelfareStatus: (p, n) => n === 1
+    ? { __delayMs: 1200, body: { ok: true, state: 'sent', lastSentAt: '2026-01-01 00:00',
+                                 sentCount: 137, failedCount: 0 } }
+    : { ok: true, state: 'partial', sentCount: 130, failedCount: 7 } } });
+  await page.evaluate(() => { loadStatus(CURRENT_TPL); loadStatus(CURRENT_TPL); });
+  await page.waitForTimeout(1800);
+  const st = await page.evaluate(() => LAST_STATUS && LAST_STATUS.state);
+  expect(st, '舊的「已發送」蓋掉了本次的 partial ⇒ 那 7 個人沒人知道要補').toBe('partial');
+  await expect(page.locator('#status-line')).toContainText('不要整批重發');
+});
+
+test('🔴 送出等待期間切換範本，結果不得記到另一則頭上', async ({ page }) => {
+  await open(page, { responses: {
+    sendWelfareBroadcast: { __delayMs: 1200, body: DEFAULTS.sendWelfareBroadcast } } });
+  await armed(page, null);
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#btn-send').click();
+  // 送出中不准切——這是根源那一道
+  await page.evaluate(() => { document.getElementById('wf-tpl-list').value = 't2';
+    document.getElementById('wf-tpl-list').dispatchEvent(new Event('change', { bubbles: true })); });
+  await expect(page.locator('#send-note')).toContainText('正在送出中');
+  expect(await page.evaluate(() => CURRENT_TPL), '送出中被切走了').toBe('t1');
+  // 就算真的切走了（程式化），結果也必須記在 t1 身上——那是不會漏的那一道
+  await page.evaluate(() => { SEND_IN_FLIGHT = false; selectTemplate('t2'); });
+  await page.waitForTimeout(1400);
+  const rec = await page.evaluate(() => LAST_STATUS && LAST_STATUS.templateId);
+  expect(rec, 'A 的送出結果被記到 B 頭上 ⇒ B 看起來已送、實際沒送').toBe('t1');
+});
+
+test('🔴 送出後的校正查詢失敗，不得清掉剛拿到的權威結果', async ({ page }) => {
+  await open(page, { responses: {
+    sendWelfareBroadcast: { ok: true, state: 'partial', sentCount: 130, failedCount: 7,
+      recordingFailed: false, msg: '部分送出：成功 130 則、失敗 7 則。⚠️ 請不要整批重發。' },
+    getWelfareStatus: (p, n) => n === 1
+      ? { ok: true, state: 'unsent', sentCount: 0, failedCount: 0 }   // 送出前那一次
+      : { __abort: true } } });                                       // 校正那一次失敗
+  await armed(page, null);
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#btn-send').click();
+  await expect(page.locator('#send-note')).toContainText('部分送出');
+  await page.waitForTimeout(1000);
+  const st = await page.evaluate(() => LAST_STATUS && LAST_STATUS.state);
+  expect(st, '讀 hub 逾時就把 130/7 洗成「尚未取得」⇒ 又一次把該補發的 7 人藏起來')
+    .toBe('partial');
+  await expect(page.locator('#status-line')).toContainText('130');
+});
+
+test('對照組：本來就沒有同一則的結果時，讀取失敗仍要顯示「尚未取得」', async ({ page }) => {
+  await open(page, { responses: { getWelfareStatus: { __abort: true } } });
+  await page.evaluate(() => { LAST_STATUS = null; loadStatus(CURRENT_TPL); });
+  await page.waitForTimeout(600);
+  await expect(page.locator('#status-line')).toContainText('尚未取得');
+});
+
+test('送出中儲存鈕也要鎖（後端重讀範本可能送出她沒確認過的版本）', async ({ page }) => {
+  await open(page, { responses: {
+    sendWelfareBroadcast: { __delayMs: 1000, body: DEFAULTS.sendWelfareBroadcast } } });
+  await armed(page, null);
+  page.once('dialog', (d) => d.accept());
+  await page.locator('#btn-send').click();
+  await page.locator('#wf-tpl').fill(TPL_A + '送出中偷改的');
+  await expect(page.locator('#btn-save'), '送出中還能存 ⇒ 後端重讀會拿到這一版').toBeDisabled();
+  await expect(page.locator('#send-note')).toContainText('已送出');
+  await expect(page.locator('#btn-save'), '送出完要恢復').toBeEnabled();
+});

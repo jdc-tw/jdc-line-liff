@@ -53,6 +53,10 @@ function ctxWith(names, opt) {
     SAVED_TPL_TEXT: opt.SAVED_TPL_TEXT === undefined ? '' : opt.SAVED_TPL_TEXT,
     LAST_STATUS: opt.LAST_STATUS === undefined ? null : opt.LAST_STATUS,
     UI_GEN: 0,
+    // 2026-08-29 codex G3 之後新增：狀態查詢的世代（只有最新那一份可以落地）
+    STATUS_GEN: 0,
+    pickedEmpNos: () => opt.picked || {},
+    tplTitle: (id) => (opt.TEMPLATES && opt.TEMPLATES[id] && opt.TEMPLATES[id].title) || id,
     OTP_STATE: { armed: false, gen: -1, templateId: '', audienceRev: '', selection: '',
                  count: 0, quotaWarning: '', uncertain: false },
     // ── 被接線呼叫、但本支不受測的東西，一律記帳 ──
@@ -428,4 +432,42 @@ test('🔴 init 先接線再載資料（invalidator 要早於任何重繪）', (
   assert.ok(order.indexOf('wire-inval') < order.indexOf('load'),
     '先載資料才接線——第一次重繪時 invalidator 還不存在');
   assert.deepStrictEqual(order.slice(0, 5), ['ph', 'wire-inval', 'wire-sel', 'wire-btn', 'load']);
+});
+
+/* ── codex G3 高③：showState 必須用「送出當下」的範本 ────────────────── */
+
+test('🔴 showState 帶了 sentTpl 時，結果記在那一則身上（不是現在選的那則）', () => {
+  const { ctx } = ctxWith(['showState'], {
+    CURRENT_TPL: 't2',                       // 送出等待期間她切到了 t2
+    TEMPLATES: { t1: { id: 't1', title: '端午' }, t2: { id: 't2', title: '中秋' } },
+  });
+  vm.runInContext('showState({ ok:true, state:"sent", lastSentAt:"X" }, "t1")', ctx);
+  assert.equal(ctx.LAST_STATUS.templateId, 't1',
+    'A 的送出結果被記到 B 頭上 ⇒ B 看起來已送、實際一則都沒送');
+});
+
+test('對照組：沒帶 sentTpl 時退回 CURRENT_TPL（既有呼叫端不受影響）', () => {
+  const { ctx } = ctxWith(['showState'], { CURRENT_TPL: 't2' });
+  vm.runInContext('showState({ ok:true, state:"sent" })', ctx);
+  assert.equal(ctx.LAST_STATUS.templateId, 't2');
+});
+
+test('🔴 已經切走時不可以把 A 的結果畫到 B 的狀態列上，但要講得出是哪一則', () => {
+  const { ctx, calls } = ctxWith(['showState'], {
+    CURRENT_TPL: 't2',
+    TEMPLATES: { t1: { id: 't1', title: '端午節禮金發放' } },
+  });
+  vm.runInContext('showState({ ok:true, state:"sent", msg:"已送出 2 則。" }, "t1")', ctx);
+  assert.deepStrictEqual(calls.status, [], '把 A 的結果畫到 B 的狀態列了');
+  const note = calls.note.filter((n) => n.id === 'send-note').pop();
+  assert.ok(note && note.text.indexOf('端午節禮金發放') >= 0,
+    '沒講出是哪一則的結果：' + (note && note.text));
+});
+
+test('🔴 送出結果一到，所有在途的狀態查詢都要失效', () => {
+  const { ctx } = ctxWith(['showState'], { CURRENT_TPL: 't1' });
+  const before = ctx.STATUS_GEN;
+  vm.runInContext('showState({ ok:true, state:"sent" }, "t1")', ctx);
+  assert.ok(ctx.STATUS_GEN > before,
+    '沒讓在途的查詢失效 ⇒ 較舊的回應仍可能蓋掉這次的結果');
 });

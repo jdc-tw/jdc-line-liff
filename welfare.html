@@ -267,6 +267,12 @@ var SEND_IN_FLIGHT = false;
 var UI_GEN = 0;
 function bumpUiGen() { UI_GEN++; disarmOtp(); }
 
+/**
+ * 狀態查詢的世代。**只有最新發出的那一份可以落地。**
+ * 與 UI_GEN 是兩件事：UI_GEN 管「碼還算不算數」，這個管「哪一份狀態回應算數」。
+ */
+var STATUS_GEN = 0;
+
 /* ── 小工具 ───────────────────────────────────────────────────────────── */
 
 /** 寫提示。**用 textContent 不用 innerHTML**——訊息裡帶得到後端文案。 */
@@ -294,12 +300,29 @@ var STATUS_WHY = {
  * 🔴 **不重掛 listener**——invalidator 是委派在容器上的。
  * 🔴 **重繪要保留勾選**：SWR 會畫兩次，2026-08-20 就是這樣誤發 19 人×4 批。
  */
-function renderAudience(r) {
+/**
+ * 目前勾了哪些人（回員編的集合）。
+ * 🔴 **一定要在 ROWS 被覆寫之前呼叫。** 之後才數的話，拿的是**新** ROWS 的員編
+ *    去配**舊**的 checkbox ⇒ 名單只要新增、刪除或換序，原本勾的 A 就變成 B，
+ *    而驗證碼與送出都會綁住錯的人。
+ *    （2026-08-29 codex G3 高嚴重度。我自己的重繪測試用的是順序不變的名單，
+ *      所以測不出來——對照組 [A,B]→[A,B] 通過、[A,B]→[B,A] 就選到 B。）
+ */
+function pickedEmpNos() {
   var keep = {};
   ROWS.forEach(function (row, i) {
     var cb = document.getElementById('cb-' + i);
     if (cb && cb.checked) keep[row.empNo] = 1;
   });
+  return keep;
+}
+
+/**
+ * @param {object} r 名單回應
+ * @param {object} [keep] 員編集合。**由呼叫端在覆寫 ROWS 之前擷取**（見 pickedEmpNos）。
+ */
+function renderAudience(r, keep) {
+  keep = keep || {};
 
   var c = (r && r.counts) || { ok: 0, unbound: 0, no_email: 0, ambiguous: 0 };
   document.getElementById('c-ok').textContent = c.ok;
@@ -482,7 +505,9 @@ function onSaveTemplate() {
 
 /** 🔴 btn-save.disabled 只准由這一支指派。 */
 function syncSaveButton() {
-  document.getElementById('btn-save').disabled = SAVE_IN_FLIGHT || !isTplDirty();
+  // 送出進行中也要鎖：那時候改內容並儲存，後端重讀範本可能送出她沒在確認框看過的版本
+  document.getElementById('btn-save').disabled =
+    SAVE_IN_FLIGHT || SEND_IN_FLIGHT || !isTplDirty();
 }
 
 /**
@@ -571,15 +596,36 @@ function lastStatusLabel() {
 
 /** 把 LAST_STATUS 畫到狀態列。**沒有資料時要說「還沒取得」，不可留白。** */
 function renderStatus() {
-  document.getElementById('status-line').textContent = lastStatusLabel();
+  var t = lastStatusLabel();
+  if (LAST_STATUS && LAST_STATUS.stale) t += '\n（狀態更新失敗，上面顯示的是本次送出的結果）';
+  document.getElementById('status-line').textContent = t;
 }
 
 /** 載入某一則的狀態。**回應抵達時若已經切換範本，就丟掉不寫。** */
 function loadStatus(templateId) {
+  var gen = ++STATUS_GEN;
   gasCall(GAS_URL, 'getWelfareStatus', { token: TOKEN, templateId: templateId }, 30000)
     .then(function (r) {
+      // 🔴 **只有最新那一份可以落地。** 同一則範本連續查兩次時，先發的那份可能後到；
+      //    只比 templateId 是擋不住的（兩份的 templateId 一樣）。
+      //    後果：本次 130 成功 7 失敗，被較舊的「已發送」蓋掉 ⇒ 那 7 個人沒人知道要補。
+      //    （2026-08-29 codex G3 高嚴重度。）
+      if (gen !== STATUS_GEN) return;
       if (templateId !== CURRENT_TPL) return;      // 已經切走了，這份是舊的
-      if (!r || !r.ok) { LAST_STATUS = null; renderStatus(); return; }
+      if (!r || !r.ok) {
+        // 🔴 **校正失敗不可以清掉剛拿到的權威結果。** LINE 已經回報 130 成功 7 失敗，
+        //    只因為讀 hub 逾時就洗成「尚未取得」⇒ 又一次把該補發的 7 人藏起來。
+        //    只有「本來就沒有同一則的結果」時才留 null。
+        if (LAST_STATUS && LAST_STATUS.templateId === templateId) {
+          // 🔴 **不可以寫進 send-note。** 那裡放的是送出結果，含「⚠️ 請不要整批重發」
+          //    ——寫上去就把最重要的那句擠掉了，而那正是這條修正要保護的東西。
+          //    （2026-08-29：我修這一條時第一版就是這樣寫的，回歸測試當場抓到。）
+          LAST_STATUS.stale = true;
+          renderStatus();
+          return;
+        }
+        LAST_STATUS = null; renderStatus(); return;
+      }
       // 🔴 **不可降級。** 我們剛剛才送出成功，而 hub 回「沒有發送紀錄」
       //    ⇒ 它的紀錄還沒寫完（寫入有延遲），不是真的沒發過。
       //    覆蓋下去會把「已經發過」洗成「沒有發送紀錄」——而那句話正是
@@ -605,15 +651,33 @@ function loadStatus(templateId) {
  *    重讀會拿到上一批或 unsent，把最重要的那句警告洗掉。
  *    ⇒ 先用這次的回應寫進 LAST_STATUS；只有紀錄有記到的 sent／partial 才另外校正。
  */
-function showState(r) {
-  LAST_STATUS = { templateId: CURRENT_TPL, state: r.state,
+function showState(r, sentTpl) {
+  // 🔴 **用送出當下的那一則，不是回應抵達時的 CURRENT_TPL。**
+  //    送出等待期間她可以切範本 ⇒ A 已經送出去了，結果卻被記到 B 頭上：
+  //    畫面說 B 已發送，而 B 其實一則都沒送（且被「不可降級」擋著改不回來）。
+  //    （2026-08-29 codex G3 高嚴重度。）
+  sentTpl = sentTpl || CURRENT_TPL;
+  LAST_STATUS = { templateId: sentTpl, state: r.state,
                   stateLabel: welfareStateLabel(r), lastSentAt: r.lastSentAt };
-  renderStatus();
-  setNote('send-note', r.msg || LAST_STATUS.stateLabel,
-          (r.state === 'sent' && r.recordingFailed !== true) ? 'ok' : 'err');
-  if ((r.state === 'sent' || r.state === 'partial') && r.recordingFailed !== true) {
-    loadStatus(CURRENT_TPL);
+  // 這一份是最權威的（LINE 剛回的），讓所有在途的狀態查詢失效
+  STATUS_GEN++;
+  var cls = (r.state === 'sent' && r.recordingFailed !== true) ? 'ok' : 'err';
+  if (sentTpl !== CURRENT_TPL) {
+    // 已經切走了：不可以把 A 的結果畫到 B 的狀態列上，但一定要讓她看到 A 的結果。
+    setNote('send-note', '【' + tplTitle(sentTpl) + '】' + (r.msg || LAST_STATUS.stateLabel)
+      + '\n（你已經切到別的範本，上面的狀態列顯示的是目前這一則）', cls);
+    return;
   }
+  renderStatus();
+  setNote('send-note', r.msg || LAST_STATUS.stateLabel, cls);
+  if ((r.state === 'sent' || r.state === 'partial') && r.recordingFailed !== true) {
+    loadStatus(sentTpl);
+  }
+}
+
+/** 範本標題，找不到就回 id——訊息裡要講得出是哪一則。 */
+function tplTitle(id) {
+  return (TEMPLATES[id] && TEMPLATES[id].title) || id;
 }
 
 /* ── 寄驗證碼 ─────────────────────────────────────────────────────────── */
@@ -693,8 +757,12 @@ function onSend() {
   // 🔴 nonce 在點擊當下產生，早於 confirm() 與 gasCall()。寫在 gasCall 內的話，
   //    她在確認框前面猶豫時再按一次會產生第二個 nonce，防重複就白做了——而且無聲。
   var nonce = newNonce();
+  // 🔴 **在這裡抓下來。** 回應抵達時 CURRENT_TPL 可能已經被她切走了，
+  //    用那個記結果就是把 A 的送出寫到 B 頭上。
+  var sentTpl = CURRENT_TPL;
   SEND_IN_FLIGHT = true;
   syncSendButton();                                       // ← 不直接寫 disabled
+  syncSaveButton();                                       // 送出中也鎖住儲存
   // 人數用 OTP_STATE.count（後端 decode 之後的實際數），不是前端自己數的。
   // 🔴 uncertain 時**不可以報一個假數字**（那次回應沒拿到）。
   var who = OTP_STATE.uncertain
@@ -704,12 +772,12 @@ function onSend() {
           + '這一則最近一次的狀態：' + lastStatusLabel() + '\n'
           + (OTP_STATE.quotaWarning ? ('⚠️ ' + OTP_STATE.quotaWarning + '\n') : '')
           + '\n⚠️ LINE 訊息送出後收不回來。';
-  if (!confirm(msg)) { SEND_IN_FLIGHT = false; syncSendButton(); return; }
+  if (!confirm(msg)) { SEND_IN_FLIGHT = false; syncSendButton(); syncSaveButton(); return; }
   return gasCall(GAS_URL, 'sendWelfareBroadcast',    // ← return：見 onSaveTemplate 的理由
           { token: TOKEN, templateId: CURRENT_TPL, otp: otpValue(), nonce: nonce },
           120000)                                         // ⚠️ 數字；不是預設的 45 秒
     .then(function (r) {
-      if (r && r.ok) { disarmOtp(); showState(r); return; }   // 送出成功＝這組碼用掉了
+      if (r && r.ok) { disarmOtp(); showState(r, sentTpl); return; }   // 送出成功＝這組碼用掉了
       if (r && r.transport) {
         // 🔴 傳輸失敗 ＝ unknown，**不是失敗**。
         //    ⚠️ 這裡**也要 disarm**：碼可能已經被後端消耗掉了（used=true），
@@ -717,7 +785,7 @@ function onSend() {
         disarmOtp();
         showState({ ok: true, state: 'unknown', msg:
           '⚠️ 送不出去，而且不確定對方有沒有收到。請不要重按——'
-          + '請先到訊息紀錄確認，或聯絡工務管理組。' });
+          + '請先到訊息紀錄確認，或聯絡工務管理組。' }, sentTpl);
         return;
       }
       showServerReject(r);                                // 明確拒絕（OTP 錯／過期／名單變動）
@@ -726,8 +794,8 @@ function onSend() {
     //    單寫 .then(fn) 的話，前一個 .then 拋例外這一個會被跳過 ⇒ 送出鈕永久卡住。
     //    但也不可以無條件 disabled=false——那會把已經 disarm 的按鈕重新點亮。
     //    這裡等價於 finally（舊 Safari 沒有 Promise.prototype.finally）。
-    .then(function () { SEND_IN_FLIGHT = false; syncSendButton(); },
-          function (e) { SEND_IN_FLIGHT = false; syncSendButton();
+    .then(function () { SEND_IN_FLIGHT = false; syncSendButton(); syncSaveButton(); },
+          function (e) { SEND_IN_FLIGHT = false; syncSendButton(); syncSaveButton();
                          setNote('send-note', '畫面處理時發生錯誤：' + (e && e.message), 'err');
                          throw e; });          // 重新拋出，讓它進得了 console
 }
@@ -769,9 +837,10 @@ function renderMsgLogEntry(r) {
 
 /** 名單重新載入之後。audienceRev 換新＝舊碼綁的名單已經不是這一份。 */
 function onAudienceLoaded(r) {
+  var keep = pickedEmpNos();        // 🔴 **一定要在覆寫 ROWS 之前**，見那支的註解
   AUDIENCE_REV = r.audienceRev;
   ROWS = r.rows || [];
-  renderAudience(r);                // 重繪（invalidator 是委派的，不受影響）
+  renderAudience(r, keep);          // 重繪（invalidator 是委派的，不受影響）
   renderMsgLogEntry(r);             // 🔴 msgLogToken 就在**這份**回應裡
                                     //    接在 Promise 鏈尾巴會拿到 undefined
   bumpUiGen();
@@ -839,6 +908,12 @@ function wireTemplateSelector() {
   document.getElementById('wf-tpl-list').addEventListener('change', function (e) {
     var id = e.target && e.target.value;
     if (!id || id === CURRENT_TPL) return;
+    // 🔴 送出中不准切。切走的話這一批的結果會記到另一則頭上（codex G3 高③ 的根源）。
+    if (SEND_IN_FLIGHT) {
+      e.target.value = CURRENT_TPL;
+      setNote('send-note', '正在送出中，請等這一批跑完再切換範本。', 'err');
+      return;
+    }
     // 未存草稿的政策：**問一次，預設不丟**。靜靜丟掉她打的字是最糟的一種收場。
     if (isTplDirty() && !confirm('這一則範本有未儲存的修改，切換後會丟失。確定要切換嗎？')) {
       e.target.value = CURRENT_TPL;    // ← 一定要拉回去，否則下拉說 B、實際還在 A
