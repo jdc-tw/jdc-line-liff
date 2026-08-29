@@ -881,7 +881,16 @@ function loadTemplates() {
         '範本讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
       setNote('tpl-note', '');          // ← 同上
       TEMPLATES = {}; TPL_ORDER = [];
-      (r.items || []).forEach(function (t) { TEMPLATES[t.id] = t; TPL_ORDER.push(t.id); });
+      // 🔴 **欄位是 `templateId` 不是 `id`。**（2026-08-29 上線當天實測抓到。）
+      //    讀錯的話 key 是 `undefined` ⇒ 兩則範本寫進同一格、後面覆蓋前面
+      //    ⇒ 下拉兩個選項都顯示同一個標題、value 都是字串 "undefined"
+      //    ⇒ 她根本選不到端午那則。而且 **54 條 e2e 全綠**——
+      //      因為 mock 當初寫的是 `id`，於是測試在測一個不存在的後端。
+      //    ⚠️ 正上方那句註解查了一手碼確認外層是 `items`，**卻沒查 item 裡面的欄位名**。
+      //       查了一半的驗證比沒查更危險：它讓人以為這一段已經對過了。
+      (r.items || []).forEach(function (t) {
+        TEMPLATES[t.templateId] = t; TPL_ORDER.push(t.templateId);
+      });
       renderTemplateSelector();                       // 只畫下拉；事件已委派好
       if (TPL_ORDER.length) selectTemplate(TPL_ORDER[0]);   // ← 一則都沒有時不可以硬選
     });

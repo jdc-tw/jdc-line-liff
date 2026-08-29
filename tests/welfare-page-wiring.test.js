@@ -328,11 +328,17 @@ test('🔴 有未存草稿時切換要先問；她說不要，下拉必須拉回
 });
 
 /* ── 載入範本：欄位名必須與後端一手碼對齊 ── */
-test('🔴 範本清單讀的是回應的 items（後端 getWelfareTemplates 回的就是這個欄位）', async () => {
+// 🔴 2026-08-29 上線當天在 production 抓到：前端讀 `t.id`，而後端回的是 `t.templateId`。
+//    **這條測試原本也寫 `id`**——它的失敗訊息寫著「欄位名對不上就是一則範本都讀不到」，
+//    它正是在測這件事，卻用了跟被測程式碼一樣的錯欄位名，所以永遠綠。
+//    同一個病灶在三個地方：welfare.html、e2e 的 mock、這裡。
+//    ⚠️ 教訓不是「要小心」：**替身的欄位名要從一手碼抄**，不要從被測程式碼抄——
+//       從被測程式碼抄的話，測試與程式碼會一起錯而且互相印證。
+test('🔴 範本清單讀的是回應的 items，而每一則的鍵是 templateId', async () => {
   const { ctx, calls } = ctxWith(['loadTemplates'], {
     responses: { getWelfareTemplates:
-      { ok: true, items: [{ id: 'a', title: 'A', text: 'ta' },
-                          { id: 'b', title: 'B', text: 'tb' }] } },
+      { ok: true, items: [{ templateId: 'a', title: 'A', text: 'ta' },
+                          { templateId: 'b', title: 'B', text: 'tb' }] } },
   });
   await vm.runInContext('loadTemplates()', ctx);
   // ⚠️ vm 裡建的陣列屬於另一個 realm，prototype 不同 ⇒ deepStrictEqual 會判不等
@@ -340,6 +346,12 @@ test('🔴 範本清單讀的是回應的 items（後端 getWelfareTemplates 回
   assert.deepStrictEqual([].slice.call(ctx.TPL_ORDER), ['a', 'b'],
     '欄位名對不上就是一則範本都讀不到');
   assert.deepStrictEqual(calls.select, ['a'], '沒有自動選第一則');
+  // 🔴 這兩條**不看欄位名，只看症狀**：讀錯了鍵必然是 undefined、必然收斂成一格。
+  //    斷言欄位名的話，哪天後端改名，這條會跟著改成新名字而永遠綠。
+  const keys = Object.keys(ctx.TEMPLATES);
+  assert.ok(!keys.includes('undefined'),
+    'TEMPLATES 有一個叫 "undefined" 的鍵 ⇒ 讀錯了 id 的欄位名');
+  assert.strictEqual(keys.length, 2, '兩則收斂成一格 ⇒ 後一則把前一則蓋掉了');
 });
 
 test('一則範本都沒有時不可以硬選（會拿 undefined 去讀 .text）', async () => {

@@ -28,9 +28,13 @@ const DEFAULTS = {
   getWelfareAudience: { ok: true, rows: ROWS, audienceRev: 'REV1',
     counts: { ok: 3, unbound: 1, no_email: 1, ambiguous: 1 },
     msgLogToken: 'MT-abc', msgLogWhy: '' },
+  // 🔴 **欄位名必須與真實後端一致**：`getWelfareTemplates` 回的是 `templateId`。
+  //    這裡原本寫 `id`，於是 54 條 e2e 全綠而線上的下拉整個壞掉
+  //    （兩則寫進同一格、value 都是 "undefined"）。mock 與真實後端對不上時，
+  //    測試測的是那份 mock，不是那個系統。
   getWelfareTemplates: { ok: true, items: [
-    { id: 't1', title: '端午節禮金發放', text: TPL_A },
-    { id: 't2', title: '中秋節祝福', text: TPL_B } ] },
+    { templateId: 't1', title: '端午節禮金發放', text: TPL_A },
+    { templateId: 't2', title: '中秋節祝福', text: TPL_B } ] },
   getWelfareStatus: { ok: true, state: 'unsent', lastSentAt: '', sentCount: 0, failedCount: 0 },
   requestWelfareOtp: { ok: true, count: 2, sentTo: 'hs***@example.tw', resent: true },
   sendWelfareBroadcast: { ok: true, state: 'sent', sentCount: 2, failedCount: 0,
@@ -666,6 +670,60 @@ test('對照組：兩個編輯器的佔位符組真的不同（證明上面不�
    那一行「程式化切換時下拉也要跟上」拿掉之後，41 條全綠——
    因為沒有一條走的是「程式呼叫 selectTemplate」那條路。
    啟動時選第一則走的正是那條。 */
+
+/* ── 🔴 範本 id 的接線（2026-08-29 上線當天，在 production 上被抓到）─────────
+ * 前端讀 `t.id` 而後端回的是 `t.templateId` ⇒ key 是 `undefined`
+ * ⇒ 兩則範本寫進同一格、後面覆蓋前面 ⇒ 下拉兩個選項顯示同一個標題。
+ * 而 **54 條 e2e 全綠**——因為 mock 當初也寫 `id`，測試在測一份不存在的後端。
+ *
+ * 🔴 下面這條**刻意不斷言欄位名**。斷言「要讀 templateId」的話，
+ *    哪天後端改欄位名，這條會跟著被改成新名字而永遠綠。
+ *    改成斷言**症狀**：id 讀不到時它必然是 undefined、必然重複、必然不成對。
+ *    那個性質不隨欄位名改變。
+ */
+test('🔴 每則範本的 id 都要是真的值——讀錯欄位時它會是 undefined 而且全部一樣', async ({ page }) => {
+  await open(page);
+  const r = await page.evaluate(() => {
+    const sel = document.querySelector('#wf-tpl-list');
+    return {
+      values: [...sel.options].map((o) => o.value),
+      labels: [...sel.options].map((o) => o.textContent),
+      keys: Object.keys(TEMPLATES),
+      order: TPL_ORDER.slice(),
+    };
+  });
+  expect(r.values.length, '下拉沒有兩則').toBe(2);
+  r.values.forEach((v) => {
+    expect(v, 'option 的 value 是空的').toBeTruthy();
+    expect(v, 'value 是字串 "undefined" ⇒ 前端讀錯了 id 的欄位名').not.toBe('undefined');
+  });
+  expect(new Set(r.values).size, '兩則的 id 一樣 ⇒ 後一則把前一則蓋掉了').toBe(2);
+  expect(new Set(r.labels).size, '兩則的標題一樣 ⇒ 她根本選不到另外那則').toBe(2);
+  expect(r.keys.length, 'TEMPLATES 只存下一則').toBe(2);
+  expect(r.order.length, 'TPL_ORDER 只存下一則').toBe(2);
+  expect(r.keys.includes('undefined'), 'TEMPLATES 有一個叫 "undefined" 的 key').toBe(false);
+});
+
+// 🔴 **驗的是第一則，不是第二則。** 讀錯欄位時兩則寫進同一格、
+//    **後面覆蓋前面** ⇒ 存活下來的剛好是第二則 ⇒ 驗第二則會通過。
+//    2026-08-29 實測：第一版寫成驗第二則，突變回 `t.id` 之後它照樣綠。
+//    被覆蓋掉的那一個才是證據。
+test('🔴 選第一則要拿到第一則的內容——被覆蓋掉的是它', async ({ page }) => {
+  await open(page);
+  const first = await page.evaluate(
+    () => document.querySelector('#wf-tpl-list').options[0].value);
+  await page.selectOption('#wf-tpl-list', first);
+  await expect(page.locator('#wf-tpl'), '選了第一則卻載入第二則的內容 ⇒ 第一則被蓋掉了')
+    .toHaveValue(TPL_A);
+});
+
+test('對照組：選第二則也要拿到第二則（證明上一條不是「永遠顯示第一則」）', async ({ page }) => {
+  await open(page);
+  const second = await page.evaluate(
+    () => document.querySelector('#wf-tpl-list').options[1].value);
+  await page.selectOption('#wf-tpl-list', second);
+  await expect(page.locator('#wf-tpl')).toHaveValue(TPL_B);
+});
 
 test('🔴 啟動時自動選第一則，下拉要顯示那一則（不是空白或第 0 個）', async ({ page }) => {
   await open(page);
