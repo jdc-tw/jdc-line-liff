@@ -510,13 +510,17 @@ function renderHr(r){
   var main=document.getElementById('main');
   if(!r||!r.ok){document.getElementById('sub').textContent='';main.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
   var s=r.stats;
-  document.getElementById('sub').textContent='資料來源：員工名冊即時快照（在職 '+s.total+' 人）';
+  // ⚠️ 標籤刻意不是「在職」（2026-08-28 M2 裁決，數字不動）：這裡的母數含留職停薪
+  // （hrstats.js buildHrStats 只排除離職——年資／退休預警需要含他們），
+  // 而名冊看板寫的是「在職 48・留停 2」。兩邊都叫「在職」的話，同一個人開兩個看板
+  // 會看到兩個不一樣的「在職 N 人」。定義那一端見 jdc-line-gas/line-platform/hrstats.js。
+  document.getElementById('sub').textContent='資料來源：員工名冊即時快照（在編 '+s.total+' 人，含留職停薪）';
   var maxCount=Math.max.apply(null,s.unitOrder.map(function(n){return s.units[n].count;}).concat([1]));
   var byCount=s.unitOrder.slice().sort(function(a,b){return s.units[b].count-s.units[a].count;});
 
   var html='';
   // KPI
-  html+='<div class="kpis"><div class="kpi"><div class="v">'+s.total+'<small class="d" data-k="total"></small></div><div class="k">在職人數</div></div>'
+  html+='<div class="kpis"><div class="kpi"><div class="v">'+s.total+'<small class="d" data-k="total"></small></div><div class="k">在編人數（含留職停薪）</div></div>'
       +'<div class="kpi"><div class="v">'+s.avgTenure+'<small class="d" data-k="avgTenure"></small></div><div class="k">平均年資（年）</div></div>'
       +'<div class="kpi"><div class="v">'+s.avgAge+'<small class="d" data-k="avgAge"></small></div><div class="k">平均年齡（歲）</div></div></div>';
   // 跟上個月比（2026-08-23 使用者：以月為單位）：快照 hr-stats-history.json 每月 1 日一筆；基準＝上個月（本月之前最後一筆）。

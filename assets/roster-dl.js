@@ -24,10 +24,14 @@ function __rdlToday() {
   return d.getFullYear() + '/' + z(d.getMonth() + 1) + '/' + z(d.getDate());
 }
 function inclLeavers_() { var el = document.getElementById(__rdl.leaversId); return !!(el && el.checked); }
-// active＝非離職（含留停，見 filterRosterExport 的 JSDoc）；在勤＝active - onLeave，三段各自為 0 時不出現該段。
+// active＝非離職（含留停，見 filterRosterExport 的 JSDoc）；三段各自為 0 時不出現該段。
+// ⚠️ 面向使用者的三段用語一律「在職／留停／離職」（2026-08-28 M3／R20 裁決），
+// 跟隨名冊看板既有文案（board.html paintRoster 的「在職 N・留停 N・離職 N」）——
+// 同一個數字先前在這裡叫「在勤」、在看板叫「在職」，同一個人開兩處會看到兩個名字。
+// 程式內部變數名不受此限（onDuty 保留，它才是語意正確的那個字）。
 function dlDoneMsg_(active, onLeave, total) {
   var onDuty = active - onLeave;
-  return '已下載 ✅（在勤 ' + onDuty + ' 人'
+  return '已下載 ✅（在職 ' + onDuty + ' 人'
     + (onLeave > 0 ? '，留停 ' + onLeave + ' 人' : '')
     + (total > active ? '，含離職 ' + (total - active) + ' 人' : '')
     + '）';
