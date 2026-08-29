@@ -293,6 +293,80 @@ test('fullMessageOf：沒有內容時給明確字樣', () => {
   assert.equal(V.fullMessageOf(b), '（無內容）');
 });
 
+/* ── LINE emoji 的儲存信封（2026-08-29，福委會案 Task 11）───────────
+   hub 從 2026-08-24 起，帶 LINE emoji 的 text 存成
+   `{v:1, type:'text', text, emojis}`。紀錄頁要還原成人看得懂的樣子。
+
+   🔴 **兩條路徑都要驗**：全文走 fullMessageOf，卡面摘要走 gistOf → textInPayload。
+      只驗全文會漏掉摘要——而摘要那條還靠 hub（另一個 repo）的 `type` 欄撐著。 */
+
+const RAW_EMOJI = JSON.stringify({
+  v: 1, type: 'text', text: '端午安康 $',
+  emojis: [{ index: 5, productId: '670e0cce840a8236ddd4ee4c', emojiId: '001' }],
+});
+
+test('CATEGORY 有 welfare_broadcast，畫面不顯示生代號', () => {
+  assert.equal(V.CATEGORY['welfare_broadcast'], '福委會通知');
+});
+
+test('帶 emoji 的訊息不可把原始 JSON 印給人看（全文）', () => {
+  const s = V.fullMessageOf({ rows: [{ content: RAW_EMOJI }] });
+  assert.ok(s.indexOf('"emojis"') < 0, '把 JSON 原文印出來了：' + s);
+  assert.ok(s.indexOf('端午安康') >= 0, s);
+  assert.ok(s.indexOf('[emoji 001]') >= 0, 'emoji 的位置沒有還原：' + s);
+});
+
+test('卡面摘要也要看得到內容，不可顯示「（text）」、也不可留下 $ 佔位符', () => {
+  const g = V.gistOf(RAW_EMOJI, 'text');
+  assert.ok(g.indexOf('端午安康') >= 0, '摘要顯示成 ' + g);
+  assert.ok(g.indexOf('（text）') < 0, g);
+  // $ 是 LINE 的 emoji 佔位符。露給人看會被當成錯字，而全文那條已經換掉了——
+  // 兩條路徑顯示不一致，比兩條都難看更糟。
+  assert.ok(g.indexOf('$') < 0, '摘要留下了 $ 佔位符：' + g);
+});
+
+test('從真實 raw 經 groupBatches 走一次，摘要與全文同時斷言', () => {
+  const b = V.groupBatches(H, [row({
+    來源: 'welfare_broadcast', 訊息內容: RAW_EMOJI,
+    批次: 'line-platform-20260615-550e8400-aaaaaaaa',
+  })])[0];
+  assert.equal(b.categoryLabel, '福委會通知');
+  assert.ok(b.gist.indexOf('端午安康') >= 0, 'gist: ' + b.gist);
+  assert.ok(V.fullMessageOf(b).indexOf('端午安康') >= 0);
+});
+
+test('emoji 信封：純文字的既有行為不變', () => {
+  assert.equal(V.fullMessageOf({ rows: [{ content: '一般通知' }] }), '一般通知');
+  assert.equal(V.gistOf('一般通知', 'text'), '一般通知');
+});
+
+test('emoji 信封：壞掉的 JSON 當普通文字顯示，不可拋錯讓整頁掛掉', () => {
+  assert.equal(V.fullMessageOf({ rows: [{ content: '{不是JSON' }] }), '{不是JSON');
+});
+
+test('emoji 信封：index 與 text 對不上時跳過那一顆，不可錯位也不可拋', () => {
+  const bad = JSON.stringify({ v: 1, type: 'text', text: 'abc',
+                               emojis: [{ index: 99, emojiId: '001' }] });
+  assert.equal(V.fullMessageOf({ rows: [{ content: bad }] }), 'abc');
+});
+
+test('emoji 信封：多顆且順序顛倒時，位置仍要正確', () => {
+  const raw = JSON.stringify({ v: 1, type: 'text', text: 'a$b$c',
+    emojis: [{ index: 3, emojiId: '002' }, { index: 1, emojiId: '001' }] });
+  assert.equal(V.fullMessageOf({ rows: [{ content: raw }] }),
+    'a[emoji 001]b[emoji 002]c');
+});
+
+test('emoji 信封：沒有 emojis 欄位時原樣顯示文字', () => {
+  const raw = JSON.stringify({ v: 1, type: 'text', text: '沒有表情' });
+  assert.equal(V.fullMessageOf({ rows: [{ content: raw }] }), '沒有表情');
+});
+
+test('emoji 信封：多則訊息的陣列不受影響，仍走 textInPayload', () => {
+  const arr = JSON.stringify([{ type: 'image' }, { type: 'text', text: '第二則才是文字' }]);
+  assert.equal(V.gistOf(arr, 'image+text'), '第二則才是文字');
+});
+
 test('cardHtml：內容與名單合併成同一個下拉（2026-08-23）', () => {
   const long = '第一行\n第二行是全文才看得到的';
   const b = V.groupBatches(H, [

@@ -13,7 +13,7 @@
  * 2026-08-22 改版：平鋪表格 → 批次卡。設計語彙沿用 stats.html（活動紀錄看板）。
  */
 
-/** 來源代號 → 中文。line-platform 目前申報七種（pushLine_ 的 source 必填）。 */
+/** 來源代號 → 中文。line-platform 目前申報八種（pushLine_ 的 source 必填）。 */
 var CATEGORY = {
   senior_notice: '資深員工通知',
   pass_broadcast: '報到碼通知',
@@ -22,6 +22,7 @@ var CATEGORY = {
   bind_expired: '綁定過期提醒',
   refill_grant: '補登核准',
   refill_auto: '自動補登',
+  welfare_broadcast: '福委會通知',
   // 下面兩個不是 line-platform 申報的七個來源之一，是手動發送留下的紀錄。
   // `hub_path_test` 是 2026-08-20 驗證 hub 端到端路徑的煙霧測試，刻意不借既有
   // 代號，免得紀錄表的來源標籤說謊；它不在 hub 的 SOURCE_ROLES 裡，只有 admin 看得到。
@@ -115,12 +116,44 @@ function textInPayload(s) {
   return null;
 }
 
+/**
+ * hub 從 2026-08-24 起，帶 LINE emoji 的 text 存成
+ * `{v:1, type:'text', text, emojis}`（見 jdc-line-hub 的 messageContentOf）。
+ * 這裡把它還原成人類看得懂的樣子；其餘（純文字、多則訊息的陣列、舊資料、
+ * 壞掉的 JSON）**一律原樣回傳**，呼叫端自己接後續處理。
+ *
+ * ⚠️ 壞資料不可以讓紀錄頁整頁掛掉——parse 失敗要吞掉，不是拋出去。
+ * ⚠️ `index` 是 UTF-16 code unit，與 JS 的字串索引一致——不要用 Array.from 拆。
+ * ⚠️ 佔位符對不上（index 指到的不是 `$`）就跳過那一顆。寧可少畫一顆，
+ *    也不要把後面的字整段挪位——挪位之後看起來像正常的句子，沒有人會發現。
+ */
+function renderStoredMessage(raw) {
+  if (!raw || raw.charAt(0) !== '{') return raw;
+  var o;
+  try { o = JSON.parse(raw); } catch (e) { return raw; }
+  if (!o || o.v !== 1 || typeof o.text !== 'string') return raw;
+  var out = '', last = 0;
+  (o.emojis || []).slice().sort(function (a, b) { return a.index - b.index; })
+    .forEach(function (e) {
+      if (e.index < last || o.text.charAt(e.index) !== '$') return;
+      out += o.text.slice(last, e.index) + '[emoji ' + e.emojiId + ']';
+      last = e.index + 1;
+    });
+  return out + o.text.slice(last);
+}
+
 function gistOf(content, kind) {
   var s = String(content == null ? '' : content).trim();
   if (!s) return '（無內容）';
   if (s.charAt(0) === '[' || s.charAt(0) === '{') {
-    s = textInPayload(s);
-    if (!s) return '（' + (kind || '訊息') + '）';
+    // ⚠️ 摘要與全文必須走同一套還原。只讓全文走，摘要會留著 `$` 佔位符給人看，
+    //    而同一段文字在卡面與展開後長得不一樣，比兩邊都難看更難查。
+    var rendered = renderStoredMessage(s);
+    if (rendered !== s) { s = rendered; }
+    else {
+      s = textInPayload(s);
+      if (!s) return '（' + (kind || '訊息') + '）';
+    }
   }
   var lines = s.split('\n').map(function (t) { return t.trim(); })
     .filter(function (t) { return t; });
@@ -305,7 +338,8 @@ function foldHtml(batch, toks) {
 /** 全文＝第一個人收到的完整內文（不是截斷的主旨）。 */
 function fullMessageOf(batch) {
   var r = (batch.rows && batch.rows[0]) || {};
-  return String(r.content == null ? '' : r.content) || '\uff08\u7121\u5167\u5bb9\uff09';
+  var raw = String(r.content == null ? '' : r.content);
+  return renderStoredMessage(raw) || '\uff08\u7121\u5167\u5bb9\uff09';
 }
 
 /**
@@ -444,6 +478,7 @@ if (typeof module !== 'undefined' && module.exports) {
     CATEGORY: CATEGORY, SKIP_RESULT: SKIP_RESULT, STATUS_LABEL: STATUS_LABEL,
     sinceWarning: sinceWarning, railTicks: railTicks, fullMessageOf: fullMessageOf,
     esc: esc, col: col, statusOf: statusOf, gistOf: gistOf, textInPayload: textInPayload,
+    renderStoredMessage: renderStoredMessage,
     KIND_LABEL: KIND_LABEL, kindLabel: kindLabel, namesLine: namesLine, failNote: failNote,
     NAMES_SHOWN: NAMES_SHOWN,
     msgCountOf: msgCountOf, tallyOf: tallyOf, lampOf: lampOf,
