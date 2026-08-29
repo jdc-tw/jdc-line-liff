@@ -8,8 +8,9 @@
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { tplEsc, phList, renderMirrorHtml, registerPhSet, enableEmoji,
-        renderEmojiPalette, GLOBALS_DECLARED } = require('../assets/tpl-editor.js');
+const { tplEsc, phList, renderMirrorHtml, renderPreviewHtml, registerPhSet,
+        enableEmoji, renderEmojiPalette,
+        GLOBALS_DECLARED } = require('../assets/tpl-editor.js');
 
 test('對照組：模組真的匯出得到（assets/*.js 沒有自動 shim）', () => {
   assert.equal(typeof renderMirrorHtml, 'function', '忘了寫 module.exports');
@@ -268,9 +269,11 @@ test('🔴 點一下插入的是合格式的標記（renderMirrorHtml 認得的�
     btn.listeners.mousedown[0]({ preventDefault() {} });
   });
   assert.equal(ta.value, '[[e:670e0cce840a8236ddd4ee4c:001]]');
-  // 🔴 對照組：插進去的東西，鏡像層真的認得
-  assert.ok(renderMirrorHtml(ta.value, 'wf2').indexOf('<img') >= 0,
-    '插入的標記鏡像層不認得——兩邊的 regex 對不上');
+  // 🔴 對照組：插進去的東西，下游兩支真的都認得（兩邊的 regex 必須對得上）
+  assert.ok(renderPreviewHtml(ta.value, 'wf2').indexOf('<img') >= 0,
+    '插入的標記預覽區不認得');
+  assert.ok(renderMirrorHtml(ta.value, 'wf2').indexOf('emo-mark') >= 0,
+    '插入的標記鏡像層不認得');
 });
 
 test('🔴 插入走 insertAtCursor：插在游標處、游標跟著移到後面', () => {
@@ -405,4 +408,49 @@ test('🔴 line-emoji.js 也不得與 stats.html 已載入的九支重疊', () =
     fs.readFileSync(path.join(A, 'line-emoji.js'), 'utf8'), browserStub(), 'line-emoji.js')
     .filter((n) => theirs.has(n));
   assert.deepStrictEqual(clash, [], clash.join(', '));
+});
+
+/* ── 鏡像層 vs 預覽：兩者的約束正好相反 ────────────────────────────────
+   2026-08-29 開頁面才看到的缺陷：鏡像層把 [[e:...]] 換成 <img>，
+   而它疊在 textarea 上、整個作用靠逐字對齊 ⇒ 一則四顆 emoji 的範本
+   少了 169 個字元，那一顆之後的每個字都錯位、底色標到別的字上。
+   Task 12 看不到——bc／sn 沒開 emoji，那段程式碼從沒被執行過。 */
+
+/** 去掉標籤，只留可見字元——鏡像層與 textarea 要比的就是這個。 */
+function visibleLen(html) {
+  return html.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+             .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').length;
+}
+
+test('🔴 鏡像層不可以改變字元數（它疊在 textarea 上，靠逐字對齊）', () => {
+  registerPhSet('wf-align', [{ k: '姓名' }]);
+  enableEmoji('wf-align', [{ productId: '5ac21a18040ab15980c9b43e', emojiId: '028' }]);
+  const text = '[[e:5ac21a18040ab15980c9b43e:028]]{姓名}您好'
+             + '[[e:5ac21a18040ab15980c9b43e:006]]請領取';
+  const mirror = renderMirrorHtml(text, 'wf-align');
+  assert.equal(visibleLen(mirror), text.length,
+    '鏡像層與 textarea 差了 ' + (text.length - visibleLen(mirror)) + ' 個字元——底色會全部錯位');
+  assert.ok(mirror.indexOf('<img') < 0, '鏡像層畫了圖，寬度一定對不上');
+});
+
+test('對照組：預覽區反過來——它必須把標記換成圖', () => {
+  const text = '[[e:5ac21a18040ab15980c9b43e:028]]你好';
+  const pv = renderPreviewHtml(text, 'wf-align');
+  assert.ok(pv.indexOf('<img') >= 0, '預覽區沒有把 emoji 畫出來，等於沒有預覽');
+  assert.ok(pv.indexOf('[[e:') < 0, '預覽區留下了字面標記');
+});
+
+test('🔴 沒開 emoji 的組，鏡像層的字元數同樣不變（既有兩組的回歸）', () => {
+  const text = '[[e:5ac21a18040ab15980c9b43e:028]]{姓名}您好';
+  assert.equal(visibleLen(renderMirrorHtml(text, 'bc')), text.length);
+});
+
+test('預覽區的跳脫與鏡像層同一套（XSS 不可以只擋一邊）', () => {
+  const h = renderPreviewHtml('<img src=x onerror=alert(1)>', 'wf-align');
+  assert.ok(h.indexOf('&lt;img src=x') >= 0, '沒跳脫——預覽區成了 XSS 的第二個入口');
+  assert.ok(h.indexOf('onerror=alert(1)>') < 0 || h.indexOf('&lt;img') >= 0);
+});
+
+test('預覽區也標佔位符（她要看得出哪些字會被換掉）', () => {
+  assert.ok(renderPreviewHtml('{姓名}您好', 'wf-align').indexOf('<mark>{姓名}</mark>') >= 0);
 });

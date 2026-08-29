@@ -82,6 +82,35 @@ function renderMirrorHtml(text, set) {
   });
   if (!EMOJI_SETS[set]) return html;                  // 沒開 emoji 的組，行為與搬動前逐字相同
   MIRROR_EMOJI_RE.lastIndex = 0;
+  // 🔴 **鏡像層絕對不可以把標記換成圖片。** 它疊在 textarea 上、整個作用靠**逐字對齊**，
+  //    而 `[[e:<24 位 pid>:<3 位 eid>]]` 是 32 個字元、`<img>` 只有 24px 寬
+  //    ⇒ 從那一顆之後的每一個字都錯位，底色全部標到別的字上。
+  //    2026-08-29 實測：一則四顆 emoji 的範本，鏡像層比 textarea 少 169 個字元。
+  //    （Task 12 看不到這個洞——bc／sn 沒開 emoji，這段程式碼從沒被執行過。）
+  //    這裡只加底色（`<mark>` 是標籤，不佔字元）；「長什麼樣」交給 renderPreviewHtml。
+  return html.replace(MIRROR_EMOJI_RE, function (m) {
+    return '<mark class="emo-mark">' + m + '</mark>';
+  });
+}
+
+/**
+ * 預覽：把範本畫成「同仁大致會收到的樣子」——emoji 換成真的圖。
+ *
+ * 🔴 **與 renderMirrorHtml 分開，不是重複。** 兩者的約束正好相反：
+ *    鏡像層疊在 textarea 上，**不可以改變字元寬度**；
+ *    預覽是獨立的一塊，**必須**把標記換成看得懂的東西。
+ *    把它們合成一支，就是上面那個 169 字元錯位的來源。
+ *
+ * ⚠️ 佔位符保留 `{姓名}` 的字面並上色——預覽的目的是讓她確認排版與 emoji，
+ *    不是模擬某一個人收到的內容（那要挑一個人，反而讓人以為只發給他）。
+ */
+function renderPreviewHtml(text, set) {
+  var known = {};
+  phList(set).forEach(function (p) { known[p.k] = 1; });
+  var html = tplEsc(text).replace(/\{([^{}\n]{1,12})\}/g, function (m, k) {
+    return known[k] ? '<mark>' + m + '</mark>' : m;
+  });
+  MIRROR_EMOJI_RE.lastIndex = 0;
   return html.replace(MIRROR_EMOJI_RE, function (m, pid, eid) {
     // pid/eid 已被 regex 鎖死在 [0-9a-f] 與 \d，拼不出引號或角括號。
     // ⚠️ **若日後放寬那個字元集，這段就必須改用 createElement。**
@@ -89,6 +118,13 @@ function renderMirrorHtml(text, set) {
          + 'https://stickershop.line-scdn.net/sticonshop/v1/sticon/'
          + pid + '/iPhone/' + eid + '.png">';
   });
+}
+
+/** 把預覽畫進指定容器。與 paintMirror 同一個形狀：純函式在上、DOM 在下。 */
+function paintPreview(taId, previewId, set) {
+  var ta = document.getElementById(taId), pv = document.getElementById(previewId);
+  if (!ta || !pv) return;
+  pv.innerHTML = renderPreviewHtml(ta.value, set);
 }
 
 /** 鏡像圖層：把 {…} 包成 <mark> 上底色。textarea 本身不能上色，只能疊一層同規格的 div。 */
@@ -280,8 +316,8 @@ function renderEmojiPalette(setName, boxId, taId) {
  */
 var GLOBALS_DECLARED = ['GLOBALS_DECLARED', 'tplEsc', 'PH_SETS', 'phList',
   'registerPhSet', 'EMOJI_SETS', 'EMOJI_GROUPS', 'enableEmoji', 'MIRROR_EMOJI_RE',
-  'renderMirrorHtml', 'paintMirror', 'renderPhs', 'insertAtCursor', 'phPopup',
-  'closePhPop', 'renderEmojiPalette'];
+  'renderMirrorHtml', 'renderPreviewHtml', 'paintMirror', 'paintPreview',
+  'renderPhs', 'insertAtCursor', 'phPopup', 'closePhPop', 'renderEmojiPalette'];
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -290,5 +326,6 @@ if (typeof module !== 'undefined' && module.exports) {
     insertAtCursor: insertAtCursor, PH_SETS: PH_SETS,
     MIRROR_EMOJI_RE: MIRROR_EMOJI_RE, GLOBALS_DECLARED: GLOBALS_DECLARED,
     renderEmojiPalette: renderEmojiPalette, EMOJI_GROUPS: EMOJI_GROUPS,
+    renderPreviewHtml: renderPreviewHtml,
   };
 }

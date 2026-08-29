@@ -10,7 +10,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { LE_SYM, LE_HAND, LINE_EMOJI, LINE_EMOJI_GROUPS,
         LINE_EMOJI_GLOBALS } = require('../assets/line-emoji.js');
-const { MIRROR_EMOJI_RE, renderMirrorHtml, registerPhSet,
+const { MIRROR_EMOJI_RE, renderMirrorHtml, renderPreviewHtml, registerPhSet,
         enableEmoji } = require('../assets/tpl-editor.js');
 
 /** 端午範本實際用到的五顆（2026-08-25 使用者拍板，T298）。 */
@@ -36,17 +36,25 @@ test('對照組：這個量法真的分得出「少了一顆」', () => {
   assert.ok(have.has(LE_SYM + ':028'), '028 該存在卻說沒有——集合建錯了');
 });
 
-test('🔴 每一顆的格式都要能被鏡像層的 regex 認得', () => {
-  // 格式不合的話，承辦人點了插進去，鏡像層卻只顯示 [[e:...]] 的字面
+test('🔴 每一顆的格式，編輯區與預覽區都要認得', () => {
+  // 格式不合的話，承辦人點了插進去，畫面上只會留下 [[e:...]] 的字面。
+  // ⚠️ 兩支的正確結果不同：鏡像層只上底色（不可改變字元寬度），預覽區才畫圖。
   registerPhSet('zz-emoji', []);
   enableEmoji('zz-emoji', LINE_EMOJI);
-  const bad = LINE_EMOJI.filter((e) => {
-    MIRROR_EMOJI_RE.lastIndex = 0;
+  const badPreview = [], badMirror = [];
+  LINE_EMOJI.forEach((e) => {
     const mark = '[[e:' + e.productId + ':' + e.emojiId + ']]';
-    return renderMirrorHtml(mark, 'zz-emoji').indexOf('<img') < 0;
+    MIRROR_EMOJI_RE.lastIndex = 0;
+    if (renderPreviewHtml(mark, 'zz-emoji').indexOf('<img') < 0) {
+      badPreview.push(e.productId + ':' + e.emojiId);
+    }
+    MIRROR_EMOJI_RE.lastIndex = 0;
+    if (renderMirrorHtml(mark, 'zz-emoji').indexOf('emo-mark') < 0) {
+      badMirror.push(e.productId + ':' + e.emojiId);
+    }
   });
-  assert.deepStrictEqual(bad.map((e) => e.productId + ':' + e.emojiId), [],
-    '這幾顆的格式鏡像層認不得');
+  assert.deepStrictEqual(badPreview, [], '這幾顆預覽區畫不出來');
+  assert.deepStrictEqual(badMirror, [], '這幾顆編輯區標不出來');
 });
 
 test('🔴 常用一排沒有重複（重複只是佔位置，但會讓人以為有兩顆不同的）', () => {
