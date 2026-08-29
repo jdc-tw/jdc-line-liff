@@ -466,6 +466,7 @@
 <script src="assets/send-modal.js"></script>
   <script src="assets/qr-badge.js"></script>
 <script src="assets/board-cache.js"></script>
+<script src="assets/tpl-editor.js"></script>
 <script>
 // esc() 住在 assets/stats-view.js，本頁 40 幾處在用（含各種錯誤訊息的組字串）。
 // 那支若沒載進來，連「顯示錯誤」的路徑都會拋例外，畫面只會靜靜停住＝壞掉時沒有任何人看得見
@@ -503,87 +504,7 @@ function renderActBar(selId,barId){
   if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest',inline:'center'});
 }
 
-/* ── 佔位符 ──────────────────────────────────────────────────────────────
-   一處定義、三處共用（清單顯示／點擊插入／打「{」跳選單／鏡像上底色）。
-   使用者要求：「到底有多少佔位符，都請一次提供給需要佔位符的地方」。 */
-var PH_SETS={
-  bc:[{k:'姓名'},{k:'單位'},{k:'活動名'},{k:'日期'},{k:'桌次'},
-      {k:'連結',why:'不能刪，沒有它同仁點不到報到碼'}],
-  sn:[{k:'姓名'},{k:'單位'},{k:'年資'},{k:'年度'},{k:'入社日'}]
-};
-function phList(set){return PH_SETS[set]||[];}
-/**
- * 把佔位符畫成一排可點的碼標；點一下插進游標處。
- * ⚠️ 用 mousedown/touchstart ＋ preventDefault，不用 click：
- *    click 之前 textarea 已經失焦，行動裝置上游標位置會跑掉，插到的地方不是你按之前的位置。
- */
-function renderPhs(set,boxId,taId){
-  var box=document.getElementById(boxId);if(!box)return;
-  box.innerHTML='<span class="ph-lead">點一下插入，或直接打「{」</span>';
-  phList(set).forEach(function(p){
-    var b=document.createElement('button');
-    b.type='button';b.className='ph';
-    b.textContent='{'+p.k+'}';
-    if(p.why)b.title=p.why;
-    var ins=function(e){e.preventDefault();insertAtCursor(taId,'{'+p.k+'}');};
-    b.addEventListener('mousedown',ins);
-    b.addEventListener('touchstart',ins,{passive:false});
-    box.appendChild(b);
-  });
-}
-function insertAtCursor(taId,text){
-  var ta=document.getElementById(taId);if(!ta)return;
-  var s=ta.selectionStart,e=ta.selectionEnd;
-  if(s==null){s=e=ta.value.length;}                 // 從沒點過欄位時插到最後
-  ta.value=ta.value.slice(0,s)+text+ta.value.slice(e);
-  ta.focus();
-  ta.selectionStart=ta.selectionEnd=s+text.length;  // focus 之後才設，否則會被 focus 重置到尾端
-  ta.dispatchEvent(new Event('input'));
-}
-/** 鏡像圖層：把 {…} 包成 <mark> 上底色。textarea 本身不能上色，只能疊一層同規格的 div。 */
-function paintMirror(taId,mirrorId,set){
-  var ta=document.getElementById(taId),mi=document.getElementById(mirrorId);
-  if(!ta||!mi)return;
-  var known={};phList(set).forEach(function(p){known[p.k]=1;});
-  var html=esc(ta.value).replace(/\{([^{}\n]{1,12})\}/g,function(m,k){
-    return known[k]?'<mark>'+m+'</mark>':m;   // 不認得的不上色＝一眼看出打錯字
-  });
-  mi.innerHTML=html+'\n';                     // 補一行，讓最後一行換行時高度跟得上
-  mi.scrollTop=ta.scrollTop;
-}
-/**
- * 打出「{」（半形或全形）就跳出選單，選了自動補完整個佔位符。
- * 選單固定貼在欄位正下方、橫向一排——位置可預期，也不會蓋住剛打的字。
- * 全形「｛」也接：中文輸入法下打出來的多半是全形，只認半形等於這個功能對中文使用者不存在。
- */
-function phPopup(taId,set){
-  closePhPop();
-  var ta=document.getElementById(taId);
-  if(!ta)return;
-  var s=ta.selectionStart,ch=ta.value.charAt(s-1);
-  if(ch!=='{'&&ch!=='｛')return;
-  var pop=document.createElement('div');
-  pop.className='ph-pop';pop.id='ph-pop';
-  phList(set).forEach(function(p){
-    var b=document.createElement('button');
-    b.type='button';b.textContent=p.k;
-    var pick=function(e){
-      e.preventDefault();
-      var at=ta.selectionStart;
-      ta.value=ta.value.slice(0,at-1)+'{'+p.k+'}'+ta.value.slice(at);   // 吃掉剛打的那個括號
-      closePhPop();
-      ta.focus();
-      ta.selectionStart=ta.selectionEnd=at+p.k.length+1;
-      ta.dispatchEvent(new Event('input'));
-    };
-    b.addEventListener('mousedown',pick);
-    b.addEventListener('touchstart',pick,{passive:false});
-    pop.appendChild(b);
-  });
-  (ta.closest('.tpl-wrap')||ta.parentNode).appendChild(pop);
-  setTimeout(function(){document.addEventListener('click',closePhPop,{once:true});},0);
-}
-function closePhPop(){var p=document.getElementById('ph-pop');if(p)p.remove();}
+/* 佔位符與鏡像層已搬到 assets/tpl-editor.js（2026-08-29）——三個範本編輯器共用一份。呼叫點與簽章一個字都沒改。 */
 // 管理者專屬跨看板切換（只有管理者的 token 顯示；受眾分離維持：人事/企劃等其他看板使用者看不到）
 // ⚠️ 本 repo 為 PUBLIC，註解與程式碼都不要寫同仁真實姓名。
 function showAdminSwitch(isAdmin){
