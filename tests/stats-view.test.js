@@ -44,6 +44,31 @@ test('renderStatsHtml 意見區帶筆數', () => {
   assert.match(renderStatsHtml(OK, {}).bodyHtml, /意見（1）/);
 });
 
+// R21：extraAttend＝母數外但特許填答的留停者，「參加」已含他們但「已回覆」分母不含，
+// 畫面要講清楚原因（否則像算錯）。三種情況：>0 顯示、0 不顯示、undefined（舊快取）不顯示。
+test('R21：extraAttend > 0 時顯示留停特許填答說明與正確人數', () => {
+  const withExtra = JSON.parse(JSON.stringify(OK));
+  withExtra.counts.extraAttend = 3;
+  const html = renderStatsHtml(withExtra, {}).bodyHtml;
+  assert.match(html, /其中留停 3 人為特許填答（不列入回覆率分母）/);
+});
+
+test('R21：extraAttend 為 0 時不顯示留停特許填答說明', () => {
+  const zeroExtra = JSON.parse(JSON.stringify(OK));
+  zeroExtra.counts.extraAttend = 0;
+  const html = renderStatsHtml(zeroExtra, {}).bodyHtml;
+  assert.ok(!html.includes('特許填答'));
+});
+
+test('R21：extraAttend 缺席（舊快取）時不顯示、且不出現 undefined/NaN', () => {
+  const noExtra = JSON.parse(JSON.stringify(OK));
+  delete noExtra.counts.extraAttend;
+  const html = renderStatsHtml(noExtra, {}).bodyHtml;
+  assert.ok(!html.includes('特許填答'));
+  assert.ok(!html.includes('undefined'));
+  assert.ok(!html.includes('NaN'));
+});
+
 test('renderStatsHtml 失敗時只回錯誤訊息、titleText 留空', () => {
   const out = renderStatsHtml({ ok: false, msg: '無權限或連結已失效。' }, {});
   assert.equal(out.ok, false);
