@@ -1,0 +1,863 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="assets/app.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>福委會 LINE 發送</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
+<style>
+  /* 設計語彙逐項沿用 stats.html（2026-08-16 改版）：低調、簡約、扁平。
+     三色各有職責：藍＝可以按的動作、綠＝正常與已完成、紅＝例外與注意。 */
+  :root {
+    --g: #4a7c62; --g-dk: #3b6650; --g-bg: #eff4f1; --g-ln: #d5e2da;
+    --ink: #2c2c2b; --ink2: #6b6b68; --ink3: #9a9a96;
+    --bg: #fbfbfa; --ln: #ececea;
+    --warn: #8a6a2f; --warn-bg: #f7f2e6;
+    --r: #ac1335; --r-dim: #8f3040; --r-bg: #fbeef1;
+    --b: #2f4858; --b-dk: #24363f;
+    --bad: var(--r-dim); --bad-bg: var(--r-bg);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    padding: 20px 16px 40px; font-size: 16px; line-height: 1.65; color: var(--ink);
+    background: var(--bg); max-width: 480px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  .brand { text-align: center; margin: 0 0 16px; }
+  .brand img { width: 100%; max-width: 210px; height: auto; }
+  .toplinks { text-align: right; margin: 0 0 10px; min-height: 1.4em; }
+  .toplinks a { font-size: 13.5px; color: #06c755; text-decoration: none; font-weight: 600; }
+  .toplinks a:hover { text-decoration: underline; }
+  h1 { font-size: 19px; font-weight: 600; margin: 0 0 10px; color: var(--ink); letter-spacing: .01em; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--ink); letter-spacing: .01em; }
+  .meta { font-size: 13px; color: var(--ink3); margin-bottom: 18px; }
+  .card { background: #fff; border: 1px solid var(--ln); border-radius: 3px; padding: 18px; margin-bottom: 14px; }
+  .msg { font-size: 13.5px; margin-top: 8px; min-height: 1em; white-space: pre-wrap; }
+  .msg.ok { color: var(--g); } .msg.err { color: var(--bad); }
+  .hint { font-size: 12px; color: var(--ink3); margin: 6px 0 0; line-height: 1.6; }
+
+  /* 收件人數的四個數字。三欄不夠——「有幾個人收不到」要跟「收得到」一樣顯眼。 */
+  .grid4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; text-align: center; }
+  .num { font-size: 22px; font-weight: 600; color: var(--ink); letter-spacing: -.02em; }
+  .num.green { color: var(--g); } .num.red { color: var(--r); } .num.grey { color: var(--ink3); }
+  .cap { font-size: 12px; color: var(--ink3); }
+
+  /* 名單：依部門收合。summary 一律看得到人數，不必展開就知道規模。 */
+  .grp { background: #fff; border: 1px solid var(--ln); border-radius: 3px; margin-bottom: 8px; overflow: hidden; }
+  .grp summary { padding: 10px 12px; cursor: pointer; font-weight: 600; font-size: 14.5px;
+                 list-style: none; display: flex; align-items: baseline; gap: 8px; }
+  .grp summary::-webkit-details-marker { display: none; }
+  .grp summary::before { content: '›'; color: var(--ink3); font-size: 15px; transition: transform .18s; }
+  .grp[open] summary::before { transform: rotate(90deg); }
+  .grp .cnt { color: var(--ink3); font-weight: 400; font-size: 13px; margin-left: auto; }
+  .grp .body { padding: 0 12px 10px 28px; }
+  .pr { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0;
+        border-bottom: 1px solid #f4f4f2; font-size: 14.5px; }
+  .pr:last-child { border-bottom: none; }
+  .pr input[type=checkbox] { width: 18px; height: 18px; margin: 3px 0 0; flex: 0 0 auto; accent-color: var(--b); }
+  .pr .nm { font-weight: 600; }
+  .pr .no { color: var(--ink3); font-size: 12.5px; margin-left: 6px; }
+  /* 不可勾的：顯示但灰掉，並寫出原因。藏起來的話她會以為那個人不在名冊裡。 */
+  .pr.off { color: var(--ink3); }
+  .pr .why { display: block; font-size: 12px; color: var(--bad); }
+  .selbar { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; flex-wrap: wrap; }
+  .selbar .n { margin-left: auto; font-size: 13.5px; color: var(--ink2); font-weight: 600; }
+
+  /* 每一顆按鈕都明寫 color：不寫＝iOS 給系統藍 */
+  .btn { display: inline-block; padding: 9px 16px; font-size: 14.5px; font-weight: 600; border: none;
+    border-radius: 3px; cursor: pointer; font-family: inherit; background: #f0f0ee; color: var(--ink);
+    transition: background .15s; }
+  .btn:active { background: #e4e4e1; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-pri { background: var(--b); color: #fff; width: 100%; }
+  .btn-pri:active { background: var(--b-dk); }
+  .btn-sm { padding: 4px 11px; font-size: 12.5px; background: #f0f0ee; color: var(--ink); }
+  /* 送出鈕用紅：它是全站唯一「按下去就收不回來」的動作，不該跟儲存長一樣 */
+  .btn-send { background: var(--r); color: #fff; width: 100%; }
+  .btn-send:active { background: #8d0f2b; }
+
+  .fld { margin-bottom: 12px; }
+  .fld label { display: block; font-size: 12.5px; color: var(--ink2); margin-bottom: 4px; }
+  .fld input, select { width: 100%; font-size: 16px; padding: 9px 10px; border: 1px solid var(--ln);
+    border-radius: 3px; font-family: inherit; color: var(--ink); background: #fff; }
+
+  /* 鏡像上色圖層：與 textarea 疊在同一格，字體行高必須逐項相同，否則底色會錯位 */
+  .tpl-wrap { position: relative; }
+  .tpl-wrap textarea, .tpl-mirror {
+    font-family: inherit; font-size: 13.5px; line-height: 1.7; padding: 10px;
+    border: 1px solid var(--ln); border-radius: 3px; width: 100%;
+    white-space: pre-wrap; overflow-wrap: break-word; letter-spacing: 0;
+  }
+  .tpl-mirror { position: absolute; inset: 0; overflow: hidden; color: transparent;
+    background: #fff; pointer-events: none; border-color: transparent; }
+  .tpl-mirror mark { background: var(--g-ln); color: transparent; border-radius: 1px; }
+  /* emoji 標記在鏡像層只上底色、**不換成圖**——換成圖寬度就對不上 textarea，
+     那一顆之後的每個字都錯位（2026-08-29 實測差 169 個字元）。 */
+  /* 底色要看得出來才有意義：--warn-bg(#f7f2e6) 疊在白底上幾乎看不見
+     （與 stats.html 對 --g-bg 記過的同一個問題），用深一階的琥珀。 */
+  .tpl-mirror mark.emo-mark { background: #ecdfc4; }
+  /* 預覽區：獨立的一塊，沒有對齊的包袱，emoji 在這裡才畫成圖 */
+  .preview { border: 1px solid var(--ln); border-radius: 3px; padding: 10px;
+             font-size: 13.5px; line-height: 1.7; white-space: pre-wrap;
+             overflow-wrap: break-word; background: var(--g-bg); min-height: 3em; }
+  .preview mark { background: var(--g-ln); border-radius: 1px; }
+  .tpl-wrap textarea { position: relative; background: transparent; resize: vertical; display: block;
+    min-height: 220px; }
+  .ph-pop { position: absolute; z-index: 40; left: 0; right: 0; top: 100%; margin-top: 4px;
+    background: #fff; border: 1px solid var(--ln); border-radius: 3px; padding: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08); display: flex; flex-wrap: wrap; gap: 4px; }
+  .ph-pop button { background: var(--g-bg); border: none; padding: 5px 10px; font-size: 12.5px;
+    font-family: inherit; color: var(--g); cursor: pointer; border-radius: 2px; }
+  .ph-pop button:active { background: var(--g-ln); }
+  .phs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; align-items: center; }
+  .ph { font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--g-bg); color: var(--g); border: none; border-radius: 2px; padding: 3px 8px; cursor: pointer; }
+  .ph-lead { font-size: 11.5px; color: var(--ink3); align-self: center; margin-right: 2px; }
+
+  /* emoji palette（tpl-editor.js 產生的節點） */
+  .emo-btn { border: 1px solid var(--ln); border-radius: 3px; background: #fff;
+             padding: 2px; cursor: pointer; line-height: 0; }
+  .emo-btn:active { background: var(--g-bg); }
+  img.emo { width: 24px; height: 24px; vertical-align: middle; }
+  .emo-more-btn { border: 1px solid var(--b); border-radius: 3px; background: #fff;
+                  color: var(--b); font-size: 12px; font-family: inherit; padding: 3px 10px; cursor: pointer; }
+  .emo-panel { flex-basis: 100%; margin-top: 8px; border-top: 1px solid var(--ln); padding-top: 8px; }
+  .emo-grp { font-size: 13px; padding: 4px 6px; margin-bottom: 6px; width: auto; max-width: 100%; }
+  .emo-grid { display: flex; flex-wrap: wrap; gap: 4px; max-height: 220px; overflow-y: auto; }
+
+  /* 狀態列：這一則發過沒有。留白會讓「還沒查到」看起來像「沒發過」。 */
+  .status { font-size: 13.5px; color: var(--ink2); background: var(--g-bg);
+            border-radius: 3px; padding: 8px 10px; margin-bottom: 12px; white-space: pre-wrap; }
+  .otp-box[hidden] { display: none; }
+  .otp-box { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ln); }
+
+  @media (min-width: 768px) {
+    body { max-width: 720px; padding: 32px 24px 60px; font-size: 17px; }
+    h1 { font-size: 23px; } .num { font-size: 28px; }
+    .card { padding: 24px 28px; }
+  }
+</style></head><body>
+
+<div class="brand"><img src="assets/logo-full.svg" alt="日本國土開發" onerror="this.style.display='none'"></div>
+<div class="toplinks"><span id="msglog-entry"></span></div>
+
+<h1>福委會 LINE 發送</h1>
+<div class="meta">選人 → 選範本 → 寄驗證碼到你的信箱 → 輸入驗證碼送出。</div>
+
+<div class="card">
+  <h2>① 收件人</h2>
+  <div class="grid4" id="counts">
+    <div><div class="num green" id="c-ok">–</div><div class="cap">可發送</div></div>
+    <div><div class="num grey" id="c-unbound">–</div><div class="cap">未綁定</div></div>
+    <div><div class="num grey" id="c-noemail">–</div><div class="cap">沒信箱</div></div>
+    <div><div class="num red" id="c-ambiguous">–</div><div class="cap">資料重複</div></div>
+  </div>
+  <div class="selbar" style="margin-top:14px">
+    <button type="button" class="btn btn-sm" id="btn-all">全選</button>
+    <button type="button" class="btn btn-sm" id="btn-none">全部取消</button>
+    <span class="n" id="picked-n">已選 0 人</span>
+  </div>
+  <div id="audience-list"></div>
+  <div class="msg" id="audience-note"></div>
+</div>
+
+<div class="card">
+  <h2>② 訊息內容</h2>
+  <div class="status" id="status-line">（尚未取得，無法確認）</div>
+  <div class="fld">
+    <label for="wf-tpl-list">範本</label>
+    <select id="wf-tpl-list"></select>
+  </div>
+  <div class="tpl-wrap">
+    <div class="tpl-mirror" id="wf-mirror" aria-hidden="true"></div>
+    <textarea id="wf-tpl" rows="12" aria-label="範本內容"></textarea>
+  </div>
+  <div class="phs" id="wf-ph-box"></div>
+  <div class="phs" id="wf-emo-box"></div>
+  <p class="hint">{ } 是佔位符，發送時會換成每個人自己的資料。打「{」會跳出可選清單。<br>
+     編輯區裡的 <code>[[e:…]]</code> 是 emoji 的代號 —— 下面的預覽才是同仁看到的樣子。</p>
+  <h2 style="margin-top:14px">預覽</h2>
+  <div class="preview" id="wf-preview"></div>
+  <div style="margin-top:10px"><button type="button" class="btn" id="btn-save" disabled>儲存範本</button></div>
+  <div class="msg" id="tpl-note"></div>
+</div>
+
+<div class="card">
+  <h2>③ 發送</h2>
+  <p class="hint">送出前要先收一封驗證碼信。這是為了確認是本人操作 —— LINE 訊息送出後收不回來。</p>
+  <div style="margin-top:10px"><button type="button" class="btn btn-pri" id="btn-otp">寄驗證碼到我的信箱</button></div>
+  <div class="msg" id="otp-hint"></div>
+  <div class="msg" id="otp-note"></div>
+
+  <div class="otp-box" id="otp-box" hidden>
+    <div class="fld">
+      <label for="otp-input">驗證碼（六位數字）</label>
+      <input id="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code"
+             maxlength="6" placeholder="000000">
+    </div>
+    <button type="button" class="btn btn-send" id="btn-send" disabled>送出 LINE 訊息</button>
+  </div>
+  <div class="msg" id="send-note"></div>
+</div>
+
+<!-- 順序：資料 → 模組 → inline script。四支都要在 inline script 之前，
+     否則 gasCall／LINE_EMOJI／encodeSelection is not defined，而畫面只會停在載入中。 -->
+<script src="assets/gas-call.js"></script>
+<script src="assets/welfare-client.js"></script>
+<script src="assets/line-emoji.js"></script>
+<script src="assets/tpl-editor.js"></script>
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   福委會 LINE 發送頁。
+
+   本頁反覆在防同一個形狀的缺陷：**畫面說 A、系統送 B**。
+   它在本案出現過七次（後端冷卻分支、OTP_STATE、未存草稿、存檔競態、
+   範本快取、LAST_STATUS、下拉選單）。所以：
+
+   ① 任何會讓「畫面這一份」與「碼綁的那一份」脫鉤的事件，都要 bumpUiGen()
+   ② 三顆按鈕的 disabled 各自只有一個指派點（sync*Button）
+   ③ 送出前再比一次完整 binding——UI 事件會漏，那一次不會漏
+   ════════════════════════════════════════════════════════════════════════ */
+
+var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
+var TOKEN = q('t');
+
+// ── 本頁全域。**這一段就是 manifest**，page-load.test.js 會把整頁跑起來驗它。──
+var ROWS = [];              // 後端回的 canonical 名單，順序即 bitmap 的順序
+var TEMPLATES = {};         // { [id]: {id, title, text} }——前端快取，見 onTemplateSaved
+var TPL_ORDER = [];         // 範本 id 的顯示順序
+var CURRENT_TPL = '';
+var AUDIENCE_REV = '';
+
+/** 目前這一則**已儲存**的內文。isTplDirty() 拿它跟編輯器現值比。 */
+var SAVED_TPL_TEXT = '';
+
+/** 這一則範本最近一次的發送狀態。**必須帶 templateId**（它是非同步載入的）。 */
+var LAST_STATUS = null;
+
+/**
+ * 🔴 輸碼狀態必須綁住「寄碼當下的那一份選擇與內容」，不能只記人數。
+ * 後端送出時用的是 challenge 裡的 selection 與**已儲存的**範本，不是畫面現在的樣子。
+ * 三個已知的錯配路徑：改勾同人數的另一組人／改草稿不存／寄碼回應遲到。
+ */
+var OTP_STATE = { armed: false, gen: -1, templateId: '', audienceRev: '', selection: '',
+                  count: 0, quotaWarning: '', uncertain: false };
+
+var SAVE_IN_FLIGHT = false;
+var OTP_IN_FLIGHT = false;
+/** 送出是否進行中。**與 armed 是兩件事**，不可共用一個旗標。 */
+var SEND_IN_FLIGHT = false;
+
+/**
+ * UI generation：任何會讓「畫面上這一份」與「碼綁的那一份」脫鉤的事件都要 +1。
+ * 用它而不是逐項比對，是為了涵蓋非同步競態——舊回應回來時 gen 已經不同了。
+ */
+var UI_GEN = 0;
+function bumpUiGen() { UI_GEN++; disarmOtp(); }
+
+/* ── 小工具 ───────────────────────────────────────────────────────────── */
+
+/** 寫提示。**用 textContent 不用 innerHTML**——訊息裡帶得到後端文案。 */
+function setNote(id, text, cls) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'msg ' + (cls || '');
+}
+function showOtpInput() { document.getElementById('otp-box').hidden = false; }
+function hideOtpInput() { document.getElementById('otp-box').hidden = true; }
+function otpValue() { return String(document.getElementById('otp-input').value || '').trim(); }
+
+/* ── 名單 ─────────────────────────────────────────────────────────────── */
+
+/** 不可發送的三種狀態，各自的原因。**顯示但不可勾**——藏起來她會以為那個人不在名冊。 */
+var STATUS_WHY = {
+  unbound:   '尚未綁定 LINE',
+  no_email:  '名冊未填信箱',
+  ambiguous: '資料重複，請洽人事'
+};
+
+/**
+ * 依部門重繪名單。
+ * 🔴 **不重掛 listener**——invalidator 是委派在容器上的。
+ * 🔴 **重繪要保留勾選**：SWR 會畫兩次，2026-08-20 就是這樣誤發 19 人×4 批。
+ */
+function renderAudience(r) {
+  var keep = {};
+  ROWS.forEach(function (row, i) {
+    var cb = document.getElementById('cb-' + i);
+    if (cb && cb.checked) keep[row.empNo] = 1;
+  });
+
+  var c = (r && r.counts) || { ok: 0, unbound: 0, no_email: 0, ambiguous: 0 };
+  document.getElementById('c-ok').textContent = c.ok;
+  document.getElementById('c-unbound').textContent = c.unbound;
+  document.getElementById('c-noemail').textContent = c.no_email;
+  document.getElementById('c-ambiguous').textContent = c.ambiguous;
+
+  var byUnit = {}, order = [];
+  ROWS.forEach(function (row, i) {
+    var u = row.unit || '（未填單位）';
+    if (!byUnit[u]) { byUnit[u] = []; order.push(u); }
+    byUnit[u].push({ row: row, i: i });
+  });
+
+  var box = document.getElementById('audience-list');
+  box.innerHTML = '';
+  order.forEach(function (u) {
+    var items = byUnit[u];
+    var okN = items.filter(function (it) { return it.row.status === 'ok'; }).length;
+    var d = document.createElement('details');
+    d.className = 'grp';
+    var s = document.createElement('summary');
+    s.appendChild(document.createTextNode(u));
+    var cnt = document.createElement('span');
+    cnt.className = 'cnt';
+    cnt.textContent = okN + ' / ' + items.length + ' 可發送';
+    s.appendChild(cnt);
+    d.appendChild(s);
+
+    var body = document.createElement('div');
+    body.className = 'body';
+    items.forEach(function (it) {
+      var ok = it.row.status === 'ok';
+      var line = document.createElement('label');
+      line.className = 'pr' + (ok ? '' : ' off');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = 'cb-' + it.i;
+      cb.disabled = !ok;
+      cb.checked = ok && !!keep[it.row.empNo];      // ← 重繪保留勾選
+      line.appendChild(cb);
+      var txt = document.createElement('span');
+      var nm = document.createElement('span');
+      nm.className = 'nm'; nm.textContent = it.row.name || it.row.empNo;
+      txt.appendChild(nm);
+      var no = document.createElement('span');
+      no.className = 'no'; no.textContent = it.row.empNo;
+      txt.appendChild(no);
+      if (!ok) {
+        var why = document.createElement('span');
+        why.className = 'why';
+        why.textContent = STATUS_WHY[it.row.status] || it.row.status;
+        txt.appendChild(why);
+      }
+      line.appendChild(txt);
+      body.appendChild(line);
+    });
+    d.appendChild(body);
+    box.appendChild(d);
+  });
+  renderPickedCount();
+}
+
+/** 已選人數。她要隨時看得到自己勾了幾個。 */
+function renderPickedCount() {
+  var n = 0;
+  ROWS.forEach(function (row, i) {
+    var cb = document.getElementById('cb-' + i);
+    if (cb && cb.checked) n++;
+  });
+  document.getElementById('picked-n').textContent = '已選 ' + n + ' 人';
+}
+
+/** 勾選 → bitmap。**rows 的順序就是後端的 canonical order，不可重排。** */
+function currentSelection() {
+  var picked = ROWS.filter(function (r, i) {
+    var cb = document.getElementById('cb-' + i);
+    return cb && cb.checked;
+  }).map(function (r) { return r.empNo; });
+  return encodeSelection(ROWS, picked);          // ← assets/welfare-client.js
+}
+
+/** 全選／全不選。不可發送的是 disabled，本來就不該被拉進來。 */
+function setAllChecked(on) {
+  ROWS.forEach(function (row, i) {
+    var cb = document.getElementById('cb-' + i);
+    if (cb && !cb.disabled) cb.checked = on;
+  });
+  bumpUiGen();                 // ← 程式化的改動不會觸發 change 事件，要自己作廢舊碼
+  renderPickedCount();
+}
+
+/* ── 範本 ─────────────────────────────────────────────────────────────── */
+
+/** 只畫下拉的 option。**不呼叫 selectTemplate**——切換的唯一入口是 wireTemplateSelector。 */
+function renderTemplateSelector() {
+  var sel = document.getElementById('wf-tpl-list');
+  sel.innerHTML = '';
+  TPL_ORDER.forEach(function (id) {
+    var o = document.createElement('option');
+    o.value = id;
+    o.textContent = (TEMPLATES[id] && TEMPLATES[id].title) || id;
+    sel.appendChild(o);
+  });
+}
+
+/** 這一則範本有沒有未儲存的變更。**這是 binding 的一部分**：後端送的是已儲存的內容。 */
+function isTplDirty() {
+  return document.getElementById('wf-tpl').value !== SAVED_TPL_TEXT;
+}
+
+/**
+ * 切換範本。**每一步都不可省**——少一步就是一個「畫面說 A、實際是 B」的洞。
+ * 呼叫者只有兩個：loadTemplates() 的「選第一則」與 wireTemplateSelector() 的 change。
+ */
+function selectTemplate(id) {
+  CURRENT_TPL = id;
+  var tpl = TEMPLATES[id] || { text: '' };
+  document.getElementById('wf-tpl-list').value = id;   // 程式化切換時下拉也要跟上
+  document.getElementById('wf-tpl').value = tpl.text;
+  SAVED_TPL_TEXT = tpl.text;        // ← 同步基準，否則剛切過去就被判成 dirty
+  bumpUiGen();                      // ← 換範本＝舊碼失效（內含 disarmOtp）
+  syncOtpButton(); syncSaveButton();
+  LAST_STATUS = null; renderStatus();
+  loadStatus(id);                   // ← 非同步；回來時會再比一次 templateId
+  paintMirror('wf-tpl', 'wf-mirror', 'wf');
+  paintPreview('wf-tpl', 'wf-preview', 'wf');
+}
+
+/**
+ * 儲存成功之後。**三件事都要做，少一件就是一個「畫面 A、實際 B」。**
+ * 🔴 少了第①行：切走再切回會從快取拿出舊文，同時把基準也設成舊文 ⇒ dirty=false
+ *    ⇒ 她看到舊文、寄得到碼，而後端重讀範本送出的是已儲存的新文。
+ * 🔴 一定要帶 templateId：存 A 的請求還沒回來就切到 B 的話，A 的回應會蓋掉 B 的基準。
+ */
+function onTemplateSaved(templateId, text) {
+  if (TEMPLATES[templateId]) TEMPLATES[templateId].text = text;  // ①
+  if (templateId !== CURRENT_TPL) return;                        // ②
+  SAVED_TPL_TEXT = text;                                         // ③ 用**送出去的那份**
+  syncOtpButton();
+  syncSaveButton();
+}
+
+/**
+ * 按「儲存範本」。
+ * 🔴 sentTpl／sentText 在點擊當下抓下來，之後只用這兩個變數——回應回來時用
+ *    CURRENT_TPL 或 .value 重讀的話，寫進快取的是「她後來改的」，
+ *    而伺服器上存的是「按下去那一刻的」。
+ */
+function onSaveTemplate() {
+  if (SAVE_IN_FLIGHT) return;                       // 同步防雙擊，早於任何非同步
+  var sentTpl  = CURRENT_TPL;
+  var sentText = document.getElementById('wf-tpl').value;
+  var sentTitle = TEMPLATES[sentTpl] ? TEMPLATES[sentTpl].title : '';
+  SAVE_IN_FLIGHT = true;
+  syncSaveButton();
+  setNote('tpl-note', '儲存中…');
+  // ⚠️ **return 那條 Promise**。回傳值沒有任何生產程式碼在用，但少了它，
+  //    接線測試只能靠「await 幾個 tick」去猜非同步跑完了沒——那是在賭運氣。
+  return gasCall(GAS_URL, 'saveWelfareTemplate',
+          { token: TOKEN, templateId: sentTpl, title: sentTitle, text: sentText }, 45000)
+    .then(function (r) {
+      if (r && r.ok) { onTemplateSaved(sentTpl, sentText); setNote('tpl-note', '已儲存。', 'ok'); return; }
+      // ⚠️ gasCall 永遠 resolve；傳輸失敗與伺服器拒絕的說法不同，
+      //    但**兩者都不可以更新快取或基準**——不確定有沒有存進去就不能說存了。
+      setNote('tpl-note', (r && r.transport)
+        ? '沒有收到伺服器回應，不確定有沒有存進去。請重新整理後確認內容再繼續。'
+        : ((r && r.msg) || '儲存失敗，請再試一次。'), 'err');
+    })
+    .then(function () { SAVE_IN_FLIGHT = false; syncSaveButton(); },
+          function (e) { SAVE_IN_FLIGHT = false; syncSaveButton();
+                         setNote('tpl-note', '畫面處理時發生錯誤：' + (e && e.message), 'err');
+                         throw e; });
+}
+
+/* ── 三顆按鈕的狀態：各自只有一個指派點 ──────────────────────────────── */
+
+/** 🔴 btn-save.disabled 只准由這一支指派。 */
+function syncSaveButton() {
+  document.getElementById('btn-save').disabled = SAVE_IN_FLIGHT || !isTplDirty();
+}
+
+/**
+ * 🔴 btn-otp.disabled 只准由這一支指派。
+ *    它同時受「寄碼進行中」與「範本有未存變更」影響——兩處各寫各的必然打架
+ *    （.then 裡無條件開啟會蓋掉 dirty 的停用）。
+ */
+function syncOtpButton() {
+  var dirty = isTplDirty();
+  document.getElementById('btn-otp').disabled = OTP_IN_FLIGHT || dirty;
+  setNote('otp-hint', dirty ? '範本有未儲存的修改，請先儲存再寄驗證碼。' : '');
+}
+
+/**
+ * 🔴 btn-send.disabled 只准由這一支指派。
+ *    它同時是「OTP 有沒有效」與「送不送出中」——兩處各寫各的兩個方向都會壞：
+ *    disarmOtp 停用它而 showOtpInput 只切 hidden ⇒ 拿到碼卻按不了送出；
+ *    送出後無條件 disabled=false ⇒ 已經 disarm 的按鈕又亮起來。
+ */
+function syncSendButton() {
+  document.getElementById('btn-send').disabled =
+    !(OTP_STATE.armed && otpBindingStillValid() && !SEND_IN_FLIGHT);
+}
+
+/* ── 驗證碼的 binding ─────────────────────────────────────────────────── */
+
+/** 解除輸碼狀態。任何會讓 binding 失效的事件都要（直接或經 bumpUiGen）呼叫它。 */
+function disarmOtp() {
+  OTP_STATE = { armed: false, gen: -1, templateId: '', audienceRev: '', selection: '',
+                count: 0, quotaWarning: '', uncertain: false };
+  hideOtpInput();
+  syncSendButton();
+}
+
+/** 武裝。**只有這裡會把 armed 設成 true。** */
+function armOtp(state) {
+  OTP_STATE = state;
+  showOtpInput();
+  syncSendButton();
+}
+
+/**
+ * 現在畫面上這一份，與寄碼當下綁定的那一份，是不是同一份。
+ * 🔴 onSend 一定要再比一次——UI 事件會漏（新增的節點、程式化的改動），這一次不會漏。
+ */
+function otpBindingStillValid() {
+  return OTP_STATE.armed
+      && OTP_STATE.gen === UI_GEN                  // ← 涵蓋非同步競態與所有 UI 變動
+      && OTP_STATE.templateId === CURRENT_TPL
+      && OTP_STATE.audienceRev === AUDIENCE_REV
+      && OTP_STATE.selection === currentSelection()
+      && !isTplDirty();                            // ← 未存草稿＝畫面與已儲存的不一樣
+}
+
+/* ── 狀態（這一則發過沒有） ───────────────────────────────────────────── */
+
+/**
+ * 狀態 → 一句人看得懂的話。確認框與狀態列共用。
+ *
+ * 🔴 **值域必須與後端對齊。** 後端 deriveState 的 state 是四個值
+ *    （sent／partial／unsent／unknown），而「紀錄有沒有記到」是**獨立的旗標**
+ *    `recordingFailed`，不是 state 的第五個值——做成 state 的話它會蓋掉 partial：
+ *    130 成功 7 失敗 ＋ 紀錄沒寫，畫面就不會提那 7 個人。（G1.5 高嚴重度。）
+ *    getWelfareStatus 走的是 welfareStatusFrom（三態，沒有 recordingFailed），
+ *    那時旗標是 undefined ⇒ 不附加。兩個來源共用這一支。
+ */
+function welfareStateLabel(r) {
+  var head = ({
+    sent:    '已發送（' + (r.lastSentAt || '') + '）',
+    partial: '⚠️ 上次部分成功（成功 ' + r.sentCount + '、失敗 ' + r.failedCount + '）'
+           + '——請不要整批重發，成功的人會收到第二次',
+    unsent:  '沒有發送紀錄',
+    unknown: '⚠️ 狀態不明（訊息紀錄讀不到）'
+  })[r.state] || '狀態不明';
+  // 紀錄狀態是獨立的一軸，附在後面，不可蓋掉上面那句。
+  return head + (r.recordingFailed === true
+    ? '\n⚠️ 訊息紀錄沒有記到這一批——請告知工務管理組' : '');
+}
+
+/** 確認框要用的那句話。**templateId 不符就說「無法確認」，不可說「沒有發送紀錄」。** */
+function lastStatusLabel() {
+  if (!LAST_STATUS) return '（尚未取得，無法確認）';
+  if (LAST_STATUS.templateId !== CURRENT_TPL) return '（無法確認——狀態還在載入）';
+  return LAST_STATUS.stateLabel;
+}
+
+/** 把 LAST_STATUS 畫到狀態列。**沒有資料時要說「還沒取得」，不可留白。** */
+function renderStatus() {
+  document.getElementById('status-line').textContent = lastStatusLabel();
+}
+
+/** 載入某一則的狀態。**回應抵達時若已經切換範本，就丟掉不寫。** */
+function loadStatus(templateId) {
+  gasCall(GAS_URL, 'getWelfareStatus', { token: TOKEN, templateId: templateId }, 30000)
+    .then(function (r) {
+      if (templateId !== CURRENT_TPL) return;      // 已經切走了，這份是舊的
+      if (!r || !r.ok) { LAST_STATUS = null; renderStatus(); return; }
+      LAST_STATUS = { templateId: templateId, state: r.state,
+                      stateLabel: welfareStateLabel(r), lastSentAt: r.lastSentAt };
+      renderStatus();
+    });
+}
+
+/**
+ * 🔴 **送出結果的唯一處理入口。** 它同時負責畫面文案**與更新 LAST_STATUS**。
+ *    只寫畫面的話：不切範本再申請一次碼，確認框仍說「沒有發送紀錄」
+ *    ——而那句話正是用來防重複整批發送的。
+ *
+ * ⚠️ **不可以「送完就重讀 hub」了事**：recordingFailed 的意思正是 hub 沒記到這一批，
+ *    重讀會拿到上一批或 unsent，把最重要的那句警告洗掉。
+ *    ⇒ 先用這次的回應寫進 LAST_STATUS；只有紀錄有記到的 sent／partial 才另外校正。
+ */
+function showState(r) {
+  LAST_STATUS = { templateId: CURRENT_TPL, state: r.state,
+                  stateLabel: welfareStateLabel(r), lastSentAt: r.lastSentAt };
+  renderStatus();
+  setNote('send-note', r.msg || LAST_STATUS.stateLabel,
+          (r.state === 'sent' && r.recordingFailed !== true) ? 'ok' : 'err');
+  if ((r.state === 'sent' || r.state === 'partial') && r.recordingFailed !== true) {
+    loadStatus(CURRENT_TPL);
+  }
+}
+
+/* ── 寄驗證碼 ─────────────────────────────────────────────────────────── */
+
+/**
+ * 三種結果，三種處置：
+ *   ok:true                   → 進輸碼狀態（resent 只影響文案）
+ *   ok:false, transport:true  → **可能已經寄出** ⇒ 也要進輸碼狀態，人數標記為不確定
+ *   ok:false, transport:false → 伺服器明確拒絕 ⇒ 不進輸碼狀態，顯示它的 msg
+ */
+function onRequestOtp() {
+  if (OTP_IN_FLIGHT || isTplDirty()) return;   // 同步防雙擊＋擋未存草稿，早於任何非同步
+  OTP_IN_FLIGHT = true;
+  syncOtpButton();                             // ← 不直接寫 disabled
+  setNote('otp-note', '寄送中…');
+  // 🔴 **在送出請求之前就把這四個值抓下來。** 她可以在等回應期間改勾選；
+  //    回來時重算的話，存進 OTP_STATE 的會是「她後來改的」，而碼綁的是「按下去那一刻的」。
+  var sentTpl = CURRENT_TPL, sentRev = AUDIENCE_REV, sentSel = currentSelection();
+  var sentGen = UI_GEN;
+  return gasCall(GAS_URL, 'requestWelfareOtp', {      // ← return：見 onSaveTemplate 的理由
+    token: TOKEN, templateId: sentTpl, audienceRev: sentRev, selection: sentSel
+  }, 45000)                                    // ⚠️ 數字，不是 { timeout: 45000 }
+    .then(function (r) {
+      // 🔴 回應抵達時先確認這份請求還算數。照舊武裝的話，碼綁的是舊的一份而畫面是新的。
+      if (sentGen !== UI_GEN) {
+        setNote('otp-note', '你在寄送期間改過勾選或範本，這組碼已不適用。'
+          + '請重新按一次「寄驗證碼」。', 'err');
+        return;
+      }
+      if (r && r.ok) {
+        armOtp({ armed: true, gen: sentGen,
+                 templateId: sentTpl, audienceRev: sentRev, selection: sentSel,
+                 count: r.count, quotaWarning: r.quotaWarning || '', uncertain: false });
+        setNote('otp-note',
+          (r.resent === false
+            ? '剛剛已經寄過一組，請查看信箱（60 秒內不重複寄送）。'
+            : '驗證碼已寄到 ' + r.sentTo + '，10 分鐘內有效。')
+          + '　收件人 ' + r.count + ' 人。'
+          + (r.quotaWarning ? '\n⚠️ ' + r.quotaWarning : ''), 'ok');
+        return;
+      }
+      if (r && r.transport) {
+        // 🔴 **這裡不可以說「寄送失敗」。** 請求送出去了、回應沒回來 ⇒ 碼可能已經寄出。
+        //    說失敗會讓她一直重按。binding 照樣要存——那幾個識別值在送出前就在前端手上，
+        //    不確定的只有「後端算出來的人數」。
+        armOtp({ armed: true, gen: sentGen,
+                 templateId: sentTpl, audienceRev: sentRev, selection: sentSel,
+                 count: 0, quotaWarning: '', uncertain: true });
+        setNote('otp-note', '沒有收到伺服器回應。'
+          + '⚠️ 驗證碼可能已經寄出，請先查看信箱；若沒收到，60 秒後再按一次。', 'err');
+        return;
+      }
+      // 伺服器明確拒絕。🔴 **一定要 disarm**——只改提示文字的話，舊的輸碼狀態還在、
+      // 送出鈕還能按，而那組舊碼綁的是舊名單 ⇒ 畫面顯示新的、實際發給舊的。
+      disarmOtp();
+      setNote('otp-note', (r && r.msg) || '寄送失敗，請再試一次。', 'err');
+    })
+    // 🔴 只清 inFlight，交給 syncOtpButton 推導——無條件開啟會蓋掉 dirty 的停用。
+    .then(function () { OTP_IN_FLIGHT = false; syncOtpButton(); },
+          function (e) { OTP_IN_FLIGHT = false; syncOtpButton(); throw e; });
+}
+
+/* ── 送出 ─────────────────────────────────────────────────────────────── */
+
+function onSend() {
+  if (SEND_IN_FLIGHT) return;                             // 同步防雙擊，早於任何非同步
+
+  // 🔴 **送出前再比一次 binding。** 輸碼欄開著的時候她還是可以改勾選、換範本、
+  //    或改草稿不存，而那組碼綁的是舊的一份。UI 事件那道會漏，這一道不會漏。
+  if (!otpBindingStillValid()) {
+    disarmOtp();
+    setNote('send-note', '你在取得驗證碼之後改過勾選、範本或內容（含未儲存的修改）。'
+      + '為避免發錯對象或發錯內容，已停止送出——請重新按「寄驗證碼」。', 'err');
+    return;
+  }
+
+  // 🔴 nonce 在點擊當下產生，早於 confirm() 與 gasCall()。寫在 gasCall 內的話，
+  //    她在確認框前面猶豫時再按一次會產生第二個 nonce，防重複就白做了——而且無聲。
+  var nonce = newNonce();
+  SEND_IN_FLIGHT = true;
+  syncSendButton();                                       // ← 不直接寫 disabled
+  // 人數用 OTP_STATE.count（後端 decode 之後的實際數），不是前端自己數的。
+  // 🔴 uncertain 時**不可以報一個假數字**（那次回應沒拿到）。
+  var who = OTP_STATE.uncertain
+    ? '（人數無法確認——寄碼時沒有收到伺服器回應）'
+    : OTP_STATE.count + ' 位同仁';
+  var msg = '確定要發送給 ' + who + '嗎？\n\n'
+          + '這一則最近一次的狀態：' + lastStatusLabel() + '\n'
+          + (OTP_STATE.quotaWarning ? ('⚠️ ' + OTP_STATE.quotaWarning + '\n') : '')
+          + '\n⚠️ LINE 訊息送出後收不回來。';
+  if (!confirm(msg)) { SEND_IN_FLIGHT = false; syncSendButton(); return; }
+  return gasCall(GAS_URL, 'sendWelfareBroadcast',    // ← return：見 onSaveTemplate 的理由
+          { token: TOKEN, templateId: CURRENT_TPL, otp: otpValue(), nonce: nonce },
+          120000)                                         // ⚠️ 數字；不是預設的 45 秒
+    .then(function (r) {
+      if (r && r.ok) { disarmOtp(); showState(r); return; }   // 送出成功＝這組碼用掉了
+      if (r && r.transport) {
+        // 🔴 傳輸失敗 ＝ unknown，**不是失敗**。
+        //    ⚠️ 這裡**也要 disarm**：碼可能已經被後端消耗掉了（used=true），
+        //    留著輸碼狀態只會讓她再按一次、然後收到「已用過」。
+        disarmOtp();
+        showState({ ok: true, state: 'unknown', msg:
+          '⚠️ 送不出去，而且不確定對方有沒有收到。請不要重按——'
+          + '請先到訊息紀錄確認，或聯絡工務管理組。' });
+        return;
+      }
+      showServerReject(r);                                // 明確拒絕（OTP 錯／過期／名單變動）
+    })
+    // 🔴 **兩個分支都要跑，而且只清 inFlight、不直接開按鈕。**
+    //    單寫 .then(fn) 的話，前一個 .then 拋例外這一個會被跳過 ⇒ 送出鈕永久卡住。
+    //    但也不可以無條件 disabled=false——那會把已經 disarm 的按鈕重新點亮。
+    //    這裡等價於 finally（舊 Safari 沒有 Promise.prototype.finally）。
+    .then(function () { SEND_IN_FLIGHT = false; syncSendButton(); },
+          function (e) { SEND_IN_FLIGHT = false; syncSendButton();
+                         setNote('send-note', '畫面處理時發生錯誤：' + (e && e.message), 'err');
+                         throw e; });          // 重新拋出，讓它進得了 console
+}
+
+/**
+ * 伺服器明確拒絕時的處置。**每一種理由對輸碼狀態的影響不同**，不可一律只印訊息。
+ * 後端回的 msg 已經是給人看的完整句子，直接顯示；這裡決定「要不要把她踢出輸碼狀態」。
+ */
+function showServerReject(r) {
+  setNote('send-note', (r && r.msg) || '送出失敗，請再試一次。', 'err');
+  // bad_code ＝ 打錯字，**留著讓她再試**（後端還有 5 次上限擋著）。
+  if (r && r.reason === 'bad_code') return;
+  // used／locked／expired／none ＝ 這組碼再也不會通過；名單／範本變動等沒有 reason 的
+  // 拒絕，一律當成要重新申請。不 disarm 的話她會對著一個永遠不會成功的輸碼欄一直按。
+  disarmOtp();
+}
+
+/* ── 訊息紀錄入口 ─────────────────────────────────────────────────────── */
+
+/**
+ * ⚠️ **不要呼叫既有的 getMsgLogToken**——它標 'any'，welfare 打不到。
+ *    getWelfareAudience 已經一併回了 msgLogToken 與 msgLogWhy，直接用。
+ * 換發失敗要說出原因——靜靜消失的東西沒有人會發現。
+ */
+function renderMsgLogEntry(r) {
+  var el = document.getElementById('msglog-entry');
+  el.innerHTML = '';
+  if (r && r.msgLogToken) {
+    var a = document.createElement('a');
+    a.href = 'messages.html?t=' + encodeURIComponent(r.msgLogToken) + '&days=180';
+    a.textContent = '訊息紀錄';
+    el.appendChild(a);
+  } else {
+    el.textContent = '訊息紀錄暫時開不了：' + ((r && r.msgLogWhy) || '未知原因');
+  }
+}
+
+/* ── 載入 ─────────────────────────────────────────────────────────────── */
+
+/** 名單重新載入之後。audienceRev 換新＝舊碼綁的名單已經不是這一份。 */
+function onAudienceLoaded(r) {
+  AUDIENCE_REV = r.audienceRev;
+  ROWS = r.rows || [];
+  renderAudience(r);                // 重繪（invalidator 是委派的，不受影響）
+  renderMsgLogEntry(r);             // 🔴 msgLogToken 就在**這份**回應裡
+                                    //    接在 Promise 鏈尾巴會拿到 undefined
+  bumpUiGen();
+}
+
+/** 載名單。**回應要用的三件事都在 onAudienceLoaded 裡做完，不往鏈上傳。** */
+function loadAudience() {
+  return gasCall(GAS_URL, 'getWelfareAudience', { token: TOKEN }, 45000)
+    .then(function (r) {
+      if (!r || !r.ok) { setNote('audience-note',
+        '名單讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
+      onAudienceLoaded(r);
+    });
+}
+
+/**
+ * 載範本清單。「選第一則」放在這裡——它才知道清單長怎樣。
+ * ⚠️ 後端回的欄位是 `items` 不是 `templates`（一手碼 getWelfareTemplates）。
+ */
+function loadTemplates() {
+  return gasCall(GAS_URL, 'getWelfareTemplates', { token: TOKEN }, 30000)
+    .then(function (r) {
+      if (!r || !r.ok) { setNote('tpl-note',
+        '範本讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
+      TEMPLATES = {}; TPL_ORDER = [];
+      (r.items || []).forEach(function (t) { TEMPLATES[t.id] = t; TPL_ORDER.push(t.id); });
+      renderTemplateSelector();                       // 只畫下拉；事件已委派好
+      if (TPL_ORDER.length) selectTemplate(TPL_ORDER[0]);   // ← 一則都沒有時不可以硬選
+    });
+}
+
+/* ── 接線 ─────────────────────────────────────────────────────────────── */
+
+/**
+ * 🔴 **一律用事件委派綁在不會被換掉的父節點上。** 名單會被重繪
+ *    （快取先畫、網路回來再畫），直接綁在 checkbox 上的 listener 會隨節點消失。
+ */
+function wireBindingInvalidators() {
+  document.getElementById('audience-list')
+    .addEventListener('change', function (e) {
+      if (e.target && e.target.type === 'checkbox') { bumpUiGen(); renderPickedCount(); }
+    });
+  // 範本草稿：input 而不是 change（change 要失焦才觸發）
+  document.getElementById('wf-tpl').addEventListener('input', function () {
+    bumpUiGen();        // 讓已取得的碼失效
+    syncOtpButton();    // 未存草稿 ⇒ 寄碼鈕也要跟著停用
+    syncSaveButton();   // ⇒ 而儲存鈕相反：這時候才該亮起來
+    paintMirror('wf-tpl', 'wf-mirror', 'wf');
+    paintPreview('wf-tpl', 'wf-preview', 'wf');
+    phPopup('wf-tpl', 'wf');
+  });
+  // 鏡像層的捲動同步。綁在頁面而不搬進模組——它綁的是特定的 DOM id，屬頁面接線。
+  document.getElementById('wf-tpl').addEventListener('scroll', function () {
+    document.getElementById('wf-mirror').scrollTop = document.getElementById('wf-tpl').scrollTop;
+  });
+}
+
+/**
+ * 🔴 **使用者切換範本的事件接線。切換範本的唯一入口是 selectTemplate(id)。**
+ * ⚠️ 委派在下拉本身（它不會被重繪換掉；被換掉的是 option）。
+ */
+function wireTemplateSelector() {
+  document.getElementById('wf-tpl-list').addEventListener('change', function (e) {
+    var id = e.target && e.target.value;
+    if (!id || id === CURRENT_TPL) return;
+    // 未存草稿的政策：**問一次，預設不丟**。靜靜丟掉她打的字是最糟的一種收場。
+    if (isTplDirty() && !confirm('這一則範本有未儲存的修改，切換後會丟失。確定要切換嗎？')) {
+      e.target.value = CURRENT_TPL;    // ← 一定要拉回去，否則下拉說 B、實際還在 A
+      return;
+    }
+    selectTemplate(id);
+  });
+}
+
+/**
+ * 🔴 **三顆按鈕的 click 接線。** 沒有這一支，三顆鈕按下去什麼都不會發生。
+ * ⚠️ 三顆鈕的 disabled 一律由各自的 sync*Button() 推導，**這裡只接 click**。
+ */
+function wireButtons() {
+  document.getElementById('btn-save').addEventListener('click', onSaveTemplate);
+  document.getElementById('btn-otp').addEventListener('click', onRequestOtp);
+  document.getElementById('btn-send').addEventListener('click', onSend);
+  document.getElementById('btn-all').addEventListener('click', function () { setAllChecked(true); });
+  document.getElementById('btn-none').addEventListener('click', function () { setAllChecked(false); });
+}
+
+/**
+ * 頁面啟動。**順序有意義，不可調換**；而且每一步要用的值都**不靠 Promise 鏈傳遞**
+ * ——鏈上的值會被每一個 .then 換掉，接在尾巴的那支會拿到 undefined。
+ */
+function init() {
+  // 佔位符與 emoji：三個編輯器共用 assets/tpl-editor.js，本頁不自己寫一份鏡像層。
+  registerPhSet('wf', [{ k: '姓名' }, { k: '單位' }]);
+  enableEmoji('wf', LINE_EMOJI, LINE_EMOJI_GROUPS);
+  renderPhs('wf', 'wf-ph-box', 'wf-tpl');
+  renderEmojiPalette('wf', 'wf-emo-box', 'wf-tpl');   // ← 沒有這行就沒有地方可以點
+
+  // ① 先把不會被重繪換掉的接線做好，晚於它的任何重繪才有 invalidator 可用
+  wireBindingInvalidators();
+  wireTemplateSelector();
+  wireButtons();
+  syncSaveButton(); syncOtpButton(); syncSendButton();
+
+  // ② 載名單（含 audienceRev、counts、msgLogToken）③ 載範本清單
+  loadAudience().then(loadTemplates);
+}
+
+init();
+</script>
+</body></html>

@@ -27,8 +27,11 @@ const ROOT = path.join(__dirname, '..');
 // 這兩頁原本缺席，而它們正是出事代價最高的兩頁：index 掛了全公司進不來，
 // staff 掛了現場整隊卡住。要能跑起來需要兩個外部相依的替身——LIFF SDK 走 CDN
 // （scriptsOf 一律不抓外部）、相機是瀏覽器 API——都補在 makeContext 裡。
+// welfare.html（福委會發送頁）2026-08-29 補入。它是全站唯一「按下去就發 137 則、
+// 收不回來」的頁面，而它的啟動流程有四支非同步載入與三顆按鈕的接線——
+// 少一個識別字就是頁面停在載入中，而且沒有人會收到通知。
 const PAGES = ['admin.html', 'board.html', 'stats.html', 'attend.html', 'hr-stats.html',
-               'messages.html', 'index.html', 'staff.html'];
+               'messages.html', 'index.html', 'staff.html', 'welfare.html'];
 
 /** 一個什麼都收的假元素——頁面頂層常直接對 getElementById 的結果取屬性。 */
 function fakeEl(tag) {
