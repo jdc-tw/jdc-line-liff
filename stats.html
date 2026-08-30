@@ -252,6 +252,17 @@
 </div>
 <!-- 員工（原「年資里程碑」，2026-08-16 改名並吸收員工名冊）：與單一活動無關的人事資料 -->
 <div id="tab-staff" style="display:none">
+  <!-- 重新綁定連結（2026-08-29）：同仁換 LINE 帳號後，把這個連結給他，
+       他自己點一次重新綁定即可，回覆表與桌次都不用動。
+       ⚠️ 說明文字刻意不寫「請先加好友」——那由綁定頁的機械閘擋住。
+          寫進文字等於多一條要人記得的紀律，而它擋不住任何東西。 -->
+  <div class="card">
+    <h2>重新綁定連結</h2>
+    <p class="hint">同仁換了 LINE 帳號、或換手機後收不到通知時，把這個連結傳給他。<b>請他用手機點</b>（在電腦上點會綁到另一個帳號）。</p>
+    <div id="bl-url" style="word-break:break-all;background:#f6f6f6;border:1px solid #e3e3e3;border-radius:8px;padding:10px 12px;font-size:13px;margin:10px 0">讀取中…</div>
+    <div class="btnrow"><button class="btn" onclick="copyBindLink()">複製連結</button></div>
+    <div id="bl-msg" class="msg"></div>
+  </div>
   <div class="card">
     <h2>員工名冊</h2>
     <div class="btnrow"><button class="btn" onclick="downloadRoster()">單位總表</button>
@@ -577,7 +588,7 @@ function showTab(t){
   if(t==='manage'&&!manageLoaded){manageLoaded=true;loadActs();}
   if(t==='tables'&&!tablesLoaded){tablesLoaded=true;loadTablesTab();}
   if(t==='checkin'&&!checkinLoaded){checkinLoaded=true;loadCheckinTab();}
-  if(t==='staff'&&!staffLoaded){staffLoaded=true;snLoad();}
+  if(t==='staff'&&!staffLoaded){staffLoaded=true;snLoad();loadBindLink();}
 }
 var checkinLoaded=false,staffLoaded=false;
 var tablesLoaded=false;
@@ -1046,6 +1057,41 @@ function seatUnpublish(){
 // ── 資深夥伴通知：年度名單 → 勾選 → 三則範本擇一 → 發送 ─────────────────
 // 年度＝名單身分（哪一批人），與發送日期無關。範本存在後端，明年打開預帶同一份。
 var SN=null;
+/* ── 重新綁定連結（2026-08-29）────────────────────────────────────
+ * 連結由後端 getBindLink 提供，前端不寫死。
+ * 寫死等於第二份真相——哪天 BIND_LINK 的參數名或 LIFF ID 改了，
+ * 佳岑手上那份會靜靜失效，而且沒有人會發現。
+ */
+var gBindLink = '';
+function loadBindLink(){
+  return jsonp('getBindLink',{token:q('t')}).then(function(r){
+    var box=document.getElementById('bl-url');
+    if(!r||!r.ok||!r.url){ box.textContent='讀取失敗，請重新整理頁面。'; return; }
+    gBindLink=r.url;
+    box.textContent=r.url;
+  }).catch(function(){
+    document.getElementById('bl-url').textContent='讀取失敗，請重新整理頁面。';
+  });
+}
+function copyBindLink(){
+  var msg=document.getElementById('bl-msg');
+  if(!gBindLink){ msg.textContent='連結還沒讀到，請重新整理頁面。'; return; }
+  var ok=function(){ msg.textContent='已複製 ✓'; setTimeout(function(){msg.textContent='';},2500); };
+  // clipboard API 在非 https 或舊瀏覽器會不存在／被拒——退回選取整段文字讓她自己複製，
+  // 不要靜默失敗（按了沒反應比按了失敗更難查）
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(gBindLink).then(ok).catch(function(){ selectBindLink(msg); });
+  } else { selectBindLink(msg); }
+}
+function selectBindLink(msg){
+  try{
+    var box=document.getElementById('bl-url');
+    var rng=document.createRange(); rng.selectNodeContents(box);
+    var sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(rng);
+    msg.textContent='已選取，請按 Cmd/Ctrl+C 複製。';   // ← 與失敗訊息刻意不共用字
+  }catch(e){ msg.textContent='自動複製失敗，請手動選取上方連結複製。'; }
+}
+
 function snLoad(){
   // ⚠️ 預設值必須是 String(currentTaipeiYear())，與第二發送出的 p.year 同一個字串——
   // 否則快取名稱對不上、永遠不命中，且不會有任何錯誤訊息。
