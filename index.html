@@ -150,6 +150,19 @@
     <!-- 未綁定：綁定表單。2026-07-29 起不再是預設入口，只在 ?mode=bind 或「重新填寫」時出現。 -->
     <div id="section-bind" class="card" style="display:none">
       <h2>員工身分 LINE 驗證</h2>
+      <!-- 加好友閘（2026-08-29）：換帳號的人必定是全新 LINE 帳號、必定沒加好友。
+           沒加好友 pushLine_ 送不到——綁定成功通知收不到、之後所有推播也收不到，
+           而他自己不會發現。與報到頁共用 ensureFriendThen。 -->
+      <div id="bind-gate" style="display:none">
+        <p class="hint" style="font-size:16px;color:#444;line-height:1.7">完成驗證前，請先加入公司官方帳號為好友 🙇<br><b>加了好友，系統才能把驗證結果與活動通知傳給您。</b></p>
+        <button class="btn btn-primary" type="button" id="btn-addfriend-bind">① 加入官方帳號好友</button>
+        <button class="btn btn-secondary" type="button" id="btn-recheck-bind" style="margin-top:10px">已加好友了？點此重新整理</button>
+      </div>
+      <!-- 🔴 display:none 是刻意的（2026-08-29 外部審查抓到）：
+           getFriendship() 是**非同步**的，resolve 之前表單若可見就可填可送，
+           那道閘等於沒有。ensureFriendThen 的 pass() 會把它打開。
+           報到頁的 ob-body 目前沒有這個保護，是既有缺陷；bind 是新路徑，不要複製它。 -->
+      <div id="bind-body" style="display:none">
       <p class="hint">請填寫所屬單位、姓名與出生年月日，核對無誤後，系統會寄驗證信到您的公司信箱。<b>僅此一次，日後不需再驗證。</b></p>
       <label for="sel-unit">所屬單位</label>
       <select id="sel-unit">
@@ -165,6 +178,7 @@
       <p id="bind-birth-hint">點欄位選擇出生日期</p>
       <div id="bind-msg"></div>
       <button class="btn btn-primary" id="btn-bind" disabled>送出驗證</button>
+      </div>
     </div>
 
     <!-- 未綁定且非 ?mode=bind：全員已驗證完成，綁定表單不再常開，改由工務管理組單獨發連結。 -->
@@ -710,7 +724,8 @@
         greet.style.display = 'none';
         // 全員綁定完成後（2026-07-29），綁定表單只在工務管理組單獨發的 ?mode=bind 連結才出現；
         // 一般入口顯示引導卡，避免不相干的人看到可填的身分表單。
-        show(getMode() === 'bind' ? 'section-bind' : 'section-need-verify');
+        if (getMode() === 'bind') { show('section-bind'); ensureFriendThenBind(); }
+        else show('section-need-verify');
       } else if (!state.verified) {
         greet.style.display = 'none';
         // 顯示他當初選的資料＋驗證信箱（免重填；重寄一鍵搞定）
@@ -797,32 +812,55 @@
     // 官方帳號「日本國土開發 台灣分公司」加好友連結
     var ADD_FRIEND_URL = 'https://line.me/R/ti/p/@829mbuku';
     var gFriendOk = false, gAddTapped = false, gVisBound = 0;
-    function showObGate(on) {
-      var g = document.getElementById('ob-gate'), b = document.getElementById('ob-body');
+
+    /**
+     * 顯示／隱藏加好友閘。gateId 與 bodyId 由呼叫端指定——報到頁與綁定頁
+     * 各有一組 DOM，但走同一套判斷邏輯（不另寫第二份閘）。
+     */
+    function showFriendGate(on, gateId, bodyId) {
+      var g = document.getElementById(gateId), b = document.getElementById(bodyId);
       if (g) g.style.display = on ? '' : 'none';
       if (b) b.style.display = on ? 'none' : '';
     }
-    // 硬性閘：非官方帳號好友 → 擋住報到表單、要他先加好友才能填。
-    // 政策：friendFlag 真→放行；false 或查詢失敗→擋(硬性、可按「我已加入」重試)；唯 SDK 不支援 getFriendship 才放行(不因 SDK 問題把所有人鎖死)。
-    function ensureFriendThenOnboard() {
-      if (gFriendOk) { showObGate(false); setupOnboard(); return; }
-      var add = document.getElementById('btn-addfriend');
+
+    // 硬性閘：非官方帳號好友 → 擋住表單、要他先加好友才能填。
+    // 政策：friendFlag 真→放行；false 或查詢失敗→擋(硬性、可按「我已加入」重試)；
+    //       唯 SDK 不支援 getFriendship 才放行(不因 SDK 問題把所有人鎖死)。
+    // @param {{gate:string, body:string, add:string, recheck:string, next:Function}} opts
+    function ensureFriendThen(opts) {
+      var pass = function () { showFriendGate(false, opts.gate, opts.body); opts.next(); };
+      if (gFriendOk) { pass(); return; }
+      var add = document.getElementById(opts.add);
       if (add && !add._b) { add._b = 1; add.addEventListener('click', function () {
         gAddTapped = true;  // 回到本頁時自動重整、重抓好友狀態（getFriendship 同 session 會給舊值，必須整頁 reload）
         if (window.liff && liff.openWindow) liff.openWindow({ url: ADD_FRIEND_URL, external: false });
         else window.open(ADD_FRIEND_URL, '_blank');
       }); }
-      var re = document.getElementById('btn-friend-recheck');
+      var re = document.getElementById(opts.recheck);
       if (re && !re._b) { re._b = 1; re.addEventListener('click', function () { location.reload(); }); }
       // 從加好友畫面回到本 LIFF（頁面再度可見）→ 自動重整重抓好友狀態
       if (!gVisBound) { gVisBound = 1; document.addEventListener('visibilitychange', function () {
         if (gAddTapped && document.visibilityState === 'visible') { gAddTapped = false; location.reload(); }
       }); }
-      if (!(window.liff && typeof liff.getFriendship === 'function')) { showObGate(false); setupOnboard(); return; }
+      if (!(window.liff && typeof liff.getFriendship === 'function')) { pass(); return; }
       liff.getFriendship().then(function (fs) {
-        if (fs && fs.friendFlag) { gFriendOk = true; showObGate(false); setupOnboard(); }
-        else { showObGate(true); }
-      }).catch(function () { showObGate(true); });
+        if (fs && fs.friendFlag) { gFriendOk = true; pass(); }
+        else { showFriendGate(true, opts.gate, opts.body); }
+      }).catch(function () { showFriendGate(true, opts.gate, opts.body); });
+    }
+
+    /** 報到頁：維持既有呼叫端不變 */
+    function ensureFriendThenOnboard() {
+      ensureFriendThen({ gate: 'ob-gate', body: 'ob-body',
+                         add: 'btn-addfriend', recheck: 'btn-friend-recheck',
+                         next: setupOnboard });
+    }
+
+    /** 綁定頁（2026-08-29）：換帳號的人一定沒加好友，走同一道閘 */
+    function ensureFriendThenBind() {
+      ensureFriendThen({ gate: 'bind-gate', body: 'bind-body',
+                         add: 'btn-addfriend-bind', recheck: 'btn-recheck-bind',
+                         next: function () {} });   // 綁定表單的事件在頁面初始化時已綁好，這裡不需再做事
     }
 
     function setupOnboard() {
