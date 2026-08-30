@@ -1594,6 +1594,15 @@ function renderPreview(r){
   if(!r.tplHasUrl)warn+='<p style="'+W+'var(--bad);font-weight:600">⚠ 內容少了 {連結}——同仁會收到一則點不進報到碼的訊息。</p>';
   if(r.unbound.length)warn+='<p style="'+W+'var(--warn)">未綁定、收不到的 '
     +r.unbound.length+' 人：'+esc(r.unbound.join('、'))+'</p>';
+  // 解析不出當前 LINE 號碼的人（2026-08-30）。不列出來的話，畫面只會顯示
+  // 「會發給 N 人」，而那 N 少掉的幾位既不會收到、也不知道要來問。
+  if(r.notSent&&r.notSent.length){
+    var WHY={unverified:'尚未完成驗證',missing:'綁定名單查無',
+             ambiguous:'資料重複，需人工確認',empty:'沒有 LINE 號碼'};
+    warn+='<p style="'+W+'var(--bad);font-weight:600">以下 '+r.notSent.length+' 位不會收到：'
+      +r.notSent.map(function(x){return esc(x.name)+'（'+esc(WHY[x.outcome]||x.outcome)+'）';}).join('、')
+      +'</p>';
+  }
   document.getElementById('bc-preview').innerHTML=warn
     +'<pre style="white-space:pre-wrap;background:#f8f8f7;border-radius:3px;padding:10px;'
     +'font-size:12.5px;margin:6px 0 0;color:var(--ink2);font-family:inherit;line-height:1.7">'
@@ -1629,8 +1638,10 @@ function bcFillPeople(){
   var u=document.getElementById('bc-one-unit').value,sel=document.getElementById('bc-one-sel');
   if(!u){sel.innerHTML='<option value="">請先選單位</option>';return;}
   var list=BC_PEOPLE.filter(function(p){return (p.unit||'（未分類）')===u;});
+  // value ＝ **內部碼**（2026-08-30）。下拉是「選誰」，而「送到哪裡」由後端在
+  // 送出當下解析。兩者混用正是換過 LINE 帳號的人收不到通行證的成因。
   sel.innerHTML=list.map(function(p){
-    return '<option value="'+esc(p.userId)+'">'+esc(p.name)+'</option>';}).join('');
+    return '<option value="'+esc(p.internalId)+'">'+esc(p.name)+'</option>';}).join('');
 }
 function bcSendOne(){
   var sel=document.getElementById('bc-one-sel');
