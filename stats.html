@@ -1030,6 +1030,12 @@ function moveSeat(kind,id,name){
     :jsonp('setGuestTable',{token:q('t'),actId:actId(),row:id,table:to});
   p.then(function(r){
     if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
+    // 後端找不到對象時回 skipped 而不是報錯（跨活動、不在名單上）。
+    // 不看它就會出現「畫面說已移動、實際沒動」——最難察覺的那種失敗。
+    if(r.skipped&&r.skipped.length){
+      setMsg('sm-msg','沒有移動：'+(r.skipped[0].why||'找不到這個人在本場的資料'),'err');
+      loadSeating();return;
+    }
     setMsg('sm-msg','已移動','ok');loadSeating();
   });
 }
@@ -1790,7 +1796,7 @@ function upSeating(input){
       { setMsg('sm-msg','已取消','');return; }
     document.getElementById('sm-msg').innerHTML=msg+'　寫入中…';
     var chunks=chunkByLen(eWrites,3000);
-    var applied=0;
+    var applied=0,eSkipped=0;   // eSkipped：後端回報「找不到對象」的筆數，最後要講出來
     (function next(){
       var c=chunks.shift();
       if(!c){
@@ -1800,7 +1806,10 @@ function upSeating(input){
           var gc=gchunks.shift();
           if(!gc){
             jsonpW('clearSeatMarks',{token:q('t'),actId:actId()}).then(function(){
-              setMsg('sm-msg','匯入完成 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席（此版成為新基準，變更標記已歸零）','ok');
+              // 略過筆數要講出來：靜默略過的話，匯入看起來成功而那幾個人沒被排到桌。
+            setMsg('sm-msg','匯入完成 同仁 '+applied+' 人・來賓 '+gWrites.length+' 席'
+              +(eSkipped?'（有 '+eSkipped+' 筆找不到對象，未寫入）':'')
+              +'（此版成為新基準，變更標記已歸零）',eSkipped?'err':'ok');
               loadSeating();
             });return;
           }
@@ -1810,7 +1819,7 @@ function upSeating(input){
       }
       jsonpW('setTables',{token:q('t'),actId:actId(),writes:JSON.stringify(c)}).then(function(r){
         if(!r||!r.ok){setMsg('sm-msg',(r&&r.msg)||'寫入失敗','err');return;}
-        applied+=r.applied;next();
+        applied+=r.applied;eSkipped+=((r.skipped&&r.skipped.length)||0);next();
       });
     })();
   }).catch(function(e){setMsg('sm-msg',String(e&&e.message||e),'err');});
