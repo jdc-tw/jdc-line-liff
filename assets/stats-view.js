@@ -6,6 +6,39 @@
 
 function esc(s){return (s==null?'':s).toString().replace(/</g,'&lt;');}
 
+/**
+ * 把值放進 **HTML 屬性裡的 JavaScript 字串**（`onclick="fn('…')"` 那種）。
+ *
+ * 🔴 **與 `esc()` 的分工：兩支服務兩個不同的問題，不可以互換、也不可以疊用。**
+ *   `esc(v)`        → 值要顯示成**文字內容**（`<span>…</span>`）
+ *   `escAttrJs(v)`  → 值要當成**屬性裡那段 JS 的字串常值**
+ * 這兩個情境的正確逸出方式**互相衝突**（見下），所以一把尺量不了兩個問題。
+ * ⚠️ 呼叫端**只呼叫其中一支**，不要寫成 `esc(escAttrJs(x))`——疊起來就又黏成一把尺，
+ * 而「一把尺量兩個問題」正是這個缺陷的成因。這支自己涵蓋 `<`。
+ *
+ * 為何存在（2026-09-02）：`stats.html` 有 23 處把值拼進 `onclick`，而 `esc()` 只逸出
+ * `<`。值裡只要有一個單引號，那顆按鈕點下去就毫無反應——**畫面完全正常**，
+ * console 有 SyntaxError 而沒有人在看。實測會壞的有四種：
+ * 單引號、雙引號、結尾反斜線、換行。其中**雙引號會提早結束 HTML 屬性**，
+ * 後面的內容被當成新屬性解析——那不只是按鈕失效，是屬性注入。
+ *
+ * 🔴 **兩個字元要用兩種相反的機制，這是實測出來的（真 Chromium）：**
+ *   單引號 → **反斜線** `\'`      （HTML 實體 `&#39;` 無效：瀏覽器會先解碼，解完就變成單引號）
+ *   雙引號 → **HTML 實體** `&quot;`（反斜線無效：`"` 會先結束 HTML 屬性，輪不到 JS 看它）
+ *
+ * 🔴 **順序有講究**：`&` 要最先（否則資料裡本來就有的 `&#39;` 會被瀏覽器解成單引號），
+ * 接著反斜線（否則後面加的反斜線會被自己再逸出一次），最後才是引號與其他。
+ */
+function escAttrJs(s) {
+  return (s == null ? '' : s).toString()
+    .replace(/&/g, '&amp;')      // 先做：擋掉資料裡本來就有的 &#39; 這種寫法
+    .replace(/\\/g, '\\\\')        // 再做：後面加的反斜線不可以被自己再逸出一次
+    .replace(/'/g, "\\'")        // 單引號走反斜線（實體會被瀏覽器先解碼）
+    .replace(/"/g, '&quot;')     // 雙引號走實體（反斜線來不及，" 會先結束 HTML 屬性）
+    .replace(/\r\n?|\n/g, '\\n')   // 屬性值裡的真換行 = JS 字串常值裡的換行 = SyntaxError
+    .replace(/</g, '&lt;');      // 自己涵蓋，呼叫端才不必再套一層 esc
+}
+
 // 依單位收納（保留原順序）；bodyFn(items) 決定每組內容。單位旁顯示人數。
 /**
  * 依單位分組收納。
@@ -107,6 +140,6 @@ function pickDefaultActivity(rows, urlAct){
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { esc: esc, groupHtml: groupHtml, listHtml: listHtml,
+  module.exports = { esc: esc, escAttrJs: escAttrJs, groupHtml: groupHtml, listHtml: listHtml,
     opinionsHtml: opinionsHtml, renderStatsHtml: renderStatsHtml, pickDefaultActivity: pickDefaultActivity };
 }
