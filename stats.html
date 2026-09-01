@@ -2139,23 +2139,28 @@ function qrFileName(p,used){
   return base+'.png';
 }
 /**
- * 從批次碼裡找出這個人。**內部碼優先，姓名只當 fallback。**
+ * 從批次碼裡找出這個人。**只認內部碼，沒有姓名 fallback。**
  *
- * 🔴 2026-09-02：原本只用姓名比對。同名不同人時，承辦人點 A 的名字會叫出 B 的 QR，
- * 而畫面上顯示的是 A 的名字——他印出來、發下去，那張碼報到時記成 B。
- * 畫面完全正常，沒有任何一層會喊。
+ * 🔴 2026-09-02 第一版：原本只用姓名比對。同名不同人時，承辦人點 A 的名字會叫出
+ * B 的 QR，而畫面上顯示的是 A 的名字——他印出來、發下去，那張碼報到時記成 B。
+ * 第一版改成「內部碼優先，姓名當 fallback」。
  *
- * 姓名 fallback 留著是給沒有內部碼的列（來賓、回填前的歷史列）；那些列本來就簽不出
- * 報到碼，走到這裡也只會回 null。
+ * 🔴 2026-09-02 第二版（外審第二輪 D）：**那個 fallback 拿掉了，因為它沒有「正確」
+ * 的情況。** 第一版的註解寫「沒有內部碼的列本來就簽不出碼，走到這裡也只會回 null」
+ * ——**那個推理是錯的**。fallback 搜尋的是 `rows`，也就是**別人已經簽出來的碼**，
+ * 不是這個人自己的。「這個人簽不出碼」不代表「rows 裡沒有同名的人」。
+ *
+ * 而且這一點是可以證明的，不是選擇：`getCheckinCodes` 放進 rows 的每一筆都必有
+ * 非空且合法的內部碼（沒有的人一律進 unsigned）。所以**一個沒有內部碼的人，
+ * 不可能有自己那一筆在 rows 裡** ⇒ 姓名比對命中的必然是別人。
+ *
+ * ⇒ 原則：**fallback 只能退到「更弱但仍然正確」，不能退到「可能錯但看起來對」。**
+ * 這一支沒有更弱而正確的選項，所以只剩「找不到」。
  */
-function findQr(rows,id,name){
-  var norm=function(s){return String(s||'').replace(/[\s　]+/g,'');};
+function findQr(rows,id){
   var code=String(id||'').trim();
-  if(code){
-    for(var i=0;i<rows.length;i++)if(String(rows[i].internalId||'').trim()===code)return rows[i];
-    return null;   // 有碼卻找不到＝這個人沒有報到碼，不可以退回姓名去猜一個給他
-  }
-  for(var j=0;j<rows.length;j++)if(norm(rows[j].name)===norm(name))return rows[j];
+  if(!code)return null;   // 沒有內部碼就無法指認這個人；用姓名去猜只會拿到別人的碼
+  for(var i=0;i<rows.length;i++)if(String(rows[i].internalId||'').trim()===code)return rows[i];
   return null;
 }
 /**
@@ -2164,9 +2169,15 @@ function findQr(rows,id,name){
  */
 function showPerson(id,name){
   qrRows(actId()).then(function(rows){
-    var p=findQr(rows,id,name);
-    if(!p){setMsg('sm-msg','找不到此人的報到碼（未回覆參加？）','err');return;}
     var code=String(id||'').trim();
+    // 兩種失敗要分得開：沒有內部碼是**資料問題**（找工務管理組），
+    // 有碼但沒簽出來才可能是「沒回覆參加」。用同一句話講會把人導向錯的排查方向。
+    if(!code){
+      setMsg('sm-msg',esc(name)+' 沒有內部碼，無法產生報到碼——請聯絡工務管理組','err');
+      return;
+    }
+    var p=findQr(rows,code);
+    if(!p){setMsg('sm-msg','找不到此人的報到碼（未回覆參加？）','err');return;}
     var seat=(SB&&SB.seats||[]).filter(function(s){
       return code ? String(s.internalId||'').trim()===code
                   : String(s.name||'').replace(/[\s　]+/g,'')===String(name).replace(/[\s　]+/g,'');})[0]||{};

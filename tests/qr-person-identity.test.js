@@ -37,27 +37,46 @@ function loadFindQr() {
 
 test('★findQr：兩個同名的人，各自拿到自己的碼', () => {
   const findQr = loadFindQr();
-  assert.equal(findQr(ROWS, 'JDC-HJKMNP', '李明').code, 'CHK|act|JDC-HJKMNP|SIG1');
-  assert.equal(findQr(ROWS, 'JDC-BBBBBB', '李明').code, 'CHK|act|JDC-BBBBBB|SIG2');
+  assert.equal(findQr(ROWS, 'JDC-HJKMNP').code, 'CHK|act|JDC-HJKMNP|SIG1');
+  assert.equal(findQr(ROWS, 'JDC-BBBBBB').code, 'CHK|act|JDC-BBBBBB|SIG2');
 });
 
 test('★findQr：有內部碼卻找不到 → 回 null，不可以退回姓名去猜一個給他', () => {
-  // 這條是這次修法的關鍵。退回姓名的話，一個沒有報到碼的人會拿到同名同事的碼，
-  // 而畫面上寫著他自己的名字——比「找不到」糟得多。
   const findQr = loadFindQr();
-  assert.equal(findQr(ROWS, 'JDC-ZZZZZZ', '李明'), null);
+  assert.equal(findQr(ROWS, 'JDC-ZZZZZZ'), null);
 });
 
-test('findQr：沒有內部碼時才退回姓名比對（來賓、回填前的歷史列）', () => {
+/* 🔴 外審第二輪 D：姓名 fallback 整支拿掉 ─────────────────────────────────
+   第一版留了姓名 fallback，註解寫「沒有內部碼的列本來就簽不出碼，走到這裡也只會
+   回 null」。**那個推理錯了。** fallback 搜尋的是 `rows`——**別人已經簽出來的碼**。
+   「這個人簽不出碼」不代表「rows 裡沒有同名的人」。
+
+   而且這件事可以證明、不是取捨：`getCheckinCodes` 放進 rows 的每一筆都必有非空
+   且合法的內部碼（沒有的人一律進 unsigned）⇒ **沒有內部碼的人不可能有自己那一筆
+   在 rows 裡** ⇒ 姓名比對命中的必然是別人。
+
+   ⇒ 那個 fallback 沒有「正確」的情況，所以不是收緊，是拿掉。 */
+
+test('🔴★findQr：沒有內部碼時一律回 null——即使 rows 裡有同名的人', () => {
+  // 這一條是 D 的最小重現。舊版在這裡會回傳李明那一筆，而呼叫端的卡片上寫著的是
+  // 另一個人的名字 ⇒ 印出來發下去，報到時記成別人。
+  //
+  // ⚠️ **姓名一定要傳進去**，即使現行簽名只吃兩個參數。第一版我只傳兩個，
+  // 於是「還原成舊版」這個突變**沒有被抓到**——舊版拿到的 name 是 undefined，
+  // 誰都比不中，照樣回 null。測試沒有重現那個缺陷，而它看起來像測到了。
+  // 要重現就得用**生產呼叫端的姿勢**：那裡手上一直有姓名。
   const findQr = loadFindQr();
-  assert.equal(findQr(ROWS, '', '陳大同').internalId, 'JDC-CCCCCC');
-  assert.equal(findQr(ROWS, null, '查無此人'), null);
+  ['李明', '陳大同'].forEach((nm) => {
+    assert.equal(findQr(ROWS, '', nm), null, `空字串的 id 竟然靠「${nm}」比中了`);
+    assert.equal(findQr(ROWS, null, nm), null);
+    assert.equal(findQr(ROWS, undefined, nm), null);
+    assert.equal(findQr(ROWS, '   ', nm), null, '只有空白也算沒有');
+  });
 });
 
-test('findQr：姓名比對仍然吃得下全形與半形空白', () => {
+test('對照組：同一批 rows 給對的內部碼就找得到——證明回 null 不是全部都找不到', () => {
   const findQr = loadFindQr();
-  assert.equal(findQr(ROWS, '', '陳　大同').internalId, 'JDC-CCCCCC');
-  assert.equal(findQr(ROWS, '', ' 陳大同 ').internalId, 'JDC-CCCCCC');
+  assert.equal(findQr(ROWS, 'JDC-CCCCCC').name, '陳大同');
 });
 
 /* ── 接線：座位表要真的把內部碼傳進去 ─────────────────────────────────────── */
