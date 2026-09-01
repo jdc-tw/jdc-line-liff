@@ -194,15 +194,15 @@ var lastText = '', lastAt = 0;
 // ⚠️ 這五筆要跟正式路徑用同一種身分（2026-09-02 起是內部碼）——不然示範模式會整個
 //    壞掉，而那是承辦人唯一的練習管道，通常在活動前一晚才被打開。
 var DEMO_CODES = [
-  'CHK|zzdemo2026|JDC-DEMOAA|sigA', 'CHK|zzdemo2026|JDC-DEMOBB|sigB',
-  'CHK|zzdemo2026|JDC-DEMOCC|sigC', 'CHK|zzdemo2026|JDC-DEMODD|sigD',
-  'CHK|zzdemo2026|JDC-DEMOEE|sigE'];
+  'CHK|zzdemo2026|JDC-DMBCDF|sigA', 'CHK|zzdemo2026|JDC-DMGHJK|sigB',
+  'CHK|zzdemo2026|JDC-DMMNPQ|sigC', 'CHK|zzdemo2026|JDC-DMRSTV|sigD',
+  'CHK|zzdemo2026|JDC-DMWXYZ|sigE'];
 var DEMO_PEOPLE = [
-  { internalId:'JDC-DEMOAA', name:'測試甲', unit:'管理部',   table:'1' },
-  { internalId:'JDC-DEMOBB', name:'測試乙', unit:'工務管理組', table:'2' },
-  { internalId:'JDC-DEMOCC', name:'測試丙', unit:'南港玉成', table:'3' },
-  { internalId:'JDC-DEMODD', name:'測試丁', unit:'富貴莊園', table:'主桌' },
-  { internalId:'JDC-DEMOEE', name:'測試戊', unit:'宸實永寧', table:'5' }];
+  { internalId:'JDC-DMBCDF', name:'測試甲', unit:'管理部',   table:'1' },
+  { internalId:'JDC-DMGHJK', name:'測試乙', unit:'工務管理組', table:'2' },
+  { internalId:'JDC-DMMNPQ', name:'測試丙', unit:'南港玉成', table:'3' },
+  { internalId:'JDC-DMRSTV', name:'測試丁', unit:'富貴莊園', table:'主桌' },
+  { internalId:'JDC-DMWXYZ', name:'測試戊', unit:'宸實永寧', table:'5' }];
 
 async function buildDemoSnapshot() {
   for (var i = 0; i < DEMO_CODES.length; i++) {

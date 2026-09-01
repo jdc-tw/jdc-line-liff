@@ -23,7 +23,7 @@ function fnSrc(name) {
 
 // 同名不同人：兩個「李明」，內部碼不同、單位不同。
 const ROWS = [
-  { internalId: 'JDC-AAAAAA', name: '李明', unit: 'A部', code: 'CHK|act|JDC-AAAAAA|SIG1' },
+  { internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部', code: 'CHK|act|JDC-HJKMNP|SIG1' },
   { internalId: 'JDC-BBBBBB', name: '李明', unit: 'B部', code: 'CHK|act|JDC-BBBBBB|SIG2' },
   { internalId: 'JDC-CCCCCC', name: '陳大同', unit: 'A部', code: 'CHK|act|JDC-CCCCCC|SIG3' },
 ];
@@ -37,7 +37,7 @@ function loadFindQr() {
 
 test('★findQr：兩個同名的人，各自拿到自己的碼', () => {
   const findQr = loadFindQr();
-  assert.equal(findQr(ROWS, 'JDC-AAAAAA', '李明').code, 'CHK|act|JDC-AAAAAA|SIG1');
+  assert.equal(findQr(ROWS, 'JDC-HJKMNP', '李明').code, 'CHK|act|JDC-HJKMNP|SIG1');
   assert.equal(findQr(ROWS, 'JDC-BBBBBB', '李明').code, 'CHK|act|JDC-BBBBBB|SIG2');
 });
 
@@ -79,9 +79,9 @@ function renderSeats(seats) {
 
 test('★接線：座位表點名字時，帶進去的是內部碼不是只有姓名', () => {
   const html = renderSeats([
-    { kind: 'emp', id: 'JDC-AAAAAA', internalId: 'JDC-AAAAAA', name: '李明', unit: 'A部', table: '1' },
+    { kind: 'emp', id: 'JDC-HJKMNP', internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部', table: '1' },
   ]);
-  assert.ok(html.indexOf("showPerson('JDC-AAAAAA','李明')") >= 0,
+  assert.ok(html.indexOf("showPerson('JDC-HJKMNP','李明')") >= 0,
     '座位表沒有把內部碼傳給 showPerson，findQr 會收到 undefined 然後安靜地退回姓名比對。實際產出：' + html);
 });
 
@@ -104,7 +104,7 @@ test('★批次 zip：同名同單位的兩個人不會共用同一個檔名（�
   const used = {};
   const nameOf = (p) => ctx.qrFileName(p, used);
   const same = [
-    { internalId: 'JDC-AAAAAA', name: '李明', unit: 'A部' },
+    { internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部' },
     { internalId: 'JDC-BBBBBB', name: '李明', unit: 'A部' },
   ];
   const files = same.map(nameOf);

@@ -106,9 +106,9 @@ test('★示範模式：五張假 QR 各自對到一個人，桌次也查得到'
   assert.equal(Object.keys(ctx.snapshot).length, 5, '五張碼要對到五個人，不是互相蓋掉');
   const people = Object.values(ctx.snapshot);
   assert.equal(new Set(people.map((p) => p.internalId)).size, 5);
-  assert.equal(ctx.tableOf('JDC-DEMOAA'), '1');
-  assert.equal(ctx.tableOf('JDC-DEMODD'), '主桌');
-  assert.equal(ctx.tableOf('JDC-NOBODY'), '', '不在名單上的回空字串＝臨時出席');
+  assert.equal(ctx.tableOf('JDC-DMBCDF'), '1');
+  assert.equal(ctx.tableOf('JDC-DMRSTV'), '主桌');
+  assert.equal(ctx.tableOf('JDC-NBDYZB'), '', '不在名單上的回空字串＝臨時出席');
 });
 
 test('★示範模式：假 QR 的第三格與假名單的內部碼一致（不一致就掃不進去）', async () => {
@@ -129,16 +129,16 @@ test('★示範模式：假 QR 的第三格與假名單的內部碼一致（不�
 test('★掃碼報到：進佇列的是內部碼，而且帶格式版本 v', async () => {
   const ctx = harness({});
   ctx.snapshot = {};
-  const qr = 'CHK|zzdemo2026|JDC-AAAAAA|sig';
+  const qr = 'CHK|zzdemo2026|JDC-HJKMNP|sig';
   const h = await scan.sha256Hex(qr);
-  ctx.snapshot[h] = { internalId: 'JDC-AAAAAA', name: '甲', unit: 'A部', table: '7', checked: false };
+  ctx.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7', checked: false };
   ctx.rebuildEmpIndex();
   ctx.ready = true;
 
   await ctx.handle(qr, 0);
   const q = JSON.parse(ctx.localStorage.getItem('q'));
   assert.equal(q.length, 1, '掃成功卻沒有進佇列＝這個人的報到不會被寫進試算表');
-  assert.equal(q[0].internalId, 'JDC-AAAAAA');
+  assert.equal(q[0].internalId, 'JDC-HJKMNP');
   assert.equal(q[0].v, 2, '沒有 v 的話，下一次換鑰匙時沒有人分得出這筆是舊是新');
   assert.equal(q[0].empNo, undefined, '舊欄名不可以還在');
   assert.equal(ctx.calls.cards[0].label, '已受理');
@@ -146,9 +146,9 @@ test('★掃碼報到：進佇列的是內部碼，而且帶格式版本 v', asy
 
 test('★掃碼報到：卡片上的桌次查得到（反查索引的鍵要跟快照一致）', async () => {
   const ctx = harness({});
-  const qr = 'CHK|zzdemo2026|JDC-AAAAAA|sig';
+  const qr = 'CHK|zzdemo2026|JDC-HJKMNP|sig';
   const h = await scan.sha256Hex(qr);
-  ctx.snapshot[h] = { internalId: 'JDC-AAAAAA', name: '甲', unit: 'A部', table: '7', checked: false };
+  ctx.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7', checked: false };
   ctx.rebuildEmpIndex();
   ctx.ready = true;
   await ctx.handle(qr, 0);
@@ -171,9 +171,9 @@ test('★人工搜名報到：進佇列的也是內部碼，方式標 manual', (
 test('★搜名名單：快照與名冊聯集，以內部碼去重，參加者優先（它才有桌次）', async () => {
   const ctx = harness({});
   const h = await scan.sha256Hex('x');
-  ctx.snapshot[h] = { internalId: 'JDC-AAAAAA', name: '甲', unit: 'A部', table: '7' };
+  ctx.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7' };
   ctx.nameTable = {
-    甲: { internalId: 'JDC-AAAAAA', name: '甲', unit: '名冊寫的單位' },   // 重複，快照優先
+    甲: { internalId: 'JDC-HJKMNP', name: '甲', unit: '名冊寫的單位' },   // 重複，快照優先
     丙: { internalId: 'JDC-CCCCCC', name: '丙', unit: 'C部' },           // 只有名冊有
     無碼: { name: '無碼', unit: 'D部' },                                  // 沒有內部碼，不可報到
   };
@@ -181,7 +181,7 @@ test('★搜名名單：快照與名冊聯集，以內部碼去重，參加者�
   assert.equal(list.length, 2, '去重或聯集其中一邊壞了');
   const byId = {};
   list.forEach((p) => { byId[p.internalId] = p; });
-  assert.equal(byId['JDC-AAAAAA'].unit, 'A部', '快照的資料要蓋過名冊的');
+  assert.equal(byId['JDC-HJKMNP'].unit, 'A部', '快照的資料要蓋過名冊的');
   assert.ok(byId['JDC-CCCCCC'], '只在名冊裡的人要進得了搜名名單（臨時出席走這條）');
 });
 
@@ -195,12 +195,12 @@ test('★送出成功後佇列真的變空（移除用的組合鍵要跟佇列�
   //    佇列項目的形狀由上面②③兩條守著，這裡只驗「送出成功之後移不移得掉」。
   const storage = fakeStorage({
     q: JSON.stringify([
-      { v: 2, internalId: 'JDC-AAAAAA', ts: 1, m: 'scan' },
+      { v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' },
       { v: 2, internalId: 'JDC-BBBBBB', ts: 2, m: 'manual' },
     ]),
   });
   const ctx = harness({ storage,
-    jgetRes: { ok: true, written: 2, allChecked: ['JDC-AAAAAA', 'JDC-BBBBBB'] } });
+    jgetRes: { ok: true, written: 2, allChecked: ['JDC-HJKMNP', 'JDC-BBBBBB'] } });
   assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 2, '前置條件：先要有兩筆');
 
   await ctx.flush();
@@ -209,7 +209,7 @@ test('★送出成功後佇列真的變空（移除用的組合鍵要跟佇列�
 });
 
 test('★後端丟掉的列要講出來，不可以靜靜吞掉', async () => {
-  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAAAA', ts: 1, m: 'scan' }]) });
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]) });
   const ctx = harness({ storage, jgetRes: { ok: true, written: 1, rejected: 2, allChecked: [] } });
   await ctx.flush();
   const msg = ctx.calls.notes.map((n) => n.text).join('｜');
@@ -217,7 +217,7 @@ test('★後端丟掉的列要講出來，不可以靜靜吞掉', async () => {
 });
 
 test('對照組：後端回失敗時佇列原封不動（證明上面那條測的是「成功才移除」）', async () => {
-  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAAAA', ts: 1, m: 'scan' }]) });
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]) });
   const ctx = harness({ storage, jgetRes: { ok: false, msg: '系統忙碌' } });
   await ctx.flush();
   assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 1,
@@ -231,7 +231,7 @@ test('★舊格式（v1，帶員編）的殘留：挑出來、留著、在畫面
     q: JSON.stringify([
       { empNo: '00011', ts: 1, m: 'scan' },                    // 舊格式：沒有 v
       { v: 1, empNo: '00012', ts: 2, m: 'scan' },              // 舊格式：v 太小
-      { v: 2, internalId: 'JDC-AAAAAA', ts: 3, m: 'scan' },    // 新格式
+      { v: 2, internalId: 'JDC-HJKMNP', ts: 3, m: 'scan' },    // 新格式
     ]),
   });
   const ctx = harness({ storage });
@@ -240,7 +240,7 @@ test('★舊格式（v1，帶員編）的殘留：挑出來、留著、在畫面
 
   const left = JSON.parse(storage.getItem('q'));
   assert.equal(left.length, 1, '新格式的那筆要留在佇列裡繼續送');
-  assert.equal(left[0].internalId, 'JDC-AAAAAA');
+  assert.equal(left[0].internalId, 'JDC-HJKMNP');
 
   const kept = JSON.parse(storage.getItem('q_v1'));
   assert.equal(kept.length, 2, '舊的要被留著——丟掉等於「有人報到過但紀錄不見了」');
@@ -251,7 +251,7 @@ test('★舊格式（v1，帶員編）的殘留：挑出來、留著、在畫面
 
 test('對照組：佇列全是新格式時，一句話都不會多講', () => {
   const storage = fakeStorage({
-    q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAAAA', ts: 1, m: 'scan' }]),
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
   });
   const ctx = harness({ storage });
   assert.equal(ctx.quarantineLegacyQueue(), 0);
