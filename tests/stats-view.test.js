@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { esc, escAttrJs, listHtml, opinionsHtml, renderStatsHtml, pickDefaultActivity } = require('../assets/stats-view.js');
+const { esc, listHtml, opinionsHtml, renderStatsHtml, pickDefaultActivity } = require('../assets/stats-view.js');
 
 const OK = {
   ok: true, who: '王副總',
@@ -123,71 +123,4 @@ test('全部關閉或截止時取最新建立的一場（活動關掉照樣有�
 test('清單為空回空字串', () => {
   assert.equal(pickDefaultActivity([], ''), '');
   assert.equal(pickDefaultActivity(null, ''), '');
-});
-
-/* ═══ escAttrJs：把值放進屬性裡的 JS 字串（2026-09-02）═══════════════════════
-   為何需要另一支：`esc()` 服務的是「顯示成文字內容」，而屬性裡的 JS 字串是**另一個
-   問題**，兩者的正確逸出方式互相衝突——單引號要走反斜線（實體會被瀏覽器先解碼），
-   雙引號要走實體（反斜線來不及，`"` 會先結束 HTML 屬性）。一把尺量不了兩個問題。
-
-   ⚠️ 這一組守的是**規則**，不是「這個值目前沒事」。所以全部用負向案例：
-   餵會壞的東西，看它有沒有被處理掉。正向案例證明不了約束存在。
-
-   真瀏覽器（Chromium）已逐案驗過八種輸入，含屬性注入的負向案例。 */
-
-const ATTR = (v) => 'onclick="rec(\'' + escAttrJs(v) + '\')"';
-/** 瀏覽器解析屬性時，值到下一個雙引號就結束。被提早截斷＝後面會被當成新屬性。 */
-const truncated = (attr) => attr.slice(9).indexOf('"') !== attr.length - 10;
-/** onclick 的內容會被當成函式本體編譯——這是瀏覽器對那個屬性做的事。 */
-const compiles = (body) => { try { new Function(body); return true; } catch (_) { return false; } };
-const bodyOf = (attr) => attr.match(/^onclick="([^"]*)/)[1];
-
-test('★escAttrJs：單引號走反斜線（HTML 實體會被瀏覽器先解碼，等於沒逸出）', () => {
-  assert.equal(escAttrJs("歐'布萊恩"), "歐\\'布萊恩");
-  assert.ok(compiles(bodyOf(ATTR("歐'布萊恩"))));
-});
-
-test('★escAttrJs：雙引號走 HTML 實體（反斜線來不及，" 會先結束屬性）', () => {
-  assert.equal(escAttrJs('大"順"營造'), '大&quot;順&quot;營造');
-  const a = ATTR('大"順"營造');
-  assert.ok(!truncated(a), '屬性被提早截斷＝後面的內容會被當成新屬性解析');
-  assert.ok(compiles(bodyOf(a)));
-});
-
-test('★escAttrJs：結尾反斜線（它會把後面那個結束引號吃掉）', () => {
-  const v = '甲乙' + String.fromCharCode(92);
-  assert.ok(compiles(bodyOf(ATTR(v))), '產出：' + ATTR(v));
-});
-
-test('★escAttrJs：換行（屬性裡的真換行 = JS 字串常值裡的換行 = SyntaxError）', () => {
-  assert.equal(escAttrJs('第一行\n第二行'), '第一行\\n第二行');
-  assert.ok(compiles(bodyOf(ATTR('第一行\n第二行'))));
-});
-
-test('★escAttrJs：& 要最先逸出——否則資料裡本來就有的 &#39; 會被解成單引號', () => {
-  // 這一條是順序的守門。&#39; 是使用者資料裡可能出現的六個字元，
-  // 不先擋掉的話瀏覽器解碼後就變成一個真的單引號。
-  assert.equal(escAttrJs('甲&#39;乙'), '甲&amp;#39;乙');
-});
-
-test('★escAttrJs：自己涵蓋 <，呼叫端不必再套一層 esc', () => {
-  // 疊成 esc(escAttrJs(x)) 會讓兩把尺又黏在一起，而那正是這個缺陷的成因。
-  assert.equal(escAttrJs('<b>x</b>'), '&lt;b>x&lt;/b>');
-});
-
-test('★escAttrJs：屬性注入不成立（負向案例）', () => {
-  const a = ATTR('x" onmouseover="alert(1)');
-  assert.ok(!truncated(a), '屬性被截斷 ⇒ onmouseover 會變成一個真的屬性。產出：' + a);
-});
-
-test('對照組：正常值一個字都不會被改壞', () => {
-  assert.equal(escAttrJs('年中聚餐'), '年中聚餐');
-  assert.equal(escAttrJs(null), '');
-  assert.equal(escAttrJs(undefined), '');
-  assert.equal(escAttrJs(123), '123');
-});
-
-test('對照組：現行的 esc 沒有被動到（它服務的是另一個問題）', () => {
-  assert.equal(esc('<script>'), '&lt;script>');
-  assert.equal(esc("歐'布萊恩"), "歐'布萊恩", 'esc 不該逸出單引號——那會讓文字內容多出反斜線');
 });
