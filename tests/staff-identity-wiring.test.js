@@ -89,7 +89,7 @@ function harness(opt) {
     fnSrc('enqueue'), fnSrc('quarantineLegacyQueue'),
     fnSrc('rebuildEmpIndex'), fnSrc('tableOf'), fnSrc('isCheckedIn'),
     fnSrc('allPeople'), fnSrc('buildDemoSnapshot'), fnSrc('manualCheckin'),
-    fnSrc('flush'), fnSrc('handle'),
+    fnSrc('flush'), fnSrc('handle'), fnSrc('applySnapshotPayload'),
     'var idToHash = {};',
   ].join('\n'), ctx, { filename: 'staff.html-extract' });
   ctx.calls = calls;
@@ -222,6 +222,34 @@ test('對照組：後端回失敗時佇列原封不動（證明上面那條測�
   await ctx.flush();
   assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 1,
     '失敗還把佇列清掉＝那個人的報到永遠不會被寫進去');
+});
+
+/* ── 後端跳過的人要一直看得到 ─────────────────────────────────────────────── */
+
+function renderSnapVer(res) {
+  let text = '';
+  const ctx = harness({});
+  ctx.setTopbar = () => {};
+  ctx.buildPicker = () => {};
+  ctx.document = { getElementById: () => ({ set textContent(v) { text = v; }, innerHTML: '' }) };
+  vm.runInContext(fnSrc('applySnapshotPayload'), ctx, { filename: 'staff.html-extract' });
+  ctx.applySnapshotPayload(Object.assign({ snapshot: {}, nameTable: {}, snapshotVersion: 1,
+                                           generatedAt: '2026-09-02 10:00' }, res));
+  return text;
+}
+
+test('★後端說它跳過了 N 個人，畫面上要一直看得到（不是閃一下的訊息）', () => {
+  // 這幾個人現場一定掃不進去，而掃描站是唯一看得到這件事的地方。
+  // 用 note() 的話會被下一次判定卡蓋掉；長駐在名單版本那一行才留得住。
+  const t = renderSnapVer({ unusable: 3 });
+  assert.match(t, /3 人/, '實際文字：' + t);
+  assert.match(t, /無法掃碼/);
+});
+
+test('對照組：正常情況（0 人）一個字都不多——會吵的告警會被訓練成無視', () => {
+  const t = renderSnapVer({ unusable: 0 });
+  assert.equal(t, '名單版本：2026-09-02 10:00');
+  assert.equal(renderSnapVer({}), '名單版本：2026-09-02 10:00', '後端沒回這個欄位也不可以吵');
 });
 
 /* ── ⑤ 舊格式佇列：隔離、不丟、講一句 ─────────────────────────────────────── */

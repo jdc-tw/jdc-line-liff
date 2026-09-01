@@ -536,7 +536,11 @@ function applySnapshotPayload(res) {
   // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
   snapshot = res.snapshot; nameTable = res.nameTable || {};
   snapMeta = { version: res.snapshotVersion, generatedAt: res.generatedAt };
-  document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt;
+  document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt
+    + (res.unusable ? '　⚠ 有 ' + res.unusable + ' 人身分資料有誤、無法掃碼' : '');
+  // 後端跳過了幾個人（身分不合格式，簽不出碼）。正常永遠是 0。
+  // 不是 0 的時候，那幾個人現場一定掃不進去——而**掃描站是唯一看得到這件事的地方**。
+  // 長駐在名單版本那一行，不用 note()：note 會被下一次判定蓋掉，而這件事要一直看得到。
   rebuildEmpIndex();
   buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
 }
