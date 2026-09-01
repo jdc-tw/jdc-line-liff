@@ -238,11 +238,24 @@ function saveSeen(seen) { return seenSave(localStorage, SEEN_KEY, seen); }
 state.seen = loadSeen();   // 開頁就把上次的已掃名單接回來（宣告在上面、鍵在這裡，故於此回填）
 function loadQueue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(_) { return []; } }
 function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQueueBadge(); }
-function updateQueueBadge() {   // D4：佇列筆數長駐畫面
+/**
+ * 佇列筆數長駐畫面（D4）。
+ *
+ * 🔴 2026-09-02（外審第二輪 C）：舊格式殘留的數字也放這裡。
+ * 原本用 `note()` 講一次——而 `note()` 是**判定卡**，開頁流程接著就會被
+ * loadSnapshot 的「名單載入中，請稍候…」蓋掉，工作人員根本來不及看到。
+ * 那是「發了就不管」的一種：訊息確實送出去了，但沒有人收得到。
+ *
+ * 這一格與名單版本那一行同一個判斷：**要一直看得到的事，不能用會被蓋掉的位置。**
+ */
+var legacyQueueCount = 0;
+function updateQueueBadge() {
   var n = loadQueue().length;
   var el = document.getElementById('qbadge');
-  el.innerHTML = '待送 <span class="n">' + n + '</span> 筆';
-  el.className = n > 0 ? 'warn' : '';
+  el.innerHTML = '待送 <span class="n">' + n + '</span> 筆'
+    + (legacyQueueCount ? '　⚠ 另有 <span class="n">' + legacyQueueCount
+       + '</span> 筆舊格式無法送出，請告知工務管理組' : '');
+  el.className = (n > 0 || legacyQueueCount > 0) ? 'warn' : '';
 }
 /** 佇列項目的格式版本。v1（沒有這個欄位）帶的是員編，後端已經不認得。 */
 var QUEUE_V = 2;
@@ -275,9 +288,8 @@ function quarantineLegacyQueue() {
     var prev = JSON.parse(localStorage.getItem(QKEY + '_v1') || '[]');
     localStorage.setItem(QKEY + '_v1', JSON.stringify(prev.concat(legacy)));
   } catch (_) {}
-  saveQueue(modern);
-  note('dup', '有 ' + legacy.length + ' 筆舊格式的離線紀錄無法送出',
-       '已保留在這台裝置上，請告知工務管理組');
+  legacyQueueCount = legacy.length;   // 長駐在佇列徽章上，不用 note()——那會被蓋掉
+  saveQueue(modern);                  // （saveQueue 自己會呼叫 updateQueueBadge）
   return legacy.length;
 }
 

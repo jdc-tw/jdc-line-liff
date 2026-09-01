@@ -90,6 +90,7 @@ function harness(opt) {
     fnSrc('rebuildEmpIndex'), fnSrc('tableOf'), fnSrc('isCheckedIn'),
     fnSrc('allPeople'), fnSrc('buildDemoSnapshot'), fnSrc('manualCheckin'),
     fnSrc('flush'), fnSrc('handle'), fnSrc('applySnapshotPayload'),
+    fnSrc('updateQueueBadge'), 'var legacyQueueCount = 0;',
     'var idToHash = {};',
   ].join('\n'), ctx, { filename: 'staff.html-extract' });
   ctx.calls = calls;
@@ -273,8 +274,26 @@ test('★舊格式（v1，帶員編）的殘留：挑出來、留著、在畫面
   const kept = JSON.parse(storage.getItem('q_v1'));
   assert.equal(kept.length, 2, '舊的要被留著——丟掉等於「有人報到過但紀錄不見了」');
 
-  const msg = ctx.calls.notes.map((n2) => n2.text).join('｜');
-  assert.match(msg, /2 筆舊格式/, '要在畫面上講一句，不然沒有人知道。實際訊息：' + msg);
+  // 🔴 外審第二輪 C：這句原本用 note() 講，而 note() 是判定卡——開頁流程接著就被
+  // loadSnapshot 的「名單載入中」蓋掉，工作人員來不及看到。改成長駐在佇列徽章上。
+  let badge = '';
+  ctx.document = { getElementById: () => ({ set innerHTML(v) { badge = v; }, set className(v) {} }) };
+  ctx.updateQueueBadge();
+  assert.match(badge, /2<\/span> 筆舊格式/,
+    '舊格式的筆數要長駐在徽章上。實際內容：' + badge);
+  assert.match(badge, /工務管理組/, '要講出該找誰');
+});
+
+test('對照組：沒有舊格式時，徽章一個字都不多（會吵的告警會被訓練成無視）', () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage });
+  let badge = '';
+  ctx.document = { getElementById: () => ({ set innerHTML(v) { badge = v; }, set className(v) {} }) };
+  ctx.quarantineLegacyQueue();
+  ctx.updateQueueBadge();
+  assert.ok(badge.indexOf('舊格式') < 0, '實際內容：' + badge);
 });
 
 test('對照組：佇列全是新格式時，一句話都不會多講', () => {
