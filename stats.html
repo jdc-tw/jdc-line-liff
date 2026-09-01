@@ -1009,7 +1009,7 @@ function renderDetail(title,list,showTableTag){
       // 姓名本身就是入口：點下去開個人頁（QR＋下載都在那裡）。
       // 2026-08-16 使用者：原本每一列右邊掛「🔳」與「⬇QR」兩顆，重複且擠。
       h+='<span class="nm" style="cursor:pointer" '
-        +'onclick="showPerson(\''+esc(s.name)+'\')">'+esc(s.name)+'</span>'
+        +'onclick="showPerson(\''+esc(s.internalId||'')+'\',\''+esc(s.name)+'\')">'+esc(s.name)+'</span>'
         +(s.title?'<span class="ti">'+esc(s.title)+'</span>':'')+'<span class="sp"></span>';
       if(s.veg)h+='<span class="veg">素</span>';
       if(s.changed)h+='<span class="chg">已變更</span>';
@@ -2122,21 +2122,54 @@ function qrRows(id){
     qrCache[id]=rs[1].rows;return rs[1].rows;
   });
 }
-function findQr(rows,name){
+/**
+ * 批次 zip 裡這張 QR 的檔名。`used` 是同一次批次共用的已用檔名表（呼叫端建立）。
+ *
+ * 🔴 2026-09-02：同名同單位的兩個人原本會產生同一個檔名，而 zip.file 是**覆寫**
+ * ——批次裡就少一張，而且下載成功、數量顯示正常，沒有人看得出來。
+ * 撞名時補上內部碼區別；沒撞名時一個字都不會多（檔名還是給人看的）。
+ *
+ * 抽成具名函式是為了測得到：留在 forEach 的 callback 裡就只能靠抄一份規則來測，
+ * 而抄的那一份不會跟著這裡一起改。
+ */
+function qrFileName(p,used){
+  var base=(p.unit||'未分類')+'_'+p.name;
+  if(used[base])base+='_'+String(p.internalId||'').trim();
+  used[base]=true;
+  return base+'.png';
+}
+/**
+ * 從批次碼裡找出這個人。**內部碼優先，姓名只當 fallback。**
+ *
+ * 🔴 2026-09-02：原本只用姓名比對。同名不同人時，承辦人點 A 的名字會叫出 B 的 QR，
+ * 而畫面上顯示的是 A 的名字——他印出來、發下去，那張碼報到時記成 B。
+ * 畫面完全正常，沒有任何一層會喊。
+ *
+ * 姓名 fallback 留著是給沒有內部碼的列（來賓、回填前的歷史列）；那些列本來就簽不出
+ * 報到碼，走到這裡也只會回 null。
+ */
+function findQr(rows,id,name){
   var norm=function(s){return String(s||'').replace(/[\s　]+/g,'');};
-  for(var i=0;i<rows.length;i++)if(norm(rows[i].name)===norm(name))return rows[i];
+  var code=String(id||'').trim();
+  if(code){
+    for(var i=0;i<rows.length;i++)if(String(rows[i].internalId||'').trim()===code)return rows[i];
+    return null;   // 有碼卻找不到＝這個人沒有報到碼，不可以退回姓名去猜一個給他
+  }
+  for(var j=0;j<rows.length;j++)if(norm(rows[j].name)===norm(name))return rows[j];
   return null;
 }
 /**
  * 個人頁：點座位表上的姓名叫出來。QR 與下載合併在這裡，不再各佔列表一顆鈕
  * （2026-08-16 使用者要求）。同一張 canvas 既顯示也下載，看到什麼就存到什麼。
  */
-function showPerson(name){
+function showPerson(id,name){
   qrRows(actId()).then(function(rows){
-    var p=findQr(rows,name);
+    var p=findQr(rows,id,name);
     if(!p){setMsg('sm-msg','找不到此人的報到碼（未回覆參加？）','err');return;}
+    var code=String(id||'').trim();
     var seat=(SB&&SB.seats||[]).filter(function(s){
-      return String(s.name||'').replace(/[\s　]+/g,'')===String(name).replace(/[\s　]+/g,'');})[0]||{};
+      return code ? String(s.internalId||'').trim()===code
+                  : String(s.name||'').replace(/[\s　]+/g,'')===String(name).replace(/[\s　]+/g,'');})[0]||{};
     var cv=qrBadgeCanvas(p.code,p.name,SB.actName);
     cv.style.cssText='width:100%;max-width:300px;border-radius:3px;background:#fff;display:block;margin:0 auto';
 
@@ -2181,12 +2214,12 @@ function dlAllQr(){
   Promise.all([__tmLib('assets/jszip.min.js','JSZip'),qrRows(ckActId())]).then(function(rs){
     var rows=rs[1];
     if(!rows.length){setMsg('qr-msg','此活動還沒有「參加」的回覆，無 QR 可產。','err');return;}
-    var zip=new JSZip(),chain=Promise.resolve();
+    var zip=new JSZip(),chain=Promise.resolve(),used={};
     rows.forEach(function(p){
       chain=chain.then(function(){
         return new Promise(function(res){
           qrBadgeCanvas(p.code,p.name,ckActName()).toBlob(function(b){
-            zip.file((p.unit||'未分類')+'_'+p.name+'.png',b);res();});
+            zip.file(qrFileName(p,used),b);res();});
         });
       });
     });
