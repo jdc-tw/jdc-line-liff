@@ -190,15 +190,19 @@ var state = { seen: {}, queue: [] };
 var snapshot = {};   // {hash: person}
 var lastText = '', lastAt = 0;
 
-var DEMO_CODES = [   // 假快照原始碼（真機測試掃桌面那五張 QR）
-  'CHK|zzdemo2026|00001|sigA', 'CHK|zzdemo2026|00002|sigB',
-  'CHK|zzdemo2026|00003|sigC', 'CHK|zzdemo2026|00004|sigD', 'CHK|zzdemo2026|00005|sigE'];
+// 示範模式的假快照（真機測試掃桌面那五張 QR）。
+// ⚠️ 這五筆要跟正式路徑用同一種身分（2026-09-02 起是內部碼）——不然示範模式會整個
+//    壞掉，而那是承辦人唯一的練習管道，通常在活動前一晚才被打開。
+var DEMO_CODES = [
+  'CHK|zzdemo2026|JDC-DEMOAA|sigA', 'CHK|zzdemo2026|JDC-DEMOBB|sigB',
+  'CHK|zzdemo2026|JDC-DEMOCC|sigC', 'CHK|zzdemo2026|JDC-DEMODD|sigD',
+  'CHK|zzdemo2026|JDC-DEMOEE|sigE'];
 var DEMO_PEOPLE = [
-  { empNo:'00001', name:'測試甲', unit:'管理部',   table:'1' },
-  { empNo:'00002', name:'測試乙', unit:'工務管理組', table:'2' },
-  { empNo:'00003', name:'測試丙', unit:'南港玉成', table:'3' },
-  { empNo:'00004', name:'測試丁', unit:'富貴莊園', table:'主桌' },
-  { empNo:'00005', name:'測試戊', unit:'宸實永寧', table:'5' }];
+  { internalId:'JDC-DEMOAA', name:'測試甲', unit:'管理部',   table:'1' },
+  { internalId:'JDC-DEMOBB', name:'測試乙', unit:'工務管理組', table:'2' },
+  { internalId:'JDC-DEMOCC', name:'測試丙', unit:'南港玉成', table:'3' },
+  { internalId:'JDC-DEMODD', name:'測試丁', unit:'富貴莊園', table:'主桌' },
+  { internalId:'JDC-DEMOEE', name:'測試戊', unit:'宸實永寧', table:'5' }];
 
 async function buildDemoSnapshot() {
   for (var i = 0; i < DEMO_CODES.length; i++) {
@@ -240,26 +244,57 @@ function updateQueueBadge() {   // D4：佇列筆數長駐畫面
   el.innerHTML = '待送 <span class="n">' + n + '</span> 筆';
   el.className = n > 0 ? 'warn' : '';
 }
-function enqueue(empNo, method) {
+/** 佇列項目的格式版本。v1（沒有這個欄位）帶的是員編，後端已經不認得。 */
+var QUEUE_V = 2;
+
+function enqueue(internalId, method) {
   if (DEMO) return;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
-  var q = loadQueue(); q.push({ empNo: empNo, ts: Date.now(), m: method || 'scan' });
+  var q = loadQueue();
+  q.push({ v: QUEUE_V, internalId: internalId, ts: Date.now(), m: method || 'scan' });
   saveQueue(q); flush();
 }
 
-/** empNo → hash 反查索引（C2 合併 seen 用），快照替換時重建。 */
-var empToHash = {};
+/**
+ * 開頁時把舊格式（v1，帶員編）的佇列項目挑出來隔離。
+ *
+ * 為何不自動轉換：舊項目只有員編，要轉成內部碼得查名冊，而**掃描站可能正處於離線
+ * 狀態**——那正是佇列存在的理由。
+ *
+ * 為何不直接丟掉：丟掉等於「有人報到過但紀錄不見了」，而且畫面上看不出來。
+ * 改成搬到另一把鍵存著（資料還在，可人工還原）＋在畫面上講一句，讓它被看見。
+ *
+ * 正常情況這裡永遠是 0 筆——離下一場活動還很久，佇列必然是空的。它不是 0 的時候，
+ * 代表有裝置用同一個瀏覽器留著上一場的殘留，那要有人知道。
+ */
+function quarantineLegacyQueue() {
+  var q = loadQueue();
+  var modern = q.filter(function (r) { return r && Number(r.v || 0) >= QUEUE_V; });
+  var legacy = q.filter(function (r) { return !(r && Number(r.v || 0) >= QUEUE_V); });
+  if (!legacy.length) return 0;
+  try {
+    var prev = JSON.parse(localStorage.getItem(QKEY + '_v1') || '[]');
+    localStorage.setItem(QKEY + '_v1', JSON.stringify(prev.concat(legacy)));
+  } catch (_) {}
+  saveQueue(modern);
+  note('dup', '有 ' + legacy.length + ' 筆舊格式的離線紀錄無法送出',
+       '已保留在這台裝置上，請告知工務管理組');
+  return legacy.length;
+}
+
+/** 內部碼 → hash 反查索引（C2 合併 seen 用），快照替換時重建。 */
+var idToHash = {};
 function rebuildEmpIndex() {
-  empToHash = {};
-  for (var h in snapshot) empToHash[snapshot[h].empNo] = h;
+  idToHash = {};
+  for (var h in snapshot) idToHash[snapshot[h].internalId] = h;
 }
 
 /**
- * 桌次一律回查快照（唯一有桌次的來源）——搜名用的 nameTable 只有 {empNo,name,unit}，
+ * 桌次一律回查快照（唯一有桌次的來源）——搜名用的 nameTable 只有 {internalId,name,unit}，
  * 所以走手動報到的人若本來就在參加者名單裡（沒綁定／相機掛掉），照樣講得出桌次；
  * 真正查不到的才是臨時出席。
  */
-function tableOf(empNo) {
-  var h = empToHash[empNo];
+function tableOf(internalId) {
+  var h = idToHash[internalId];
   return h && snapshot[h] ? (snapshot[h].table || '') : '';
 }
 function seatHtml(t) {
@@ -272,7 +307,7 @@ function seatHtml(t) {
 function personCard(cls, label, p) {
   show(cls, '<div class="eyebrow">' + esc(label) + '</div>'
     + '<div class="who">' + esc(p.name) + '</div>'
-    + seatHtml(tableOf(p.empNo))
+    + seatHtml(tableOf(p.internalId))
     + '<div class="unit">' + esc(p.unit || '') + '</div>');
 }
 
@@ -292,18 +327,20 @@ function flashFrame(kind) {
 
 // ─── 手動報到：單位 → 姓名 兩層下拉 ─────────────────────────────────────────
 // 名單＝快照參加者 ∪ 在職名冊（聯集）。只取在職名冊會漏掉「不在職但受邀」的人；
-// 只取參加者會漏掉臨時出席。以 empNo 為鍵去重，參加者的資料優先（它才有桌次）。
+// 只取參加者會漏掉臨時出席。以內部碼為鍵去重，參加者的資料優先（它才有桌次）。
 function allPeople() {
-  var byEmp = {};
+  var byId = {};
   for (var h in snapshot) {
     var s = snapshot[h];
-    byEmp[s.empNo] = { empNo: s.empNo, name: s.name, unit: s.unit };
+    byId[s.internalId] = { internalId: s.internalId, name: s.name, unit: s.unit };
   }
   for (var k in nameTable) {
     var n = nameTable[k];
-    if (n && n.empNo && !byEmp[n.empNo]) byEmp[n.empNo] = { empNo: n.empNo, name: n.name, unit: n.unit };
+    if (n && n.internalId && !byId[n.internalId]) {
+      byId[n.internalId] = { internalId: n.internalId, name: n.name, unit: n.unit };
+    }
   }
-  return Object.keys(byEmp).map(function (e) { return byEmp[e]; });
+  return Object.keys(byId).map(function (e) { return byId[e]; });
 }
 
 var peopleByUnit = {};
@@ -323,8 +360,8 @@ function buildPicker() {
 }
 
 /** 這個人本機已知報到過？（後端冪等仍是最終權威，這裡只影響排序與提示） */
-function isCheckedIn(empNo) {
-  var h = empToHash[empNo];
+function isCheckedIn(internalId) {
+  var h = idToHash[internalId];
   return !!(h && state.seen[h]);
 }
 
@@ -346,10 +383,10 @@ function fillNameSelect(unit) {
   // 已報到的沉到最下面，收進 optgroup——現場找的幾乎都是「還沒報到」的人，
   // 讓他們佔住上方；optgroup 的標題 iOS 會畫，<option> 的樣式不會。
   var pending = [], done = [];
-  list.forEach(function (p) { (isCheckedIn(p.empNo) ? done : pending).push(p); });
+  list.forEach(function (p) { (isCheckedIn(p.internalId) ? done : pending).push(p); });
   function opt(p) {
-    var t = tableOf(p.empNo);
-    return '<option value="' + esc(p.empNo) + '">' + esc(p.name)
+    var t = tableOf(p.internalId);
+    return '<option value="' + esc(p.internalId) + '">' + esc(p.name)
       + (t ? '・' + esc(t) + (/^\d+$/.test(t) ? ' 桌' : '') : '') + '</option>';
   }
   sel.innerHTML = '<option value="">── 請選擇（未報到 ' + pending.length + ' 人）──</option>'
@@ -382,12 +419,19 @@ async function flush() {
           return;                          // 保留剩餘佇列、等下一輪；不遞迴重試
         }
         // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
-        var sent = {}; packs[i].forEach(function (r) { sent[r.empNo + '|' + r.ts] = true; });
-        saveQueue(loadQueue().filter(function (r) { return !sent[r.empNo + '|' + r.ts]; }));
+        // ⚠️ 這把組合鍵要跟佇列項目實際帶的欄位一致。不一致的話送出成功、卻從佇列
+        //    移不掉 ⇒ **每 15 秒重送一次，永遠不會停**，而畫面上待送筆數一直不歸零。
+        var qkeyOf = function (r) { return r.internalId + '|' + r.ts; };
+        var sent = {}; packs[i].forEach(function (r) { sent[qkeyOf(r)] = true; });
+        saveQueue(loadQueue().filter(function (r) { return !sent[qkeyOf(r)]; }));
         lastSyncAt = new Date().toLocaleTimeString();
         document.getElementById('lastsync').textContent = lastSyncAt;
-        // C2：後端回傳全場已報到員編 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
-        state.seen = seenMerge(state.seen, res.allChecked, empToHash);
+        // 後端丟掉的列要看得見。正常永遠是 0（舊格式在開頁時就被隔離掉了）。
+        if (res.rejected) {
+          note('dup', '有 ' + res.rejected + ' 筆紀錄後端無法辨識', '請告知工務管理組');
+        }
+        // C2：後端回傳全場已報到的內部碼 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
+        state.seen = seenMerge(state.seen, res.allChecked, idToHash);
         saveSeen(state.seen);   // 別台掃的也要留在本機，否則重整後又會判成 ok
       } catch (err) {   // 網路中斷／逾時／JSON 解析失敗＝同一種失敗
         note('dup', '回寫未完成，' + loadQueue().length + ' 筆待送', '稍後自動重試，不必重掃');
@@ -407,17 +451,17 @@ document.addEventListener('visibilitychange', function () {
 });
 
 function manualCheckin(p) {
-  var h = empToHash[p.empNo];
+  var h = idToHash[p.internalId];
   var alreadySeen = h && state.seen[h];   // 本機已知報到過，但後端冪等仍允許再送出
   var msg = alreadySeen
     ? p.name + ' 已報到過，仍要再送出？'
     : ('手動報到：' + p.name + '（' + (p.unit || '') + '）？');
   if (!confirm(msg)) { resetPicker(); return; }
-  enqueue(p.empNo, 'manual');
+  enqueue(p.internalId, 'manual');
   if (h) state.seen[h] = true;
   // ⚠️ 臨時出席者不在快照裡＝沒有 hash，seen 追蹤不到他（applyScan 全程以 hash 為鍵）。
   // 後果僅止於「同一位臨時出席者再手動報到一次時，不會跳已報到過的提醒」；
-  // 資料端仍由後端冪等（活動ID＋員編）擋住，不會重複寫入。
+  // 資料端仍由後端冪等（活動ID＋內部碼）擋住，不會重複寫入。
   saveSeen(state.seen);   // 手動報到也算已掃，否則重整後同一人會再被判成 ok
   personCard('ok', '已受理・手動', p);
   flashFrame('ok');
@@ -573,7 +617,7 @@ async function handle(text, t0) {
     holdThenIdle();
     if (navigator.vibrate) navigator.vibrate(80);
     saveSeen(state.seen);   // 立刻落地：關窗／重整之後這個人仍算已報到
-    enqueue(r.verdict.person.empNo, 'scan');
+    enqueue(r.verdict.person.internalId, 'scan');
   } else if (r.verdict.type === 'dup') {
     // 重複掃的人多半是忘了自己第幾桌又回頭問，所以這張也要講得出桌次
     personCard('dup', '已報到過', r.verdict.person);
@@ -631,7 +675,8 @@ document.getElementById('theme').addEventListener('click', function () {
 try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'light'); } catch (e) { applyTheme('light'); }
 
 (async function init() {
-  updateQueueBadge();   // 佇列筆數不依賴 empToHash：開頁立刻反映上次 session 遺留的真實筆數，不等第一輪排程
+  quarantineLegacyQueue();   // 舊格式（v1，帶員編）的殘留先隔離＋講一句，不要靜靜送出去撞後端
+  updateQueueBadge();   // 佇列筆數不依賴 idToHash：開頁立刻反映上次 session 遺留的真實筆數，不等第一輪排程
   if (DEMO) {
     setTopbar('示範模式（不寫入）', '測試站');
     await buildDemoSnapshot();
@@ -639,20 +684,20 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
     updateQueueBadge();   // demo 快照建完後保險再確認一次（buildDemoSnapshot 不動佇列）
   } else {
     await loadSnapshot();
-    flush();   // 此時 empToHash 已由 applySnapshotPayload→rebuildEmpIndex 建好，立即補打一次殘留佇列
+    flush();   // 此時 idToHash 已由 applySnapshotPayload→rebuildEmpIndex 建好，立即補打一次殘留佇列
   }
   document.getElementById('selUnit').addEventListener('change', function () {
     fillNameSelect(this.value);
   });
   document.getElementById('selName').addEventListener('change', function () {
-    var emp = this.value;
-    if (!emp) { setPickHint(''); return; }
+    var id = this.value;
+    if (!id) { setPickHint(''); return; }
     var list = peopleByUnit[document.getElementById('selUnit').value] || [];
     for (var i = 0; i < list.length; i++) {
-      if (list[i].empNo === emp) {
+      if (list[i].internalId === id) {
         // 順序要緊：manualCheckin 內部會 resetPicker()，而它會清掉提示行，
         // 所以「先前是否已報到」要先記下來，等重設完再把紅字寫回去。
-        var was = isCheckedIn(emp), nm = list[i].name;
+        var was = isCheckedIn(id), nm = list[i].name;
         manualCheckin(list[i]);
         setPickHint(was ? '⚠ ' + nm + ' 先前已報到過' : '');
         return;
