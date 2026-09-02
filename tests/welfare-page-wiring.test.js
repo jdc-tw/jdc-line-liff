@@ -289,6 +289,37 @@ test('🔴 儲存／寄碼／送出三顆鈕都接上了 click（第六輪之前
   assert.deepStrictEqual(ctx.__hit, ['save', 'otp', 'send'], '有鈕按下去什麼都不會發生');
 });
 
+/* ── 生命週期三支被後端拒絕時，畫面一定要講話 ──
+ *
+ * 🔴 `restoreWelfareTemplate` 是新 action，**角色守門要另外設定才會放行**
+ *    ⇒ 上線初期最可能的回應就是「無權限或連結已失效」。
+ *    這時若畫面靜靜地什麼都不做，她會**一直按那顆鈕**，而每次都「沒反應」。
+ *    ⚠️ 那正是「失敗偽裝成別的東西」——看起來像鈕壞了，其實是後端拒絕。
+ */
+[['onAddTemplate', 'addWelfareTemplate', '新增'],
+ ['onDisableTemplate', 'removeWelfareTemplate', '停用'],
+ ['onRestoreTemplate', 'restoreWelfareTemplate', '恢復']].forEach(([fn, action, word]) => {
+  test('🔴 ' + word + '被後端拒絕時，畫面要說出原因（不可以靜靜沒反應）', async () => {
+    const { ctx, calls } = ctxWith([fn], {
+      TEMPLATES: { a: { templateId: 'a', title: '甲' } },
+      TPL_ORDER: ['a'], CURRENT_TPL: 'a',
+      responses: { [action]: { ok: false, msg: '無權限或連結已失效。' } },
+    });
+    ctx.confirm = () => true;               // 停用會問一次
+    ctx.loadTemplates = () => Promise.resolve();
+    ctx.document.getElementById('tpl-new-title').value = '新的';
+    await vm.runInContext(fn + '("a")', ctx);
+    // ⚠️ setNote 的 stub 記的是**物件** { id, text, cls }，不是陣列——
+    //    取成 n[0] 會永遠拿到 undefined，而那讓受測物看起來壞掉（實際是取法錯）。
+    const notes = calls.note.filter((n) => n.id === 'tpl-life-note');
+    assert.ok(notes.length, word + '失敗卻一個字都沒說——她會以為鈕壞了');
+    const last = notes[notes.length - 1];
+    assert.ok(String(last.text).indexOf('無權限') >= 0,
+      '沒有把後端講的原因帶出來：' + JSON.stringify(last));
+    assert.equal(last.cls, 'err', '不是標成錯誤 ⇒ 讀起來像成功');
+  });
+});
+
 test('🔴 新增／停用／恢復三顆也要接上（後端有、前端沒接＝那功能等於不存在）', () => {
   // 2026-09-02：`addWelfareTemplate` 與 `removeWelfareTemplate` 在此之前
   // **後端有、前端一個呼叫點都沒有** ⇒ 新增與刪除只能找工程師改表，

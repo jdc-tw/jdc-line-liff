@@ -976,8 +976,10 @@ function afterLifecycle(note) {
 
 function onAddTemplate() {
   var t = String(document.getElementById('tpl-new-title').value || '').trim();
-  if (!t) { setNote('tpl-life-note', '請先給這一則一個標題。', 'err'); return; }
-  gasCall(GAS_URL, 'addWelfareTemplate', { token: TOKEN, title: t }, 30000)
+  if (!t) { setNote('tpl-life-note', '請先給這一則一個標題。', 'err'); return Promise.resolve(); }
+  // ⚠️ **要 return**：不回傳的話呼叫端等不到它——測試等不到，
+  //    日後要接「做完再做下一件」也接不上，而那時的症狀是「順序偶爾錯」。
+  return gasCall(GAS_URL, 'addWelfareTemplate', { token: TOKEN, title: t }, 30000)
     .then(function (r) {
       if (!r || !r.ok) {
         setNote('tpl-life-note', '新增失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
@@ -991,12 +993,12 @@ function onAddTemplate() {
 
 function onDisableTemplate() {
   var id = CURRENT_TPL;
-  if (!id) return;
+  if (!id) return Promise.resolve();
   var title = (TEMPLATES[id] && TEMPLATES[id].title) || id;
   // 停用是**可以恢復的**，所以這裡問的重點不是「你確定嗎」，
   // 而是讓她知道它會去哪裡——不然她會以為東西不見了。
-  if (!confirm('要停用「' + title + '」嗎？\n它會移到下面的「已停用的範本」，隨時可以恢復。')) return;
-  gasCall(GAS_URL, 'removeWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
+  if (!confirm('要停用「' + title + '」嗎？\n它會移到下面的「已停用的範本」，隨時可以恢復。')) return Promise.resolve();
+  return gasCall(GAS_URL, 'removeWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
     .then(function (r) {
       if (!r || !r.ok) {
         setNote('tpl-life-note', '停用失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
@@ -1008,7 +1010,7 @@ function onDisableTemplate() {
 
 function onRestoreTemplate(id) {
   var title = (TEMPLATES[id] && TEMPLATES[id].title) || id;
-  gasCall(GAS_URL, 'restoreWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
+  return gasCall(GAS_URL, 'restoreWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
     .then(function (r) {
       if (!r || !r.ok) {
         setNote('tpl-life-note', '恢復失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
