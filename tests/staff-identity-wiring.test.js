@@ -88,7 +88,8 @@ function harness(opt) {
                   ctx, { filename: 'partial-failure.js' });
   vm.runInContext([
     varSrc('DEMO_CODES = \\['), varSrc('DEMO_PEOPLE = \\['),
-    fnSrc('loadQueue'), fnSrc('saveQueue'),
+    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('saveQueue'),
+    fnSrc('quarantineRawQueue'), fnSrc('commitCheckin'),
     'var QUEUE_V = 2;',
     fnSrc('enqueue'), fnSrc('quarantineLegacyQueue'),
     fnSrc('rebuildEmpIndex'), fnSrc('tableOf'), fnSrc('isCheckedIn'),
@@ -464,4 +465,112 @@ test('對照組：佇列全是新格式時，一句話都不會多講', () => {
   ctx.document = { getElementById: () => ({ set innerHTML(v) { badge = v; }, set className(v) {} }) };
   ctx.updateQueueBadge();
   assert.ok(badge.indexOf('送不出去') < 0, '徽章也不該多講。實際內容：' + badge);
+});
+
+/* ══ A1／A2：入列成功才可以說「已受理」，讀不到不可以當成沒有 ══════════════
+   2026-09-02 自查。兩件是同一條路上的兩處，一起修、一起測：
+   A1＝`loadQueue` 壞 JSON 回 []，而呼叫端讀-改-寫 ⇒ 整份待送報到被覆蓋消滅
+   A2＝掃碼路徑「先顯示綠燈 → saveSeen → enqueue」，寫入失敗時
+       操作員看到綠燈、seen 已落地、那筆從未進佇列
+       ⇒ 這個人永遠不會被記錄，而系統會堅稱他報到過。 */
+
+/** 寫入會失敗的 storage：setItem 靜靜不寫（配額滿在某些瀏覽器就是這個樣子，不拋錯）。 */
+function brokenStorage(init, failKeyPrefix) {
+  const s = fakeStorage(init);
+  const realSet = s.setItem;
+  s.setItem = (k, v) => { if (String(k).indexOf(failKeyPrefix) === 0) return; realSet(k, v); };
+  return s;
+}
+
+test('★readQueue：「本來就沒有」與「讀不到」要分得開', () => {
+  const ctx = harness({ storage: fakeStorage({}) });
+  assert.deepEqual(ctx.readQueue(), { ok: true, rows: [] }, '沒有這個鍵＝真的沒有東西');
+  ctx.localStorage.setItem('q', '');
+  assert.equal(ctx.readQueue().ok, true, '空字串也是「真的沒有」');
+  ctx.localStorage.setItem('q', '{壞掉的 JSON');
+  assert.equal(ctx.readQueue().ok, false, '解析不出來卻說 ok＝呼叫端會拿空陣列蓋掉它');
+  ctx.localStorage.setItem('q', '{"not":"array"}');
+  assert.equal(ctx.readQueue().ok, false, '不是陣列也算讀不到');
+});
+
+test('🔴★A1：佇列讀不到時，原始值要先留一份，不可以直接被蓋掉', () => {
+  const storage = fakeStorage({ q: '[{"v":2,"internalId":"JDC-HJKMNP"' });   // 截斷的 JSON
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
+  assert.equal(ctx.enqueue('JDC-BCDFGH', 'scan'), true, '隔離成功後應該可以重新開始');
+  const kept = storage.getItem('q_unreadable');
+  assert.ok(kept && kept.indexOf('JDC-HJKMNP') >= 0,
+    '讀不到的原始值沒有留下來＝那些人的報到永遠消失了。實際：' + JSON.stringify(kept));
+  assert.equal(JSON.parse(storage.getItem('q')).length, 1, '新的那一筆要進得去');
+});
+
+test('🔴★A1：連隔離都失敗時，enqueue 要回 false 且不覆蓋原始值', () => {
+  // 留著至少還在，蓋掉就永遠沒了——所以隔離不成功就整筆失敗。
+  const storage = brokenStorage({ q: '[{壞掉' }, 'q_unreadable');
+  const ctx = harness({ storage });
+  assert.equal(ctx.enqueue('JDC-BCDFGH', 'scan'), false);
+  assert.equal(storage.getItem('q'), '[{壞掉', '原始值被動過了＝兩邊都沒有');
+});
+
+test('🔴★A2：寫入失敗時，掃碼路徑不可以說「已受理」', async () => {
+  const storage = brokenStorage({}, 'q');
+  const ctx = harness({ storage });
+  const h = await scan.sha256Hex('CHK|zzdemo2026|JDC-HJKMNP|SIG');
+  ctx.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7' };
+  ctx.ready = true;
+  await ctx.handle('CHK|zzdemo2026|JDC-HJKMNP|SIG', 0);
+  const okCards = ctx.calls.cards.filter((c) => c.cls === 'ok');
+  assert.equal(okCards.length, 0,
+    '沒存起來卻顯示綠燈＝操作員以為他報到了，而那筆從未進佇列。實際卡片：'
+    + JSON.stringify(ctx.calls.cards.map((c) => c.label)));
+  const bad = ctx.calls.notes.filter((n) => n.cls === 'bad');
+  assert.equal(bad.length, 1, '也要真的講出來，不是靜靜地什麼都不做');
+  assert.match(bad[0].text, /沒有存起來/);
+});
+
+test('🔴★A2：寫入失敗時 seen 要收回去——否則再掃一次會說「已報到過」', async () => {
+  const storage = brokenStorage({}, 'q');
+  const ctx = harness({ storage });
+  const h = await scan.sha256Hex('CHK|zzdemo2026|JDC-HJKMNP|SIG');
+  ctx.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7' };
+  ctx.ready = true;
+  await ctx.handle('CHK|zzdemo2026|JDC-HJKMNP|SIG', 0);
+  assert.equal(!!ctx.state.seen[h], false,
+    'seen 還記著他＝同一個謊換個地方講：再掃會被判「已報到過」，而他其實沒被記錄');
+});
+
+test('🔴★★兩條路徑（掃碼／手動）在寫入失敗時的行為必須一致', async () => {
+  // 這一條綁兩個入口。分開各測一條的話，下次它們還是可以各自漂走
+  // ——順序原本就是這樣漂掉的（掃碼先顯示、手動先入列）。
+  const mk = () => brokenStorage({}, 'q');
+  const c1 = harness({ storage: mk() });
+  const h = await scan.sha256Hex('CHK|zzdemo2026|JDC-HJKMNP|SIG');
+  c1.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7' };
+  c1.ready = true;
+  await c1.handle('CHK|zzdemo2026|JDC-HJKMNP|SIG', 0);
+
+  const c2 = harness({ storage: mk() });
+  c2.manualCheckin({ internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部' });
+
+  const okOf = (c) => c.calls.cards.filter((x) => x.cls === 'ok').length;
+  const badOf = (c) => c.calls.notes.filter((x) => x.cls === 'bad').length;
+  assert.equal(okOf(c1), okOf(c2), '一條說已受理、另一條說失敗＝同一個判斷又分歧了');
+  assert.equal(okOf(c1), 0, '兩條都不可以說已受理');
+  assert.equal(badOf(c1), badOf(c2), '講不講出來也要一致');
+  assert.equal(badOf(c1), 1);
+});
+
+test('對照組：寫得進去時兩條路徑都說「已受理」，且各自都真的入列了', async () => {
+  // 沒有這條，上面那些也可能只是「它永遠說失敗」。
+  const c1 = harness({ storage: fakeStorage({}), jgetRes: { ok: true, writtenKeys: [] } });
+  const h = await scan.sha256Hex('CHK|zzdemo2026|JDC-HJKMNP|SIG');
+  c1.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7' };
+  c1.ready = true;
+  await c1.handle('CHK|zzdemo2026|JDC-HJKMNP|SIG', 0);
+  assert.equal(c1.calls.cards.filter((x) => x.cls === 'ok').length, 1);
+  assert.equal(!!c1.state.seen[h], true, '成功時 seen 要記著');
+
+  const c2 = harness({ storage: fakeStorage({}), jgetRes: { ok: true, writtenKeys: [] } });
+  c2.manualCheckin({ internalId: 'JDC-BCDFGH', name: '乙', unit: 'B部' });
+  assert.equal(c2.calls.cards.filter((x) => x.cls === 'ok').length, 1);
+  assert.equal(JSON.parse(c2.localStorage.getItem('q'))[0].internalId, 'JDC-BCDFGH');
 });

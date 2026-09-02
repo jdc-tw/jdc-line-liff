@@ -243,8 +243,60 @@ var lastSyncAt = '';   // 版本診斷列用
 function loadSeen() { return seenLoad(localStorage, SEEN_KEY); }
 function saveSeen(seen) { return seenSave(localStorage, SEEN_KEY, seen); }
 state.seen = loadSeen();   // 開頁就把上次的已掃名單接回來（宣告在上面、鍵在這裡，故於此回填）
-function loadQueue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(_) { return []; } }
-function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQueueBadge(); }
+/**
+ * 佇列讀取。**「本來就沒有」與「讀不到」要分得開。**
+ *
+ * 🔴 為何（2026-09-02 自查 A1）：舊寫法壞 JSON 一律回 `[]`，而呼叫端全是**讀-改-寫**
+ * （`var q = loadQueue(); … saveQueue(q);`）⇒ 讀壞一次就把整份待送報到**永久覆蓋消滅**，
+ * 而徽章顯示「待送 0 筆」＝**看起來全部送完了**。零錯誤訊息。
+ *
+ * @returns {{ok:boolean, rows:Array}} ok:false ⇒ **不可以**拿 rows 去覆蓋 storage
+ */
+function readQueue() {
+  var raw;
+  try { raw = localStorage.getItem(QKEY); } catch (_) { return { ok: false, rows: [] }; }
+  if (raw == null || raw === '') return { ok: true, rows: [] };   // 真的沒有東西
+  try {
+    var v = JSON.parse(raw);
+    if (!Array.isArray(v)) return { ok: false, rows: [] };
+    return { ok: true, rows: v };
+  } catch (_) { return { ok: false, rows: [] }; }
+}
+
+/** 只是要看幾筆時用這支（顯示用途沒有覆蓋風險）。要寫回去的一律走 readQueue。 */
+function loadQueue() { return readQueue().rows; }
+
+/**
+ * 讀不到的原始值先留一份再說。**搬不成功就不准覆蓋**——留著至少還在，蓋掉就永遠沒了。
+ * 存的是原始字串不是解析後的列：解析不出來才會走到這裡，硬解會再丟一次。
+ */
+function quarantineRawQueue() {
+  try {
+    var raw = localStorage.getItem(QKEY);
+    if (raw == null || raw === '') return true;   // 沒有可失去的
+    var k = QKEY + '_unreadable';
+    var prev = localStorage.getItem(k) || '';
+    localStorage.setItem(k, prev + (prev ? '\n' : '') + raw);
+    var back = localStorage.getItem(k) || '';
+    return back.length >= prev.length + raw.length;   // 回讀確認，不信 setItem 沒拋錯
+  } catch (_) { return false; }
+}
+
+/**
+ * 佇列寫入。**回讀確認才算成功**——`setItem` 不拋錯不代表寫進去了
+ * （配額滿、私密模式都可能靜靜失敗）。
+ * @returns {boolean} false ⇒ 這一批沒有落地，呼叫端不可以宣稱成功
+ */
+function saveQueue(q) {
+  var ok = false;
+  try {
+    localStorage.setItem(QKEY, JSON.stringify(q));
+    var back = readQueue();
+    ok = back.ok && back.rows.length === q.length;
+  } catch (_) { ok = false; }
+  updateQueueBadge();
+  return ok;
+}
 /**
  * 佇列筆數長駐畫面（D4）。
  *
@@ -304,6 +356,9 @@ function quarantineRows(bucketKey, rows) {
 /** 隔離區目前有幾筆（兩個桶加總）。**從 storage 讀，不是記這次搬了幾筆。** */
 function quarantinedCount() {
   var n = 0;
+  // 讀不到的原始佇列存的是字串不是列，算不出筆數；有東西就記 1 筆，
+  // 讓它至少出現在畫面上——不然「整份讀不到」會是唯一沒有人被告知的情況。
+  try { if ((localStorage.getItem(QKEY + '_unreadable') || '')) n += 1; } catch (_) {}
   [QKEY + '_v1', QKEY + '_rejected'].forEach(function (k) {
     try {
       var a = JSON.parse(localStorage.getItem(k) || '[]');
@@ -313,11 +368,51 @@ function quarantinedCount() {
   return n;
 }
 
+/**
+ * 入列。**回傳這一筆到底有沒有落地**——呼叫端要拿它決定畫面說什麼。
+ * @returns {boolean}
+ */
 function enqueue(internalId, method) {
-  if (DEMO) return;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
-  var q = loadQueue();
+  if (DEMO) return true;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
+  var cur = readQueue();
+  if (!cur.ok) {
+    // 讀不到就**不可以**拿一個空陣列寫回去——那會把還沒送出的報到整份蓋掉。
+    // 先把讀不到的原始值搬進隔離區；搬成功才允許從空的重新開始，搬不成功就整筆失敗。
+    if (!quarantineRawQueue()) return false;
+  }
+  var q = cur.rows;
   q.push({ v: QUEUE_V, internalId: internalId, ts: Date.now(), m: method || 'scan' });
-  saveQueue(q); flush();
+  if (!saveQueue(q)) return false;
+  flush();
+  return true;
+}
+
+/**
+ * 報到落地：**入列成功才可以對操作員說「已受理」，也才可以把人記進 seen。**
+ *
+ * 🔴 為何兩條路徑共用這一支（2026-09-02 自查 A2）：
+ * 掃碼路徑原本是「先顯示綠燈 → saveSeen → enqueue」，手動路徑是「enqueue → saveSeen → 顯示」。
+ * **同一個判斷散在兩處，而沒有任何東西要求它們相等**，於是順序漂掉了。
+ * 掃碼那個順序在寫入失敗時：操作員**已經看到綠燈**、seen **已經落地**
+ * （同一個人再掃會被判「已報到過」）、而那筆報到**從未進入佇列**
+ * ⇒ **這個人永遠不會被記錄，而系統會堅稱他報到過。** 零錯誤訊息。
+ *
+ * 失敗時要把 seen 收回去：applyScan 已經在記憶體裡把他標成掃過了，
+ * 不收回的話同一場再掃一次會被判「已報到過」——那是同一個謊，只是換個地方講。
+ *
+ * @param {string} internalId
+ * @param {string} method 'scan'｜'manual'
+ * @param {string=} hash 快照鍵；臨時出席者沒有，沒有就不記 seen
+ * @returns {boolean} false ⇒ 呼叫端**必須**顯示失敗，不可以說已受理
+ */
+function commitCheckin(internalId, method, hash) {
+  if (!enqueue(internalId, method)) {
+    if (hash) delete state.seen[hash];
+    return false;
+  }
+  if (hash) state.seen[hash] = true;
+  saveSeen(state.seen);   // 立刻落地：關窗／重整之後這個人仍算已報到
+  return true;
 }
 
 /**
@@ -580,12 +675,17 @@ function manualCheckin(p) {
     ? p.name + ' 已報到過，仍要再送出？'
     : ('手動報到：' + p.name + '（' + (p.unit || '') + '）？');
   if (!confirm(msg)) { resetPicker(); return; }
-  enqueue(p.internalId, 'manual');
-  if (h) state.seen[h] = true;
   // ⚠️ 臨時出席者不在快照裡＝沒有 hash，seen 追蹤不到他（applyScan 全程以 hash 為鍵）。
   // 後果僅止於「同一位臨時出席者再手動報到一次時，不會跳已報到過的提醒」；
   // 資料端仍由後端冪等（活動ID＋內部碼）擋住，不會重複寫入。
-  saveSeen(state.seen);   // 手動報到也算已掃，否則重整後同一人會再被判成 ok
+  if (!commitCheckin(p.internalId, 'manual', h)) {
+    note('bad', p.name + ' 這一筆沒有存起來，請再試一次',
+         '若連續失敗：這台手機的儲存空間可能滿了，改用別台或先用紙本記下姓名');
+    flashFrame('bad');
+    holdThenIdle(5000);
+    resetPicker();
+    return;
+  }
   personCard('ok', '已受理・手動', p);
   flashFrame('ok');
   holdThenIdle();
@@ -767,13 +867,19 @@ async function handle(text, t0) {
   state = r.state;
   var ms = Math.round(performance.now() - t0);
   if (r.verdict.type === 'ok') {
-    // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
-    personCard('ok', '已受理', r.verdict.person);
-    flashFrame('ok');
-    holdThenIdle();
-    if (navigator.vibrate) navigator.vibrate(80);
-    saveSeen(state.seen);   // 立刻落地：關窗／重整之後這個人仍算已報到
-    enqueue(r.verdict.person.internalId, 'scan');
+    // 順序與手動路徑一致，且不是各自寫對——**兩條共用 commitCheckin**（見該函式標頭）。
+    if (commitCheckin(r.verdict.person.internalId, 'scan', h)) {
+      // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
+      personCard('ok', '已受理', r.verdict.person);
+      flashFrame('ok');
+      holdThenIdle();
+      if (navigator.vibrate) navigator.vibrate(80);
+    } else {
+      note('bad', '這一筆沒有存起來，請再掃一次',
+           '若連續失敗：這台手機的儲存空間可能滿了，改用別台或先用紙本記下姓名');
+      flashFrame('bad');
+      holdThenIdle(5000);   // 失敗要多留一會兒，操作員得有時間讀完並決定怎麼處理
+    }
   } else if (r.verdict.type === 'dup') {
     // 重複掃的人多半是忘了自己第幾桌又回頭問，所以這張也要講得出桌次
     personCard('dup', '已報到過', r.verdict.person);
