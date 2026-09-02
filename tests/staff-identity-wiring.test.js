@@ -88,7 +88,8 @@ function harness(opt) {
                   ctx, { filename: 'partial-failure.js' });
   vm.runInContext([
     varSrc('DEMO_CODES = \\['), varSrc('DEMO_PEOPLE = \\['),
-    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('qrowKey'), fnSrc('saveQueue'),
+    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('qrowKey'),
+    fnSrc('qrowCanon'), fnSrc('qrowCounts'), fnSrc('qrowCountsEqual'), fnSrc('saveQueue'),
     fnSrc('quarantineRawQueue'), fnSrc('commitCheckin'), fnSrc('wipeConfirmText'),
     'var QUEUE_V = 2;',
     fnSrc('enqueue'), fnSrc('quarantineLegacyQueue'),
@@ -765,4 +766,116 @@ test('對照組：單一分頁連續兩次入列，兩筆都在（證明不是�
   assert.equal(ctx.enqueue('JDC-BBBB22', 'manual'), true);
   const ids = JSON.parse(storage.getItem('q')).map((r) => r.internalId).sort();
   assert.deepEqual(ids, ['JDC-AAAA11', 'JDC-BBBB22']);
+});
+
+/* ══ 外審 R2 #2／#3／#8／#9：上一輪修法自己注入的四條 ═══════════════════════
+   四條是同一個形狀的四個位置：**「我宣稱驗過了」與「我實際驗了什麼」之間的落差。**
+   #2 子集合當成整份取代／#3 隔離語意只套在第一次讀／#8 只驗身分不驗內容／
+   #9 說共用一把鍵而第二把還在。四條都是**綠燈狀態下**發生的。 */
+
+test('🔴★#2：saveQueue([]) 寫入靜默失敗、舊佇列原封不動 → 必須回 false', () => {
+  // 子集合檢查在 q=[] 時 `every` **恆真** ⇒ 永遠回 true。
+  // 而 flush 正是拿它來保存「過濾掉已寫入列」的結果——**清空那一步永遠說成功**，
+  // 於是那幾筆會每 15 秒重送一次，而畫面上待送筆數一直不歸零卻沒有人被告知原因。
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]) });
+  storage.setItem = () => {};   // 靜默失敗：不拋錯、也沒寫進去
+  const ctx = harness({ storage });
+  assert.equal(ctx.saveQueue([]), false, '空陣列讓子集合檢查恆真＝清空永遠說成功');
+});
+
+test('🔴★#2：回讀多出一列（別的分頁剛寫進來）→ 必須回 false', () => {
+  const storage = fakeStorage({});
+  const realSet = storage.setItem;
+  storage.setItem = (k, v) => {
+    realSet(k, v);
+    if (k === 'q') realSet(k, JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' },
+                                              { v: 2, internalId: 'JDC-OTHERX', ts: 9, m: 'scan' }]));
+  };
+  const ctx = harness({ storage });
+  assert.equal(ctx.saveQueue([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]), false,
+    '「我那幾列都在」放過了多出來的列——而 saveQueue 是整份取代，不是「至少包含」');
+});
+
+test('🔴★#2：同一列該有兩筆、只回讀到一筆 → 必須回 false', () => {
+  const storage = fakeStorage({});
+  const realSet = storage.setItem;
+  storage.setItem = (k, v) => {
+    realSet(k, v);
+    if (k === 'q') realSet(k, JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]));
+  };
+  const ctx = harness({ storage });
+  const two = [{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' },
+               { v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }];
+  assert.equal(ctx.saveQueue(two), false, '用布林 map 記「有沒有」就數不出次數');
+});
+
+test('🔴★#8：身分鍵相同但報到方式被改掉 → 必須回 false', () => {
+  // `m`（掃碼／手動）與 `v`（schema 版本）是實際資料，不是可忽略的 metadata：
+  // 報到方式會出現在試算表上，是事後查「這個人怎麼進來的」的唯一依據。
+  const storage = fakeStorage({});
+  const realSet = storage.setItem;
+  storage.setItem = (k, v) => {
+    realSet(k, v);
+    if (k === 'q') realSet(k, JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]));
+  };
+  const ctx = harness({ storage });
+  assert.equal(ctx.saveQueue([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'manual' }]), false,
+    'qrowKey 只回答「這是哪一列」，驗存檔要問「這一列長什麼樣」');
+});
+
+test('🔴★#3：第二次讀失敗時不可以拿幾行前的快照覆寫（隔離語意要套在兩次讀上）', () => {
+  // 走得到的路：第一次讀成功 ⇒ 另一個分頁把佇列寫成讀不出來的樣子 ⇒ 最後一刻那一讀失敗。
+  // 舊寫法退回 cur.rows（幾行前的快照）⇒ 那個分頁寫進來的整份消失，而且回 true。
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAA11', ts: 1, m: 'scan' }]) });
+  let reads = 0;
+  const realGet = storage.getItem;
+  storage.getItem = (k) => {
+    if (k !== 'q') return realGet(k);
+    if (++reads === 1) return realGet(k);        // 第一次：好的
+    return '{壞掉的 JSON';                        // 最後一刻：讀不出來
+  };
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
+  ctx.enqueue('JDC-CCCC33', 'scan');
+  const kept = storage.getItem('q_unreadable') || '';
+  assert.ok(kept.indexOf('{壞掉的 JSON') >= 0,
+    '第二次讀失敗時，讀不到的原始值必須先留一份。實際隔離區：' + JSON.stringify(kept));
+});
+
+test('🔴★#3：第二次讀失敗且隔離也失敗 → 整筆失敗，一個字都不准寫回去', () => {
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAA11', ts: 1, m: 'scan' }]) });
+  let reads = 0;
+  const realGet = storage.getItem, realSet = storage.setItem;
+  // ⚠️ **只讓「最後一刻」那一讀壞掉，後面的回讀要好的。**
+  // 原本寫成「第二次之後每次都壞」⇒ saveQueue 的回讀也失敗 ⇒ 突變版照樣回 false
+  // ⇒ **這條在突變下也綠，是因為一個跟它要測的東西無關的原因**（零鑑別力）。
+  storage.getItem = (k) => {
+    if (k !== 'q') return realGet(k);
+    if (++reads === 2) return '{壞掉的 JSON';   // 只有最後一刻那一讀壞
+    return realGet(k);
+  };
+  storage.setItem = (k, v) => { if (k === 'q_unreadable') return; realSet(k, v); };   // 隔離寫不進去
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
+  assert.equal(ctx.enqueue('JDC-CCCC33', 'scan'), false,
+    '留不成底就不可以覆寫——留著至少還在，蓋掉就永遠沒了');
+});
+
+test('對照組：兩次讀都成功時照常入列（證明上面兩條不是「它永遠說失敗」）', () => {
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAA11', ts: 1, m: 'scan' }]) });
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
+  assert.equal(ctx.enqueue('JDC-CCCC33', 'scan'), true);
+  const ids = JSON.parse(storage.getItem('q')).map((r) => r.internalId).sort();
+  assert.deepEqual(ids, ['JDC-AAAA11', 'JDC-CCCC33']);
+});
+
+test('🔴★#9：後端回的鍵是 trim 過的，前端帶空白的那一列仍要被移除（跨 repo 契約）', async () => {
+  // 🔴 這是 #9 真正的後果，而報告沒有走到這一步：**第三把鍵在另一個 repo**。
+  // 後端 accountedKeys 是 `String(internalId).trim() + '|' + ts`；
+  // 前端上一版兩把鍵都不 trim ⇒ 內部碼只要帶一個空白，比對就永遠落空
+  // ⇒ 那一列被判「後端沒寫入」⇒ 搬進隔離區＋跳假警告，**而資料其實已經寫進去了**。
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: ' JDC-HJKMNP ', ts: 1, m: 'scan' }]) });
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: ['JDC-HJKMNP|1'] } });
+  await ctx.flush();
+  assert.deepEqual(JSON.parse(storage.getItem('q')), [], '後端說寫進去了，這一列就該從佇列移除');
+  assert.equal(storage.getItem('q_rejected'), null, '不可以搬進隔離區——它其實寫進去了');
+  assert.equal(ctx.calls.notes.filter((n) => n.cls === 'bad').length, 0, '不可以跳假警告');
 });

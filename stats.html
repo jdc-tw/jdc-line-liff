@@ -1017,7 +1017,18 @@ function renderDetail(title,list,showTableTag){
       if(showTableTag)h+=s.table?('<span class="tno">'+esc(s.table)+' 桌</span>')
                               :'<span class="chg">未排桌</span>';   // 空白會看起來像漏資料
     }
-    h+='<span class="mini" onclick="moveSeat(\''+s.kind+'\',\''+esc(String(s.id))+'\',\''+esc(s.name)+'\')">移桌</span></div>';
+    // 🔴 2026-09-02 外審 R2 #10：同一張座位卡原本把身分帶了兩份——
+    // 點名字讀 `internalId`、移桌讀 `id`，而前端沒有任何東西要求那兩格相等。
+    // 兩格一旦分歧：**叫出 A 的 QR、移動 B 的位子**，兩個動作各自看起來都成功。
+    //
+    // ⚠️ 但**不能一律改讀 `internalId`**：`id` 對員工與廠商是兩種不同的東西——
+    //   員工的 `id` 是內部碼（與 internalId 同一個變數，後端 getSeatingBoard 保證相等），
+    //   廠商的 `id` 是**回覆表列號**，而且廠商根本沒有 internalId。
+    //   廠商改讀 internalId ⇒ setGuestTable 收到空的列號，移桌整支壞掉。
+    // ⇒ 不變量寫成「**員工的兩個動作用同一個身分**」，不是「所有卡片都讀同一格」。
+    //   後端保證相等時這是等價的；保證萬一破了，至少不會移到別人身上。
+    var moveKey = (s.kind==='emp') ? String(s.internalId||'') : String(s.id);
+    h+='<span class="mini" onclick="moveSeat(\''+s.kind+'\',\''+esc(moveKey)+'\',\''+esc(s.name)+'\')">移桌</span></div>';
   });
   document.getElementById('seat-detail').innerHTML=h+'</div>';
 }

@@ -154,25 +154,40 @@ test('🔴對照組：只把內部碼拿掉，`id` 給一個**不同的**誘餌�
     'internalId 是空的時候改去讀 `id`＝那個人會被當成別人叫出 QR。實際產出：' + html);
 });
 
-test('🔴★同一張座位卡把身分帶了兩份：點名字讀 internalId、移桌讀 id', () => {
+test('🔴★員工卡的兩個動作必須用同一個身分（分歧＝叫出 A 的 QR、移動 B 的位子）', () => {
   // 這是上面那條對照組意外量出來的：誘餌值出現在 `moveSeat('emp','JDC-DECOYX',…)`。
   // ⇒ **兩個動作各讀一格，而前端沒有任何東西要求那兩格相等。**
   //   兩格一旦分歧：點名字叫出 A 的 QR、移桌移到 B 的位子，而畫面上完全看不出來。
   //
-  // 目前是靠**後端**綁住的（seating-identity.test.js 斷言 getSeatingBoard 吐的
-  // internalId 必須 === id）。這一條把那個依賴**寫在前端這一側**，
-  // 免得日後有人改了後端而不知道前端在依賴它。
+  // 🔴 2026-09-02 外審 R2 #10：**上一版這裡寫的是 `assert.notEqual`。**
+  // 那是把「當場撿到的缺陷」直接寫成了期望值——**要求缺陷存在**。
+  // 後果是最惡的一種：日後有人做正確的修法（讓兩個動作用同一個身分），
+  // 這條會紅，而他會回頭把對的改壞。
+  // ⇒ 判準：**發現缺陷的當下寫測試，要先問「我在釘住不變量，還是在釘住現況？」**
+  //
+  // 現在釘的是不變量：**餵不相等的兩格，員工卡的兩個動作仍必須落在同一個身分上**
+  // （產品碼已改成員工一律用 internalId）。後端 seating-identity 的
+  // 「getSeatingBoard 吐的 id === internalId」是第二道，兩道各自獨立。
   const html = renderSeats([
     { kind: 'emp', id: 'JDC-AAAA11', internalId: 'JDC-BBBB22', name: '李明', unit: 'A部', table: '1' },
   ]);
   const person = /showPerson\('([^']*)'/.exec(html);
   const move = /moveSeat\('emp','([^']*)'/.exec(html);
   assert.ok(person && move, '兩個動作都要在產出裡。實際：' + html);
-  assert.notEqual(person[1], move[1],
-    '這一條刻意餵不相等的兩格，就是要暴露「兩個動作讀不同格」這件事');
-  // 🔴 真正的守門在後端：兩格必須相等。這裡只記載前端確實依賴那個保證。
-  assert.equal(person[1], 'JDC-BBBB22', '點名字讀的是 internalId');
-  assert.equal(move[1], 'JDC-AAAA11', '移桌讀的是 id——後端保證它等於 internalId');
+  assert.equal(person[1], move[1],
+    '員工卡的兩個動作讀到不同身分＝叫出 A 的 QR、移動 B 的位子，兩邊都看起來成功。實際產出：' + html);
+  assert.equal(person[1], 'JDC-BBBB22', '兩個動作共用的那一格必須是 internalId');
+});
+
+test('🔴對照組：廠商卡的移桌仍要用列號（廠商沒有 internalId，改讀就整支壞掉）', () => {
+  // 這條是上面那個修法的**代價守門**：不變量是「員工的兩個動作同身分」，
+  // 不是「所有卡片都讀 internalId」。廠商的 `id` 是回覆表列號，
+  // 一律改讀 internalId 會讓 setGuestTable 收到空的列號 ⇒ 移桌靜靜失敗。
+  const html = renderSeats([
+    { kind: 'guest', id: '37', name: '大同公司', table: '2' },
+  ]);
+  assert.ok(html.indexOf("moveSeat('guest','37'") >= 0,
+    '廠商的移桌必須帶列號 37。實際產出：' + html);
 });
 
 /* ── 批次下載的檔名：同名同單位不可以互相覆蓋 ───────────────────────────── */

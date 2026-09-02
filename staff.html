@@ -282,8 +282,45 @@ function quarantineRawQueue() {
   } catch (_) { return false; }
 }
 
-/** 佇列項目的身分。移除、比對、驗證都用這一把，避免各處各自組鍵而漂開。 */
-function qrowKey(r) { return String(r && r.internalId) + '|' + String(r && r.ts); }
+/**
+ * 佇列項目的身分。移除、比對、驗證都用這一把，避免各處各自組鍵而漂開。
+ *
+ * 🔴 **這把鍵有第三個持有人，而且在另一個 repo**（2026-09-02 外審 R2 #9 順藤摸到）。
+ * 後端 `accountedKeys()` 產生 `writtenKeys`，前端拿它比對「哪幾列真的寫進去了」
+ * ⇒ **兩邊組鍵的方式必須逐字相同，否則比對全部落空。**
+ * 上一版三處各寫各的：這裡不 trim、`flush` 裡那一把連 `String()` 都沒有、
+ * 後端有 `.trim()` ⇒ **內部碼只要帶一個空白，後端回的鍵就永遠對不上**
+ * ⇒ 那一列被判「後端沒寫入」⇒ 進隔離區＋跳假警告，**而資料其實已經寫進去了**。
+ * 契約與案例在 `tests/fixtures/queue-key-contract.json`（兩個 repo 各一份、必須逐字相同）。
+ * ⚠️ **跨 repo 沒有機械強制點**——與「兩個 repo 必須同批上線」是同一個已知缺口。
+ */
+function qrowKey(r) { return String(r && r.internalId).trim() + '|' + String(r && r.ts); }
+
+/**
+ * 佇列項目的**全部內容**（不只身分）。`qrowKey` 只回答「這是哪一列」，
+ * 這一支回答「這一列長什麼樣」——存檔驗證要用這一支。
+ *
+ * 🔴 2026-09-02 外審 R2 #8：只驗身分鍵 ⇒ **報到方式（`m`）與 schema 版本（`v`）
+ * 被改壞也照樣回 true**。那兩欄是實際資料，不是可忽略的 metadata。
+ */
+function qrowCanon(r) {
+  return JSON.stringify([Number(r && r.v) || 0, String(r && r.internalId).trim(),
+                         String(r && r.ts), String((r && r.m) || '')]);
+}
+
+/** 逐項計數（不是集合）——同一列出現兩次與出現一次是不同的東西。 */
+function qrowCounts(rows) {
+  var m = {};
+  (rows || []).forEach(function (r) { var k = qrowCanon(r); m[k] = (m[k] || 0) + 1; });
+  return m;
+}
+
+/** 兩份佇列內容完全相同：同樣的列、同樣的次數、**而且沒有多出來的**。 */
+function qrowCountsEqual(a, b) {
+  var ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every(function (k) { return a[k] === b[k]; });
+}
 
 /**
  * 佇列寫入。**回讀確認「我那幾列在不在」才算成功。**
@@ -292,6 +329,14 @@ function qrowKey(r) { return String(r && r.internalId) + '|' + String(r && r.ts)
  * ⇒ 兩個分頁各寫一筆時，**兩邊的長度都對得上，兩邊都回 true，而實際只剩後寫的那筆**。
  * 長度相等證明不了「是我那幾列」——它只證明「有那麼多列」。
  *
+ * 🔴 2026-09-02 外審 R2 #2：上一版改成 `q.every(在不在回讀結果裡)`，那是**子集合**檢查。
+ * `saveQueue` 是**整份取代**，不是「至少包含這幾列」⇒ 子集合檢查放過三種錯誤成功：
+ *   ① `q = []` 時 `every` **恆真** ⇒ 寫入靜默失敗、舊佇列原封不動，照樣回 true
+ *      （而 `flush` 正是拿它保存「過濾掉已寫入列」的結果——清空那一步永遠說成功）
+ *   ② 回讀多出不該在的列（別的分頁剛寫進來）驗不出來
+ *   ③ 同一列該有兩筆、只回讀到一筆，驗不出來
+ * ⇒ 改成**逐項計數的完全相等**：同樣的列、同樣的次數、沒有多出來的。
+ *
  * @returns {boolean} false ⇒ 這一批沒有落地，呼叫端不可以宣稱成功
  */
 function saveQueue(q) {
@@ -299,11 +344,7 @@ function saveQueue(q) {
   try {
     localStorage.setItem(QKEY, JSON.stringify(q));
     var back = readQueue();
-    if (back.ok) {
-      var have = {};
-      back.rows.forEach(function (r) { have[qrowKey(r)] = true; });
-      ok = (q || []).every(function (r) { return !!have[qrowKey(r)]; });
-    }
+    if (back.ok) ok = qrowCountsEqual(qrowCounts(q), qrowCounts(back.rows));
   } catch (_) { ok = false; }
   updateQueueBadge();
   return ok;
@@ -395,7 +436,15 @@ function enqueue(internalId, method) {
   // 上一版拿幾行前讀到的快照去 push 再整個覆寫 ⇒ 這中間別的分頁寫進來的都被蓋掉。
   // 入列語意上是 append，所以要 append 到**當下的內容**，不是幾行前的快照。
   var latest = readQueue();
-  var q = latest.ok ? latest.rows : cur.rows;
+  if (!latest.ok) {
+    // 🔴 2026-09-02 外審 R2 #3：上一版在這裡是「第二次讀失敗就退回幾行前的快照」
+    // ——繞過了上面那段自己剛立的隔離語意。這條路真的走得到：第一次讀成功之後，
+    // 另一個分頁把佇列寫成讀不出來的樣子。拿舊快照覆寫 ⇒ 那個分頁寫進來的整份消失，
+    // 而且回 true。⇒ **兩次讀失敗的處置必須一樣**：先留底，留不成就整筆失敗。
+    if (!quarantineRawQueue()) return false;
+    latest = { ok: true, rows: [] };   // 原始值已留底，才可以從空的重新開始
+  }
+  var q = latest.rows;
   q.push({ v: QUEUE_V, internalId: internalId, ts: Date.now(), m: method || 'scan' });
   if (!saveQueue(q)) return false;
   flush();
@@ -667,7 +716,10 @@ async function flush() {
         // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
         // ⚠️ 這把組合鍵要跟佇列項目實際帶的欄位一致。不一致的話送出成功、卻從佇列
         //    移不掉 ⇒ **每 15 秒重送一次，永遠不會停**，而畫面上待送筆數一直不歸零。
-        var qkeyOf = function (r) { return r.internalId + '|' + r.ts; };
+        // 🔴 2026-09-02 外審 R2 #9：這裡原本自己寫了第二把組鍵函式。
+        // 上一輪的修法宣稱「移除／比對／驗證共用 `qrowKey` 一把鍵」——**而那一把還在**。
+        // 抽出共用函式之後會覺得那件事已經做完了，所以最難自己發現。
+        // 現在只准用 `qrowKey`；`tests/queue-key-single-source.test.js` 讓再長出第二把會紅。
         // 🔴 **只移除後端說「真的寫進去了」的那幾列**（2026-09-02 外審 #5）。
         // 原本是「這一包 ok:true ⇒ 整包移除」——而 `ok:true` 只代表**請求完成**，
         // 不代表每一列都寫進試算表。被拒絕的列會連同被刪掉
@@ -698,15 +750,15 @@ async function flush() {
                '下一輪會重送，不會重複寫入。若一直不歸零請告知工務管理組');
           continue;   // 這一包不移除、不隔離；其餘包照跑
         }
-        var notWritten = packs[i].filter(function (r) { return !written[qkeyOf(r)]; });
+        var notWritten = packs[i].filter(function (r) { return !written[qrowKey(r)]; });
         var quarantined = notWritten.length ? quarantineRows(QKEY + '_rejected', notWritten) : true;
         var removable = {};
         packs[i].forEach(function (r) {
-          if (written[qkeyOf(r)] || quarantined) removable[qkeyOf(r)] = true;
+          if (written[qrowKey(r)] || quarantined) removable[qrowKey(r)] = true;
         });
         var cur = readQueue();
         // 讀不到就不可以拿過濾後的結果覆蓋回去——那是 A1 的同一個形狀，出口版。
-        if (cur.ok) saveQueue(cur.rows.filter(function (r) { return !removable[qkeyOf(r)]; }));
+        if (cur.ok) saveQueue(cur.rows.filter(function (r) { return !removable[qrowKey(r)]; }));
         // 🔴 後端寫進去了，但**認不出那是誰**（內部碼在兩個來源之間對不起來）。
         // 那一列的姓名／單位／桌次是空的——現場的人要當下知道，
         // 而不是回頭看試算表才發現。留白不講＝把「沒人知道的錯」換成「沒人知道的空」。
