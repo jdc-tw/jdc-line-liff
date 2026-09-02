@@ -179,6 +179,25 @@
     <label for="wf-tpl-list">範本</label>
     <select id="wf-tpl-list"></select>
   </div>
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+    <button type="button" class="btn btn-sm" id="btn-tpl-add">新增一則</button>
+    <button type="button" class="btn btn-sm" id="btn-tpl-disable">停用這一則</button>
+  </div>
+  <div class="fld" id="tpl-add-box" hidden style="margin-top:8px">
+    <label for="tpl-new-title">新範本的標題</label>
+    <input id="tpl-new-title" type="text" maxlength="30" placeholder="例：端午節祝賀">
+    <div style="margin-top:6px;display:flex;gap:8px">
+      <button type="button" class="btn btn-sm btn-pri" id="btn-tpl-add-ok">建立</button>
+      <button type="button" class="btn btn-sm" id="btn-tpl-add-cancel">取消</button>
+    </div>
+  </div>
+  <!-- 停用區。**刻意一直顯示標題**（即使是空的）——只在有資料時才出現的區塊，
+       等於在「沒有停用的」與「這個功能不存在」之間沒有差別，而她需要知道救得回來。 -->
+  <div style="margin-top:10px">
+    <div class="hint" id="tpl-disabled-head">已停用的範本</div>
+    <div id="tpl-disabled-list"></div>
+  </div>
+  <div class="msg" id="tpl-life-note"></div>
   <div class="tpl-wrap">
     <div class="tpl-mirror" id="wf-mirror" aria-hidden="true"></div>
     <textarea id="wf-tpl" rows="12" aria-label="範本內容"></textarea>
@@ -429,6 +448,38 @@ function renderTemplateSelector() {
     o.value = id;
     o.textContent = (TEMPLATES[id] && TEMPLATES[id].title) || id;
     sel.appendChild(o);
+  });
+}
+
+var TPL_DISABLED = [];
+
+/**
+ * 畫「已停用的範本」清單。每一則配一顆恢復鈕。
+ *
+ * 🔴 **沒有這一段，「停用」只是「資料還在」**——她自己救不回來，
+ *    只能找工程師或去翻試算表的版本紀錄，而那正是使用者 2026-07-16 明令要消滅的暗角。
+ */
+function renderDisabledList() {
+  var box = document.getElementById('tpl-disabled-list');
+  box.innerHTML = '';
+  if (!TPL_DISABLED.length) {
+    var p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = '（目前沒有停用的範本）';
+    box.appendChild(p);
+    return;
+  }
+  TPL_DISABLED.forEach(function (id) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px';
+    var name = document.createElement('span');
+    // textContent 不是 innerHTML：標題是她打的字，可能含 < 或 &
+    name.textContent = (TEMPLATES[id] && TEMPLATES[id].title) || id;
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-sm';
+    btn.textContent = '恢復'; btn.setAttribute('data-restore', id);
+    row.appendChild(name); row.appendChild(btn);
+    box.appendChild(row);
   });
 }
 
@@ -895,11 +946,75 @@ function loadTemplates() {
       //      因為 mock 當初寫的是 `id`，於是測試在測一個不存在的後端。
       //    ⚠️ 正上方那句註解查了一手碼確認外層是 `items`，**卻沒查 item 裡面的欄位名**。
       //       查了一半的驗證比沒查更危險：它讓人以為這一段已經對過了。
+      // ⚠️ **後端現在會把停用的也回來**——下拉只放啟用的，停用的另外列出來給她恢復。
+      //    不分開的話，她會在下拉裡選到一則發不出去的範本，而畫面看不出差別。
+      TPL_DISABLED = [];
       (r.items || []).forEach(function (t) {
-        TEMPLATES[t.templateId] = t; TPL_ORDER.push(t.templateId);
+        TEMPLATES[t.templateId] = t;
+        if (t.status === '停用') TPL_DISABLED.push(t.templateId);
+        else TPL_ORDER.push(t.templateId);
       });
       renderTemplateSelector();                       // 只畫下拉；事件已委派好
+      renderDisabledList();
       if (TPL_ORDER.length) selectTemplate(TPL_ORDER[0]);   // ← 一則都沒有時不可以硬選
+    });
+}
+
+/* ── 範本的生命週期：新增／停用／恢復 ───────────────────────────────────
+ *
+ * 🔴 這三支在 2026-09-02 之前**後端有、前端沒有**——`addWelfareTemplate` 與
+ *    `removeWelfareTemplate` 一個呼叫點都沒有。也就是說「新增」與「刪除」
+ *    從上線起就只能找工程師改表。使用者 2026-07-16 拍板的規則正是要消滅那個暗角。
+ *
+ * ⚠️ 三支都以「重讀整份清單」收尾，不做局部更新——
+ *    局部更新要自己維護兩份狀態（畫面與後端），而它們分歧的樣子是靜默的。
+ */
+function afterLifecycle(note) {
+  setNote('tpl-life-note', note || '', note ? 'ok' : '');
+  return loadTemplates();
+}
+
+function onAddTemplate() {
+  var t = String(document.getElementById('tpl-new-title').value || '').trim();
+  if (!t) { setNote('tpl-life-note', '請先給這一則一個標題。', 'err'); return; }
+  gasCall(GAS_URL, 'addWelfareTemplate', { token: TOKEN, title: t }, 30000)
+    .then(function (r) {
+      if (!r || !r.ok) {
+        setNote('tpl-life-note', '新增失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
+        return;
+      }
+      document.getElementById('tpl-new-title').value = '';
+      document.getElementById('tpl-add-box').hidden = true;
+      return afterLifecycle('已新增「' + t + '」，內容還是空的，請編輯後儲存。');
+    });
+}
+
+function onDisableTemplate() {
+  var id = CURRENT_TPL;
+  if (!id) return;
+  var title = (TEMPLATES[id] && TEMPLATES[id].title) || id;
+  // 停用是**可以恢復的**，所以這裡問的重點不是「你確定嗎」，
+  // 而是讓她知道它會去哪裡——不然她會以為東西不見了。
+  if (!confirm('要停用「' + title + '」嗎？\n它會移到下面的「已停用的範本」，隨時可以恢復。')) return;
+  gasCall(GAS_URL, 'removeWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
+    .then(function (r) {
+      if (!r || !r.ok) {
+        setNote('tpl-life-note', '停用失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
+        return;
+      }
+      return afterLifecycle('已停用「' + title + '」。要用回來的話按下面的「恢復」。');
+    });
+}
+
+function onRestoreTemplate(id) {
+  var title = (TEMPLATES[id] && TEMPLATES[id].title) || id;
+  gasCall(GAS_URL, 'restoreWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
+    .then(function (r) {
+      if (!r || !r.ok) {
+        setNote('tpl-life-note', '恢復失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
+        return;
+      }
+      return afterLifecycle('已恢復「' + title + '」。');
     });
 }
 
@@ -958,6 +1073,23 @@ function wireTemplateSelector() {
  */
 function wireButtons() {
   document.getElementById('btn-save').addEventListener('click', onSaveTemplate);
+  document.getElementById('btn-tpl-add').addEventListener('click', function () {
+    document.getElementById('tpl-add-box').hidden = false;
+    document.getElementById('tpl-new-title').focus();
+  });
+  document.getElementById('btn-tpl-add-cancel').addEventListener('click', function () {
+    document.getElementById('tpl-add-box').hidden = true;
+    document.getElementById('tpl-new-title').value = '';
+    setNote('tpl-life-note', '');
+  });
+  document.getElementById('btn-tpl-add-ok').addEventListener('click', onAddTemplate);
+  document.getElementById('btn-tpl-disable').addEventListener('click', onDisableTemplate);
+  // 🔴 委派在**不會被重繪換掉**的父節點上——恢復鈕每次重畫都是新節點，
+  //    直接綁在鈕上的 listener 會隨節點一起消失（同 wireBindingInvalidators 的理由）。
+  document.getElementById('tpl-disabled-list').addEventListener('click', function (e) {
+    var id = e.target && e.target.getAttribute && e.target.getAttribute('data-restore');
+    if (id) onRestoreTemplate(id);
+  });
   document.getElementById('btn-otp').addEventListener('click', onRequestOtp);
   document.getElementById('btn-send').addEventListener('click', onSend);
   document.getElementById('btn-all').addEventListener('click', function () { setAllChecked(true); });

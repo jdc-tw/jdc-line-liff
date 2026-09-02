@@ -41,7 +41,7 @@ function ctxWith(names, opt) {
     value: '', textContent: '', innerHTML: '', hidden: false, disabled: false,
     className: '', listeners: {},
     addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); },
-    appendChild() {},
+    appendChild() {}, focus() {},
     fire(t, ev) { (this.listeners[t] || []).forEach((f) => f(ev)); },
   });
   const ctx = {
@@ -64,6 +64,9 @@ function ctxWith(names, opt) {
     renderStatus: () => calls.status.push(ctx.LAST_STATUS),
     renderAudience: (r) => calls.audience.push(r),
     renderTemplateSelector: () => {},
+    // 2026-09-02：範本有了「狀態」欄，loadTemplates 現在也會畫停用清單
+    renderDisabledList: () => {},
+    TPL_DISABLED: [],
     renderPickedCount: () => {},
     renderMsgLogEntry: (r) => calls.msglog.push(r),
     selectTemplate: (id) => { calls.select.push(id); ctx.CURRENT_TPL = id; },
@@ -89,6 +92,8 @@ function ctxWith(names, opt) {
       Promise.resolve(opt.responses ? opt.responses[action] : { ok: true }),
   };
   ctx.onSaveTemplate = ctx.onRequestOtp = ctx.onSend = () => {};   // wireButtons 接的，預設 noop
+  // 2026-09-02 生命週期三支（新增／停用／恢復），同樣預設 noop
+  ctx.onAddTemplate = ctx.onDisableTemplate = ctx.onRestoreTemplate = () => {};
   ctx.setAllChecked = () => {};
   ctx.SAVE_IN_FLIGHT = false; ctx.OTP_IN_FLIGHT = false; ctx.SEND_IN_FLIGHT = false;
   vm.createContext(ctx);
@@ -282,6 +287,34 @@ test('🔴 儲存／寄碼／送出三顆鈕都接上了 click（第六輪之前
   vm.runInContext('wireButtons()', ctx);
   ['btn-save', 'btn-otp', 'btn-send'].forEach((id) => el(id).fire('click', {}));
   assert.deepStrictEqual(ctx.__hit, ['save', 'otp', 'send'], '有鈕按下去什麼都不會發生');
+});
+
+test('🔴 新增／停用／恢復三顆也要接上（後端有、前端沒接＝那功能等於不存在）', () => {
+  // 2026-09-02：`addWelfareTemplate` 與 `removeWelfareTemplate` 在此之前
+  // **後端有、前端一個呼叫點都沒有** ⇒ 新增與刪除只能找工程師改表，
+  // 而那正是使用者 2026-07-16 明令要消滅的暗角。加了鈕就要有東西盯著它還在。
+  const { ctx, el } = ctxWith(['wireButtons']);
+  const hit = [];
+  ctx.onAddTemplate = () => hit.push('add');
+  ctx.onDisableTemplate = () => hit.push('disable');
+  ctx.onRestoreTemplate = (id) => hit.push('restore:' + id);
+  vm.runInContext('wireButtons()', ctx);
+  el('btn-tpl-add-ok').fire('click', {});
+  el('btn-tpl-disable').fire('click', {});
+  // 恢復鈕是重繪出來的 ⇒ 必須委派在父節點上，不可以綁在鈕自己身上
+  el('tpl-disabled-list').fire('click', { target: { getAttribute: (k) => (k === 'data-restore' ? 'x1' : null) } });
+  assert.deepStrictEqual(hit, ['add', 'disable', 'restore:x1'],
+    '有鈕按下去什麼都不會發生——或恢復鈕沒有走事件委派');
+});
+
+test('🔴 新增面板預設收合，按「新增一則」才打開（避免多一個常駐輸入框）', () => {
+  const { ctx, el } = ctxWith(['wireButtons']);
+  vm.runInContext('wireButtons()', ctx);
+  el('tpl-add-box').hidden = true;
+  el('btn-tpl-add').fire('click', {});
+  assert.equal(el('tpl-add-box').hidden, false, '按了新增卻沒有把輸入框打開');
+  el('btn-tpl-add-cancel').fire('click', {});
+  assert.equal(el('tpl-add-box').hidden, true, '取消之後沒有收回去');
 });
 
 test('全選／全部取消也要接上（不然名單只能一個一個點）', () => {
