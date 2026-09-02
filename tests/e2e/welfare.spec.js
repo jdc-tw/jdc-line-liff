@@ -53,11 +53,19 @@ async function open(page, opts) {
                   requestWelfareOtp: 0, sendWelfareBroadcast: 0, saveWelfareTemplate: 0 };
   const seen = [];
   await page.route(/script\.google\.com/, async (route) => {
-    const u = new URL(route.request().url());
-    const a = u.searchParams.get('action');
-    if (a in calls) calls[a]++;
+    // 🔴 **2026-09-02：參數改走 POST body，不在網址上了。**
+    //    這一段原本讀 `url.searchParams` ⇒ 改成 POST 之後 `action` 是 null，
+    //    每一個 mock 都對不上、頁面永遠等不到回應 ⇒ **症狀是「整批逾時」，
+    //    看起來像產品壞了，其實是量具還在看舊的地方。**
+    const req = route.request();
     const params = {};
-    u.searchParams.forEach((v, k) => { params[k] = v; });
+    if (req.method() === 'POST') {
+      new URLSearchParams(req.postData() || '').forEach((v, k) => { params[k] = v; });
+    } else {
+      new URL(req.url()).searchParams.forEach((v, k) => { params[k] = v; });
+    }
+    const a = params.action;
+    if (a in calls) calls[a]++;
     seen.push({ action: a, params: params });
     let spec = (opts.responses || {})[a];
     if (typeof spec === 'function') spec = spec(params, calls[a]);
@@ -1093,43 +1101,42 @@ test('LINE 憑證真的出現在每一次請求的網址上', async ({ page }) =
   expect(r.errors).toEqual([]);
 });
 
-test('🔴 量一次：帶了憑證之後，最長的那個網址有多長', async ({ page }) => {
-  const urls = [];
-  page.on('request', (q) => { if (/script\.google\.com/.test(q.url())) urls.push(q.url()); });
-  const ctx = await open(page, {});
-  // 🔴 **要走到送出那一支**——它帶名單 bitmap ＋ 範本全文，是最長的那一個。
-  //    只量載入時的三個請求，量到的是最短的那幾個。
-  await armed(page, ctx);
-  page.on('dialog', (d) => d.accept());          // 送出前的確認框
-  await page.locator('#btn-send').click();
-  await expect.poll(() => ctx.calls.sendWelfareBroadcast,
-    { message: '送出那一支沒有真的送出去 ⇒ 量到的不是最長的那個網址' }).toBe(1);
-  const longest = urls.reduce((a, b) => (a.length >= b.length ? a : b), '');
-  // 這裡不是要卡一個門檻，是要把數字**留在測試輸出裡**，
-  // 讓下一個人看得到「離爆掉還有多遠」，而不是等它某天爆掉才知道。
-  console.log('[網址長度] 這一輪最長 ' + longest.length + ' 字元，共 ' + urls.length + ' 個請求');
-  expect(urls.length).toBeGreaterThan(0);
-  // 2026-09-02 實測值遠低於 8000（GAS 的實務安全線）。這條在逼近時會先紅。
-  expect(longest.length,
-    '網址逼近 8000 字元 ⇒ 送出那一支（帶名單 bitmap ＋ 範本全文）會先爆。'
-    + '最長的是：' + longest.slice(0, 200)).toBeLessThan(8000);
-});
-
-test('🔴 量最壞的那一支：儲存一則滿長度的中文範本', async ({ page }) => {
-  // 🔴 送出那一支不帶範本全文（只帶 templateId ＋ bitmap），**儲存那一支才帶**。
-  //    而中文 URL 編碼後一個字變 9 個字元（stats.html:559 已為此寫過自適應切包）
-  //    ⇒ 上限 1500 字的範本，光內文就可能上萬。這一格量的是「加了憑證之後還剩多少」。
-  const urls = [];
-  page.on('request', (q) => { if (/script\.google\.com/.test(q.url())) urls.push(q.url()); });
+test('🔴 參數走 POST body，網址上一個都不留（她寫的公告不進存取紀錄）', async ({ page }) => {
+  const reqs = [];
+  page.on('request', (q) => {
+    if (/script\.google\.com/.test(q.url())) {
+      reqs.push({ method: q.method(), url: q.url(), body: q.postData() || '' });
+    }
+  });
   await open(page, {});
-  urls.length = 0;                               // 只看接下來這一次
   await page.locator('#wf-tpl').fill('中'.repeat(1500));
   await page.locator('#btn-save').click();
-  await expect.poll(() => urls.length).toBeGreaterThan(0);
-  const longest = urls.reduce((a, b) => (a.length >= b.length ? a : b), '');
-  console.log('[網址長度·最壞] 滿長度中文範本 ' + longest.length + ' 字元');
-  expect(longest.length,
-    '儲存滿長度中文範本的網址是 ' + longest.length + ' 字元。'
-    + '加上 ID token 之後逼近上限 ⇒ 她存長範本會失敗，而錯誤讀起來像網路問題。')
-    .toBeLessThan(16000);
+  await expect.poll(() => reqs.length).toBeGreaterThan(0);
+
+  const 壞的 = [];
+  reqs.forEach((r) => {
+    if (r.method !== 'POST') 壞的.push('還在用 ' + r.method + '：' + r.url.slice(0, 80));
+    if (r.url.indexOf('?') >= 0) 壞的.push('網址上還有參數：' + r.url.slice(0, 120));
+  });
+  assert2(壞的);
+
+  const longest = reqs.reduce((a, b) => (a.url.length >= b.url.length ? a : b), reqs[0]);
+  const biggestBody = reqs.reduce((a, b) => (a.body.length >= b.body.length ? a : b), reqs[0]);
+  console.log('[POST 之後] 最長網址 ' + longest.url.length + ' 字元；最大 body '
+    + biggestBody.body.length + ' 字元');
+  // ⚠️ **這一條取代了改 POST 之前的兩條長度測試**（「最長的網址有多長」與
+  //    「量最壞的那一支」）。它們量的是 GET 時代的曝險，改成 POST 之後
+  //    兩條都只會量到固定長度的 /exec ⇒ **名字還在，但已經量不到它們要防的東西。**
+  //    留著會變成「看起來有守，其實沒有」。這裡的 <300 比它們的 <8000／<16000 都緊。
+  //
+  // 改之前實測（真 Chrome，同一個場景）：**網址 14,702 字元**。
+  // 改之後：網址 114、body 14,587 ⇒ **整篇公告從網址搬進了 body。**
+  expect(longest.url.length,
+    '網址還是很長 ⇒ 參數沒有真的搬到 body 裡').toBeLessThan(300);
+  expect(biggestBody.body.length,
+    'body 是空的 ⇒ 參數不見了，後端會說每一支都缺參數').toBeGreaterThan(1000);
 });
+
+function assert2(arr) {
+  expect(arr, arr.join('\n')).toEqual([]);
+}

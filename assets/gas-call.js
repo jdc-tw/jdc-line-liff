@@ -38,9 +38,27 @@ function gasCall(gasUrl, action, params, timeoutMs) {
       var e = new Error('timeout'); e.name = 'AbortError'; rej(e);
     }, timeoutMs || 30000);
   });
+  // 🔴 **POST，參數走 body 不走網址**（2026-09-02）。兩個理由：
+  //   ① **網址會進存取紀錄** ⇒ 走 GET 的話，`saveWelfareTemplate` 的 `text`
+  //      ——她寫給全公司的公告全文——**逐字進 Google 的 log**。
+  //   ② **長度**：實測一則滿長度（1500 字）中文範本的網址是 **14,702 字元**
+  //      （中文 URL 編碼後一個字變九個）。body 沒有這個限制。
+  //
+  // ⚠️ **Content-Type 只能用 CORS 安全清單裡的**（`application/x-www-form-urlencoded`
+  //    或 `text/plain`），否則會觸發 preflight，而 GAS 不回應 OPTIONS。
+  //    ⚠️ 而且**必須是表單編碼**：用 `text/plain` 的話 GAS 會把內容放進
+  //    `e.postData.contents`，`e.parameter` 是空的——而後端只讀 `e.parameter`
+  //    ⇒ 症狀是「每一支 action 都說參數缺失」，不是報錯。
+  //
+  // 🔴 **刻意沒有 GET fallback。** 一條從來沒被走過的退路，跟不存在的退路，
+  //    在測試結果上完全相同；而它還讓「同一個呼叫有兩種送法」變成要維護的分歧。
+  //    退路是 git：POST 那個 commit 獨立，上線不通就 revert 並重新部署。
+  var body = 'action=' + encodeURIComponent(action) + qs + '&callback=cb';
   return Promise.race([timeout,
-    fetch(gasUrl + '?action=' + encodeURIComponent(action) + qs + '&callback=cb',
-          { credentials: 'omit', redirect: 'follow' })
+    fetch(gasUrl,
+          { method: 'POST', credentials: 'omit', redirect: 'follow',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body: body })
       .then(function (r) { return r.text(); })
       .then(function (t) {
         var a = t.indexOf('('), b = t.lastIndexOf(')');
