@@ -15,6 +15,26 @@
  * 手法沿用 download-menu-wiring.test.js：**從 welfare.html 抽原始碼**配 stub 跑，
  * 不另抄一份等價的（抄的那份會漂移，而漂移不報錯）。
  */
+/* ══ ⚠️ 跨 repo 的手動對齊：改動詞的時候，另一邊要一起改 ══════════════════
+ *
+ * 福委會的錯誤訊息會叫承辦人去做三件事，而那三件事的**字**同時活在兩個 repo：
+ *
+ *   後端 `jdc-line-gas` line-platform/Code.js
+ *     welfareActiveCapMsg_()      → 「請先**停用**不用的」
+ *     welfareTemplateGoneMsg_()   → 「到「已**停用的範本**」按「**恢復**」」
+ *   前端 `jdc-line-liff` welfare.html
+ *     id="btn-tpl-disable" 的鈕面      → 「**停用**這一則」
+ *     data-restore 那顆的 textContent  → 「**恢復**」
+ *     id="tpl-disabled-head" 的標題    → 「已**停用的範本**」
+ *
+ * 🔴 **兩邊各有一條測試釘住自己那半，但沒有任何機械的東西逼兩邊相等。**
+ *    ⇒ 只改一邊，**兩邊的測試都會綠**，而她照著訊息在畫面上找不到那顆鈕。
+ *
+ * ⇒ **觸發條件：要改上面任何一個詞時，同一次改動要同時動兩個 repo。**
+ *    這兩條測試不會提醒你——**這段字就是提醒本身，所以兩邊的檔頭都寫了一份。**
+ *    （真要消滅這個縫，得讓兩個 repo 共用一份詞彙表。那是另一輪的事。）
+ */
+
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
