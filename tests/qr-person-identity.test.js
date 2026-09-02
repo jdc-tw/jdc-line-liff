@@ -175,9 +175,17 @@ test('★qrRows：整個回應都要留住，不可以只留 rows', async () => 
   assert.equal(cached.total, 4, '快取存的也要是完整的——否則第二次點更慘（連第一次的資訊都沒了）');
 });
 
-test('★unsignedText：把「是誰、為什麼」講出來，不是只給一個數字', () => {
-  const ctx = { console, String, Object, Array };
+/** 共用模組載真貨——unsignedText 只是它的一層薄殼，stub 掉就什麼都沒測到。 */
+function ctxWithPf() {
+  const ctx = { console, String, Object, Array, Number };
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'assets', 'partial-failure.js'), 'utf8'),
+                  ctx, { filename: 'partial-failure.js' });
+  return ctx;
+}
+
+test('★unsignedText：把「是誰、為什麼」講出來，不是只給一個數字', () => {
+  const ctx = ctxWithPf();
   vm.runInContext(fnSrc('unsignedText'), ctx, { filename: 'stats.html-extract' });
   const t = ctx.unsignedText(FULL);
   assert.match(t, /未簽發（2 人）/);
@@ -188,8 +196,7 @@ test('★unsignedText：把「是誰、為什麼」講出來，不是只給一�
 });
 
 test('對照組：全部都簽得出來時，unsignedText 是空字串（不可以永遠有東西）', () => {
-  const ctx = { console, String, Object, Array };
-  vm.createContext(ctx);
+  const ctx = ctxWithPf();
   vm.runInContext(fnSrc('unsignedText'), ctx, { filename: 'stats.html-extract' });
   assert.equal(ctx.unsignedText({ ok: true, total: 1, rows: [{}], unsigned: [], duplicated: [] }), '');
   assert.equal(ctx.unsignedText({}), '');
@@ -217,6 +224,9 @@ function runDlAllQr(res, confirmAnswer) {
     document: { createElement: () => ({ click: () => { out.downloaded = true; }, set href(v) {}, set download(v) {} }) },
   };
   vm.createContext(ctx);
+  // 共用模組載真貨，不 stub——這幾支正是「兩張頁面對同一件事給同一個答案」的那份判斷。
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'assets', 'partial-failure.js'), 'utf8'),
+                  ctx, { filename: 'partial-failure.js' });
   // dlAllQr 會呼叫 unsignedText——給真貨，不要 stub。stub 掉的話「訊息裡有沒有原因」
   // 就變成在測我寫的替身，而不是測實際會顯示的內容。
   vm.runInContext([fnSrc('unsignedText'), fnSrc('dlAllQr')].join('\n'),

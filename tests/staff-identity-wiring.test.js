@@ -83,6 +83,9 @@ function harness(opt) {
     lastSyncAt: '',
   };
   vm.createContext(ctx);
+  // 共用模組載真貨，不 stub——這幾支正是「兩張頁面對同一件事給同一個答案」的那份判斷。
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'assets', 'partial-failure.js'), 'utf8'),
+                  ctx, { filename: 'partial-failure.js' });
   vm.runInContext([
     varSrc('DEMO_CODES = \\['), varSrc('DEMO_PEOPLE = \\['),
     fnSrc('loadQueue'), fnSrc('saveQueue'),
@@ -92,6 +95,7 @@ function harness(opt) {
     fnSrc('allPeople'), fnSrc('buildDemoSnapshot'), fnSrc('manualCheckin'),
     fnSrc('flush'), fnSrc('handle'), fnSrc('applySnapshotPayload'),
     fnSrc('updateQueueBadge'), fnSrc('quarantineRows'), fnSrc('quarantinedCount'),
+    fnSrc('renderSkipped'),
     'var idToHash = {};',
   ].join('\n'), ctx, { filename: 'staff.html-extract' });
   ctx.calls = calls;
@@ -295,28 +299,45 @@ test('對照組：後端回失敗時佇列原封不動（證明上面那條測�
 
 function renderSnapVer(res) {
   let text = '';
+  const els = { snapskip: { innerHTML: '' } };
   const ctx = harness({});
   ctx.setTopbar = () => {};
   ctx.buildPicker = () => {};
-  ctx.document = { getElementById: () => ({ set textContent(v) { text = v; }, innerHTML: '' }) };
+  ctx.esc = (s) => String(s == null ? '' : s);
+  ctx.document = { getElementById: (id) => els[id]
+    || ({ set textContent(v) { text = v; }, innerHTML: '' }) };
   vm.runInContext(fnSrc('applySnapshotPayload'), ctx, { filename: 'staff.html-extract' });
   ctx.applySnapshotPayload(Object.assign({ snapshot: {}, nameTable: {}, snapshotVersion: 1,
                                            generatedAt: '2026-09-02 10:00' }, res));
-  return text;
+  return { text: text, skip: els.snapskip.innerHTML };
 }
 
 test('★後端說它跳過了 N 個人，畫面上要一直看得到（不是閃一下的訊息）', () => {
   // 這幾個人現場一定掃不進去，而掃描站是唯一看得到這件事的地方。
   // 用 note() 的話會被下一次判定卡蓋掉；長駐在名單版本那一行才留得住。
-  const t = renderSnapVer({ unusable: 3 });
+  const t = renderSnapVer({ unusable: 3 }).text;
   assert.match(t, /3 人/, '實際文字：' + t);
   assert.match(t, /無法掃碼/);
 });
 
+test('★★接線：applySnapshotPayload 要真的把清單交給 renderSkipped', () => {
+  // 🔴 為何是分開的一條：另一支測試直接呼叫 renderSkipped，**繞過了這個接縫**。
+  // 把 applySnapshotPayload 裡那一行拿掉，那支測試照樣全綠——實測過。
+  // 門口的人看得到什麼，取決於這一行有沒有被呼叫，不是那支函式寫得對不對。
+  const r = renderSnapVer({ unusable: 2, skippedPeople: [
+    { name: '乙', unit: 'A部', internalId: '', why: '缺內部碼' },
+    { name: '丙', unit: 'B部', internalId: 'JDC-JKMNPQ', why: '名冊查無此碼' },
+  ] });
+  assert.match(r.skip, /丙/, '展開區沒有內容＝接線斷了。實際：' + JSON.stringify(r.skip));
+  assert.match(r.skip, /名冊查無此碼/);
+  assert.match(r.text, /2 人/, '數字那一行也要留著');
+});
+
 test('對照組：正常情況（0 人）一個字都不多——會吵的告警會被訓練成無視', () => {
-  const t = renderSnapVer({ unusable: 0 });
-  assert.equal(t, '名單版本：2026-09-02 10:00');
-  assert.equal(renderSnapVer({}), '名單版本：2026-09-02 10:00', '後端沒回這個欄位也不可以吵');
+  const r0 = renderSnapVer({ unusable: 0 });
+  assert.equal(r0.text, '名單版本：2026-09-02 10:00');
+  assert.equal(r0.skip, '', '沒有人被跳過卻長出一個展開區＝下次沒有人會點它');
+  assert.equal(renderSnapVer({}).text, '名單版本：2026-09-02 10:00', '後端沒回這個欄位也不可以吵');
 });
 
 /* ── ⑤ 舊格式佇列：隔離、不丟、講一句 ─────────────────────────────────────── */

@@ -474,6 +474,7 @@
 <script src="assets/seating.js"></script>
 <script src="assets/xlsx-post.js"></script>
 <script src="assets/stats-view.js"></script>
+<script src="assets/partial-failure.js"></script>
 <script src="assets/send-modal.js"></script>
   <script src="assets/qr-badge.js"></script>
 <script src="assets/board-cache.js"></script>
@@ -2134,19 +2135,9 @@ function qrRows(id){
 }
 
 /** 未簽發清單的可讀文字（畫面與 zip 內的清單共用同一份，不寫兩處）。 */
-function unsignedText(res){
-  var u=(res&&res.unsigned)||[],d=(res&&res.duplicated)||[];
-  var out=[];
-  if(u.length){
-    out.push('未簽發（'+u.length+' 人）：');
-    u.forEach(function(x){ out.push('  ・'+(x.unit||'（未分單位）')+'　'+x.name+'　—　'+x.why); });
-  }
-  if(d.length){
-    out.push('重複回覆、只簽一張（'+d.length+' 筆）：');
-    d.forEach(function(x){ out.push('  ・'+(x.unit||'（未分單位）')+'　'+x.name); });
-  }
-  return out.join('\n');
-}
+// 實作搬進 assets/partial-failure.js，與掃描站共用同一份判斷。
+// 名字留著是因為呼叫端不只一處，改名沒有好處。
+function unsignedText(res){ return pfText(res); }
 /**
  * 批次 zip 裡這張 QR 的檔名。`used` 是同一次批次共用的已用檔名表（呼叫端建立）。
  *
@@ -2203,7 +2194,16 @@ function showPerson(id,name){
       return;
     }
     var p=findQr(rows,code);
-    if(!p){setMsg('sm-msg','找不到此人的報到碼（未回覆參加？）','err');return;}
+    if(!p){
+      // 原因就在 payload 裡（缺內部碼／名冊查無此碼／名冊為離職／格式錯／碼重複）。
+      // 舊版寫死「未回覆參加？」——那句話已知不成立，而且把人導向錯的排查方向。
+      var why=pfWhy(res,code);
+      setMsg('sm-msg', why
+        ? esc(name)+'：'+why
+        : esc(name)+' 沒有報到碼，而名單沒有列出原因——請按「重新產生」再試一次，仍然如此請聯絡工務管理組',
+        'err');
+      return;
+    }
     var seat=(SB&&SB.seats||[]).filter(function(s){
       return code ? String(s.internalId||'').trim()===code
                   : String(s.name||'').replace(/[\s　]+/g,'')===String(name).replace(/[\s　]+/g,'');})[0]||{};

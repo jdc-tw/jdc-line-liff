@@ -129,6 +129,12 @@
   #foot .warn{color:var(--wa-fg)}
   /* 連結名稱不可從中間斷行——實機截圖看到「重新載入名／單」，讀起來像壞掉。 */
   #diag button{white-space:nowrap}
+  /* 簽不出碼的人。0 人時整塊不存在（不是隱藏）——常態畫面一個字都不多。 */
+  #snapskip{margin-top:4px}
+  #snapskip details{border:1px solid #d9534f;border-radius:3px;background:#fff5f5}
+  #snapskip summary{padding:5px 7px;cursor:pointer;color:#a12622;font-weight:600}
+  #snapskip ul{margin:0;padding:4px 7px 7px 22px;color:#5a2b29}
+  #snapskip li{margin:2px 0;line-height:1.4}
   /* 這兩個原本是 <a href="#">，2026-08-21 改成 <button>。
      為何：href="#" 只靠 preventDefault 擋著，處理函式若在那之前拋錯，網址就會多一個 `#`。
      在 iOS 的獨立 App 模式下，**hash 變動會當場重設相機權限並中斷串流**
@@ -166,7 +172,7 @@
     <span id="stat"></span>
     <div id="qbadge">待送 0 筆</div>
     <div id="diag">
-      <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
+      <span id="snapver">名單版本：—</span><div id="snapskip"></div>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
       ｜<button type="button" id="reload" title="跟伺服器重新抓一次參加者名單。有人臨時補回覆、或桌次重新發佈後用">重新載入名單</button>
       ｜<button type="button" id="wipe" title="把這台手機的名單與未回傳的報到全部清空，回到剛開頁的狀態">重設這台手機</button>
     </div>
@@ -175,6 +181,7 @@
 <canvas id="cv" style="display:none"></canvas>
 <script src="assets/jsQR.min.js"></script>
 <script src="assets/groups.js"></script>
+<script src="assets/partial-failure.js"></script>
 <script src="assets/staff-scan.js"></script>
 <script>
 /** 同 assets/checkin-board.js 寫法：塞進 innerHTML 前先中和 & < >。 */
@@ -611,6 +618,30 @@ function setTopbar(actName, station) {
   el.className = s ? '' : 'unset';
 }
 
+/**
+ * 簽不出報到碼的人：是誰、為什麼。
+ *
+ * 只有數字（unusable）的話，門口這台手機答得出「有 3 個人掃不進去」，
+ * 卻答不出是哪 3 個——現場只能請人回頭找承辦，而承辦不在門口。
+ * 理由一律取自後端（pfWhy／pfPeople 同一份），這裡不猜。
+ */
+function renderSkipped(res) {
+  var box = document.getElementById('snapskip');
+  if (!box) return;
+  var people = pfPeople(res), gap = pfGap(res);
+  if (!people.length && !gap) { box.innerHTML = ''; return; }   // 常態：整塊不存在
+  var items = people.map(function (x) {
+    return '<li>' + esc(x.unit || '（未分單位）') + '　' + esc(x.name)
+      + '　—　' + esc(x.why || '後端沒有講原因') + '</li>';
+  });
+  if (gap) {
+    // 清單比數字少人。不講的話，操作者會把這份清單讀成完整的。
+    items.push('<li>另有 ' + gap + ' 人後端沒有分類出原因——這份清單比實際少人</li>');
+  }
+  box.innerHTML = '<details><summary>⚠ ' + (people.length + gap)
+    + ' 人掃不進去（點開看是誰）</summary><ul>' + items.join('') + '</ul></details>';
+}
+
 function applySnapshotPayload(res) {
   setTopbar(res.actName, res.station);
   // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
@@ -621,6 +652,9 @@ function applySnapshotPayload(res) {
   // 後端跳過了幾個人（身分不合格式，簽不出碼）。正常永遠是 0。
   // 不是 0 的時候，那幾個人現場一定掃不進去——而**掃描站是唯一看得到這件事的地方**。
   // 長駐在名單版本那一行，不用 note()：note 會被下一次判定蓋掉，而這件事要一直看得到。
+  // 🔴 光有數字不夠：現場站在門口的人要能回答「是誰、為什麼」，否則只能請人回頭問承辦。
+  //    清單收在 <details> 裡，預設收合——手機版面小，但要展得開。
+  renderSkipped(res);
   rebuildEmpIndex();
   buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
 }
