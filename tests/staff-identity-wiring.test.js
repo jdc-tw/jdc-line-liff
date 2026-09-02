@@ -43,6 +43,13 @@ function fakeStorage(init) {
   };
 }
 
+/**
+ * 測試裡的「後端」組鍵函式——**刻意獨立實作，不呼叫前端的 `qrowKey`**。
+ * 它代表另一個 repo 的 `accountedKeys`：把它跟前端接在同一支函式上，
+ * 兩邊就永遠一致，而「兩個 repo 會分岔」這件事就再也測不到（零鑑別力）。
+ */
+const backendKey = (r) => String(r && r.internalId).trim() + '|' + String(r && r.ts);
+
 function harness(opt) {
   opt = opt || {};
   const calls = { notes: [], cards: [], jget: [] };
@@ -77,7 +84,19 @@ function harness(opt) {
     performance: { now: () => 0 },
     setTimeout: (f) => { void f; return 0; },
     document: { getElementById: () => ({ innerHTML: '', className: '', textContent: '' }) },
-    jget: async (action, params) => { calls.jget.push({ action, params }); return opt.jgetRes; },
+    // 假後端。**它扮演另一個 repo**：收據裡的 `writtenIdx` 由它自己算，用的是
+    // `backendKey`（下面那支**獨立實作**的組鍵函式），不是前端的 `qrowKey`。
+    // ⇒ 兩邊的鍵格式一旦分岔，這裡就找不到對應的列 ⇒ 前端的握手會當場擋下來。
+    // 測試若自己指定了 `writtenIdx` 就照用（要模擬舊後端就給 `writtenIdx: null`）。
+    jget: async (action, params) => {
+      calls.jget.push({ action, params });
+      const res = opt.jgetRes;
+      if (!res || !Array.isArray(res.writtenKeys) || 'writtenIdx' in res) return res;
+      const rows = JSON.parse((params && params.rows) || '[]');
+      return Object.assign({}, res, {
+        writtenIdx: res.writtenKeys.map((k) => rows.findIndex((r) => backendKey(r) === k)),
+      });
+    },
     // 2026-09-02（外審 #5）：後端改成逐列回 writtenKeys，前端只移除真的寫進去的那幾列。
     flushing: false,
     lastSyncAt: '',
@@ -88,7 +107,7 @@ function harness(opt) {
                   ctx, { filename: 'partial-failure.js' });
   vm.runInContext([
     varSrc('DEMO_CODES = \\['), varSrc('DEMO_PEOPLE = \\['),
-    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('qrowKey'),
+    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('qrowKey'), fnSrc('receiptAgrees'),
     fnSrc('qrowCanon'), fnSrc('qrowCounts'), fnSrc('qrowCountsEqual'), fnSrc('saveQueue'),
     fnSrc('quarantineRawQueue'), fnSrc('commitCheckin'), fnSrc('wipeConfirmText'),
     'var QUEUE_V = 2;',
@@ -250,6 +269,56 @@ test('★送出成功後佇列真的變空（移除用的組合鍵要跟佇列�
   await ctx.flush();
   assert.deepEqual(JSON.parse(ctx.localStorage.getItem('q')), [],
     '送出成功卻移不掉＝無限重送。剩下的是：' + ctx.localStorage.getItem('q'));
+});
+
+/* ── R3 #2：兩個 repo 的鍵格式分岔，執行期要當場擋下來 ──────────────────────
+   兩邊的測試各讀自己那份契約檔 ⇒ 任一側同時改實作與自己的契約檔，那一側全綠、
+   另一側維持舊的也全綠，中間沒有任何訊號。後果是「後端說寫進去了、前端永遠移不掉」。 */
+
+test('🔴★R3 #2：後端回的鍵跟前端組出來的對不起來 → 一列都不移除，而且要講出來', async () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  // 後端那一側改了分隔符（`#` 而不是 `|`），而且照樣回了正確的 writtenIdx
+  // ⇒ 位置對得上、鍵對不上。這正是「兩個 repo 沒有同批上線」的樣子。
+  const ctx = harness({ storage,
+    jgetRes: { ok: true, written: 1, writtenKeys: ['JDC-HJKMNP#1'], writtenIdx: [0] } });
+  await ctx.flush();
+  assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 1,
+    '鍵對不起來就不知道後端寫的是哪一列——這時候動佇列等於用猜的刪資料');
+  assert.equal(ctx.localStorage.getItem('q_rejected'), null,
+    '也不可以搬進隔離區：那會讓「已經寫進去的列」看起來像被拒絕的');
+  // 🔴 標題說「而且要講出來」，就要驗到那一句——**斷言只驗前半句正是 R3 #8 的形狀**。
+  // 靜靜不動佇列的話，現場看到的只有「待送筆數不歸零」，沒有人知道為什麼。
+  const bad = ctx.calls.notes.filter((n) => n.cls === 'bad');
+  assert.equal(bad.length, 1, '一則都沒講＝現場只看得到數字不歸零。實際：'
+    + JSON.stringify(ctx.calls.notes));
+  assert.ok(bad[0].text.indexOf('對不起來') >= 0,
+    '要講的是「鍵對不起來」，不是「後端沒回報」——處置一樣，但要查的東西完全不同。實際：'
+    + bad[0].text);
+});
+
+test('🔴★R3 #2：舊後端沒有 writtenIdx → 當成不符，一列都不移除（fail-closed）', async () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  // `writtenIdx: null` ＝ 舊後端。**拿不到那一格就當成不符**，不是「當成沒問題」。
+  const ctx = harness({ storage,
+    jgetRes: { ok: true, written: 1, writtenKeys: ['JDC-HJKMNP|1'], writtenIdx: null } });
+  await ctx.flush();
+  assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 1,
+    '拿不到握手用的那一格卻照樣移除＝守門在缺資料時放行，那是 fail-open');
+});
+
+test('🔴對照組：鍵對得起來時照常移除（證明上面兩條不是「它永遠不移除」）', async () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage,
+    jgetRes: { ok: true, written: 1, writtenKeys: ['JDC-HJKMNP|1'] } });   // idx 由假後端自己算
+  await ctx.flush();
+  assert.deepEqual(JSON.parse(ctx.localStorage.getItem('q')), [],
+    '握手擋掉了正常的回寫＝現場每 15 秒重送一次、待送筆數永遠不歸零');
 });
 
 test('🔴★後端沒有回報 writtenKeys 時，一列都不可以移除', async () => {
@@ -823,22 +892,55 @@ test('🔴★#8：身分鍵相同但報到方式被改掉 → 必須回 false', 
     'qrowKey 只回答「這是哪一列」，驗存檔要問「這一列長什麼樣」');
 });
 
+test('🔴★R3 #6：schema 版本 `v` 被改掉也必須回 false（只有這一格不同）', () => {
+  // 上一輪宣稱 `qrowCanon` 保護 `v` 與 `m`，**而所有案例的 `v` 兩邊都是 2**
+  // ⇒ 從 canon 裡刪掉 `v`，沒有任何一條會紅。宣稱與證明之間差一個案例。
+  // `v` 是 schema 版本：回讀到的是舊版結構，代表存進去的不是我要存的那份。
+  const storage = fakeStorage({});
+  const realSet = storage.setItem;
+  storage.setItem = (k, v) => {
+    realSet(k, v);
+    if (k === 'q') realSet(k, JSON.stringify([{ v: 1, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]));
+  };
+  const ctx = harness({ storage });
+  assert.equal(ctx.saveQueue([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]), false,
+    '只有 v 不同也是「存進去的不是我要存的那份」');
+});
+
 test('🔴★#3：第二次讀失敗時不可以拿幾行前的快照覆寫（隔離語意要套在兩次讀上）', () => {
   // 走得到的路：第一次讀成功 ⇒ 另一個分頁把佇列寫成讀不出來的樣子 ⇒ 最後一刻那一讀失敗。
   // 舊寫法退回 cur.rows（幾行前的快照）⇒ 那個分頁寫進來的整份消失，而且回 true。
+  // ⚠️ 替身模擬的是**真的會發生的那一串**，不是「第 N 次讀失敗」：
+  // 第一次讀完之後，另一個分頁把 `q` 寫成讀不出來的樣子 ⇒ 之後每一次讀都壞
+  // （包含隔離區要留底的那一讀）⇒ 直到我們自己 `setItem` 蓋掉它為止。
+  // 🔴 上一版寫成「第二次之後每次都壞」⇒ 連 saveQueue 的回讀也壞 ⇒ 整筆因回讀失敗而失敗
+  // ⇒ **「有沒有拿舊快照覆寫」那一格根本走不到**，於是只驗得到「有留底」（R3 #8）。
   const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAA11', ts: 1, m: 'scan' }]) });
-  let reads = 0;
-  const realGet = storage.getItem;
+  let reads = 0, corrupted = false;
+  const realGet = storage.getItem, realSet = storage.setItem;
   storage.getItem = (k) => {
     if (k !== 'q') return realGet(k);
-    if (++reads === 1) return realGet(k);        // 第一次：好的
-    return '{壞掉的 JSON';                        // 最後一刻：讀不出來
+    const bad = corrupted;
+    if (++reads === 1) corrupted = true;   // 第一次讀完之後，別的分頁把它寫壞
+    return bad ? '{壞掉的 JSON' : realGet(k);
   };
+  storage.setItem = (k, v) => { if (k === 'q') corrupted = false; realSet(k, v); };
   const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
-  ctx.enqueue('JDC-CCCC33', 'scan');
+  assert.equal(ctx.enqueue('JDC-CCCC33', 'scan'), true, '留底成功就該從空的重建並入列');
+
   const kept = storage.getItem('q_unreadable') || '';
   assert.ok(kept.indexOf('{壞掉的 JSON') >= 0,
     '第二次讀失敗時，讀不到的原始值必須先留一份。實際隔離區：' + JSON.stringify(kept));
+
+  // 🔴 R3 #8：上一版**只驗到這裡為止**——而標題說的是「不可以拿舊快照覆寫」。
+  // 錯誤實作可以先好好留底、再把 `latest.rows` 設成 `cur.rows` 寫回去，上一版照樣綠。
+  // ⇒ 必須直接驗佇列的內容：**只有新的那一筆**，舊快照的 AAAA11 不准出現。
+  const after = JSON.parse(storage.getItem('q'));
+  assert.deepEqual(after.map((r) => r.internalId), ['JDC-CCCC33'],
+    '留底之後要從空的重建；舊快照那一列（JDC-AAAA11）出現在這裡＝它被拿來覆寫了。實際：'
+    + JSON.stringify(after));
+  assert.deepEqual({ v: after[0].v, m: after[0].m }, { v: 2, m: 'scan' },
+    '重建出來的那一列本身也要是完整的');
 });
 
 test('🔴★#3：第二次讀失敗且隔離也失敗 → 整筆失敗，一個字都不准寫回去', () => {

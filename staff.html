@@ -285,7 +285,7 @@ function quarantineRawQueue() {
 /**
  * 佇列項目的身分。移除、比對、驗證都用這一把，避免各處各自組鍵而漂開。
  *
- * 🔴 **這把鍵有第三個持有人，而且在另一個 repo**（2026-09-02 外審 R2 #9 順藤摸到）。
+ * 🔴 **這把鍵有第二個持有人，而且在另一個 repo**（2026-09-02 外審 R2 #9 順藤摸到）。
  * 後端 `accountedKeys()` 產生 `writtenKeys`，前端拿它比對「哪幾列真的寫進去了」
  * ⇒ **兩邊組鍵的方式必須逐字相同，否則比對全部落空。**
  * 上一版三處各寫各的：這裡不 trim、`flush` 裡那一把連 `String()` 都沒有、
@@ -295,6 +295,36 @@ function quarantineRawQueue() {
  * ⚠️ **跨 repo 沒有機械強制點**——與「兩個 repo 必須同批上線」是同一個已知缺口。
  */
 function qrowKey(r) { return String(r && r.internalId).trim() + '|' + String(r && r.ts); }
+
+/**
+ * 後端回的收據，跟**我這一側自己組的鍵**對不對得起來（2026-09-02 外審 R3 #2）。
+ *
+ * 問題：組鍵的規則有兩個持有人、在兩個 repo，**兩邊的測試各讀自己那份契約檔**
+ * ⇒ 任一側同時改實作與自己的契約檔，那一側全綠、另一側維持舊的也全綠，
+ * 中間沒有任何 CI、部署或執行期訊號。分岔的後果是「後端說寫進去了、前端永遠移不掉」。
+ *
+ * 解法：後端連同 `writtenKeys` 回一份 `writtenIdx`（那幾列在送出陣列裡的位置）。
+ * 前端拿位置取回**同一列**，用自己的 `qrowKey` 重算，逐字比對。
+ * ⇒ 鍵格式一旦分岔，第一次回寫就對不上 ⇒ 當場擋下來，不動佇列。
+ *
+ * 🔴 **刻意不用「格式版本號」**：版本號是第三份要靠人記得改的東西。
+ * 改了格式忘了改版本 ⇒ 什麼都不會發生 ⇒ 只是把「兩份會分岔」換成「三份會分岔」。
+ * 這裡的判準**從真實資料導出**，沒有東西可以忘記改。
+ *
+ * ⚠️ 已知界線（寫出來，不要當它不存在）：
+ * - 只在「這一包真的有寫進去的列」時才有訊號；整包都沒寫入時 `keys` 是空的，對得起來也證明不了什麼。
+ * - 它抓的是**上線後第一次回寫**，不是部署前。部署前的分岔沒有機械偵測（R3 #2 原話：以目前設計，沒有）。
+ * - 拿不到 `writtenIdx`（舊後端）⇒ **當成不符**，一列都不移除。fail-closed。
+ */
+function receiptAgrees(rows, res) {
+  var idx = res && res.writtenIdx, keys = res && res.writtenKeys;
+  if (!Array.isArray(idx) || !Array.isArray(keys)) return false;
+  if (idx.length !== keys.length) return false;
+  return keys.every(function (k, n) {
+    var row = rows[idx[n]];
+    return !!row && qrowKey(row) === k;
+  });
+}
 
 /**
  * 佇列項目的**全部內容**（不只身分）。`qrowKey` 只回答「這是哪一列」，
@@ -739,15 +769,23 @@ async function flush() {
         // 舊行為是安靜地刪掉——**靜默漏資料比吵更糟。**
         var written = {};
         var noReceipt = !Array.isArray(res.writtenKeys);
-        if (!noReceipt) {
+        // 🔴 跨 repo 的鍵格式握手（外審 R3 #2）。**處置與「沒有收據」相同**：不動佇列。
+        // 分成兩個變數只為了訊息講得出是哪一種——判斷本身共用同一條 fail-closed 路徑。
+        var keyMismatch = !noReceipt && !receiptAgrees(packs[i], res);
+        if (!noReceipt && !keyMismatch) {
           res.writtenKeys.forEach(function (k) { written[k] = true; });
         }
         // 送出去了、但後端沒說有寫進去的 ⇒ 搬進隔離區，不要留在主佇列無限重送、
         // 也不要直接刪掉。搬不成功就留在主佇列（留著至少還在）。
-        if (noReceipt) {
-          // 後端沒有逐列回報 ⇒ 這一批的去向不明，**不動佇列**。
-          note('bad', '後端沒有回報逐列結果，這 ' + packs[i].length + ' 筆先留著',
-               '下一輪會重送，不會重複寫入。若一直不歸零請告知工務管理組');
+        if (noReceipt || keyMismatch) {
+          // 後端沒有逐列回報、或它回的鍵跟我這邊組出來的對不起來
+          // ⇒ 這一批的去向不明，**不動佇列**。
+          note('bad',
+               (keyMismatch ? '前後端的比對鍵對不起來，這 ' : '後端沒有回報逐列結果，這 ')
+               + packs[i].length + ' 筆先留著',
+               keyMismatch
+                 ? '通常是兩個 repo 沒有同批上線。下一輪會重送，不會重複寫入。請告知工務管理組'
+                 : '下一輪會重送，不會重複寫入。若一直不歸零請告知工務管理組');
           continue;   // 這一包不移除、不隔離；其餘包照跑
         }
         var notWritten = packs[i].filter(function (r) { return !written[qrowKey(r)]; });
