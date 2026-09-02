@@ -96,6 +96,35 @@ function renderSeats(seats) {
   return html;
 }
 
+/**
+ * 🔴 外審第七輪 #6：下面這條原本手寫 `{kind:'emp', internalId:'JDC-HJKMNP', …}`
+ * ⇒ **後端把 internalId 拿掉，它仍然全綠**——它測的是我自己編的形狀，不是交界。
+ *
+ * 改成吃 `tests/fixtures/seating-board.real.json`：那是 jdc-line-gas 的測試
+ * 用真的 `getSeatingBoard` 產出來的，而那邊每次跑測試都會重新產一次比對，
+ * **產物一變就紅**，所以它不會悄悄變成過期的形狀。
+ *
+ * ⚠️ **剩下的缺口講明**：這裡吃的是那份檔案的**副本**，兩個 repo 沒有共用的測試環境，
+ * 沒有任何東西保證兩份一樣。要換掉它得先有共用執行環境——
+ * 那是「兩個 repo 必須同批上線」本來就帶著的成本，不是這條測試能解的。
+ */
+const REAL_SEAT = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'fixtures', 'seating-board.real.json'), 'utf8')).seat;
+
+test('★★接線：真的 getSeatingBoard 產物直接餵進 renderDetail，中間不補欄位', () => {
+  const html = renderSeats([REAL_SEAT]);
+  assert.ok(html.indexOf("showPerson('" + REAL_SEAT.internalId + "'") >= 0,
+    '後端真產物餵進來卻取不到內部碼。產物：' + JSON.stringify(REAL_SEAT) + '\n產出：' + html);
+});
+
+test('對照組：把真產物的 internalId 拿掉，這條要紅（證明它真的在讀那一格）', () => {
+  const without = Object.assign({}, REAL_SEAT);
+  delete without.internalId; delete without.id;
+  const html = renderSeats([without]);
+  assert.ok(html.indexOf("showPerson('" + REAL_SEAT.internalId + "'") < 0,
+    '拿掉了還是取得到＝上面那條讀的不是那一格');
+});
+
 test('★接線：座位表點名字時，帶進去的是內部碼不是只有姓名', () => {
   // ⚠️ 外審第三輪 #6：這個 fixture 原本**同時手寫了 `id` 與 `internalId`**——
   // 那是「測試自己造了供給端應有的欄位」，第五次同形狀。
