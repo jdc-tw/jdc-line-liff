@@ -183,12 +183,44 @@ test('★搜名名單：快照與名冊聯集，以內部碼去重，參加者�
     丙: { internalId: 'JDC-CCCCCC', name: '丙', unit: 'C部' },           // 只有名冊有
     無碼: { name: '無碼', unit: 'D部' },                                  // 沒有內部碼，不可報到
   };
-  const list = ctx.allPeople();
-  assert.equal(list.length, 2, '去重或聯集其中一邊壞了');
+  const ap = ctx.allPeople();
+  assert.equal(ap.people.length, 2, '去重或聯集其中一邊壞了');
+  assert.deepEqual(ap.collisions, [],
+    '同一個人在快照與名冊各出現一次不是碰撞——把他判成碰撞會讓整份名單清空');
   const byId = {};
-  list.forEach((p) => { byId[p.internalId] = p; });
+  ap.people.forEach((p) => { byId[p.internalId] = p; });
   assert.equal(byId['JDC-HJKMNP'].unit, 'A部', '快照的資料要蓋過名冊的');
   assert.ok(byId['JDC-CCCCCC'], '只在名冊裡的人要進得了搜名名單（臨時出席走這條）');
+});
+
+test('🔴★★兩個人共用一個內部碼 → 兩個都不進搜名名單，而且要具名講出來', () => {
+  // 外審第五輪（同一形狀第三次）：舊寫法 first-write-wins ⇒ 後到的那個人
+  // **在門口完全找不到**，而替留下的那位報到，寫進去的是一個指不出人的共享碼。
+  // 挑任何一個都是猜，猜錯的後果是把 A 的報到記成 B。
+  const ctx = harness({});
+  ctx.nameTable = {
+    甲: { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部' },
+    乙: { internalId: 'JDC-HJKMNP', name: '乙', unit: 'B部' },   // 同碼、不同人
+    丙: { internalId: 'JDC-CCCCCC', name: '丙', unit: 'C部' },
+  };
+  const ap = ctx.allPeople();
+  assert.deepEqual(ap.people.map((p) => p.internalId), ['JDC-CCCCCC'],
+    '碰撞的碼還留在名單裡＝有人會被當成另一個人報到');
+  assert.equal(ap.collisions.length, 2, '兩個人都要具名，不是只講一句「有碰撞」');
+  const names = ap.collisions.map((x) => x.name).sort();
+  assert.deepEqual(names, ['乙', '甲']);
+  assert.match(ap.collisions[0].why, /重複/);
+});
+
+test('★碰撞的人要出現在畫面上那塊展開區（不可以靜靜地少）', () => {
+  // 拿掉他們是對的，**不講**就是靜默漏人——門口的人只會覺得「名單裡沒有這個人」。
+  const r = renderSnapVer({ unusable: 0 }, {
+    甲: { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部' },
+    乙: { internalId: 'JDC-HJKMNP', name: '乙', unit: 'B部' },
+  });
+  assert.match(r.skip, /甲/, '實際：' + JSON.stringify(r.skip));
+  assert.match(r.skip, /乙/);
+  assert.match(r.skip, /重複/);
 });
 
 /* ── ④ 送出成功後佇列真的變空 ─────────────────────────────────────────────── */
@@ -297,17 +329,23 @@ test('對照組：後端回失敗時佇列原封不動（證明上面那條測�
 
 /* ── 後端跳過的人要一直看得到 ─────────────────────────────────────────────── */
 
-function renderSnapVer(res) {
+function renderSnapVer(res, nameTable) {
   let text = '';
   const els = { snapskip: { innerHTML: '' } };
   const ctx = harness({});
   ctx.setTopbar = () => {};
-  ctx.buildPicker = () => {};
   ctx.esc = (s) => String(s == null ? '' : s);
+  // buildPicker 給真貨——碰撞是它算出來的，stub 掉就測不到那條路。
+  ctx.jdcGroupedOptions = () => '';
+  // ⚠️ 不能設 ctx.nameTable——applySnapshotPayload 第一件事就是用 res.nameTable 蓋掉它。
+  //    要從 payload 進去，才是生產路徑走的那條。
   ctx.document = { getElementById: (id) => els[id]
     || ({ set textContent(v) { text = v; }, innerHTML: '' }) };
-  vm.runInContext(fnSrc('applySnapshotPayload'), ctx, { filename: 'staff.html-extract' });
-  ctx.applySnapshotPayload(Object.assign({ snapshot: {}, nameTable: {}, snapshotVersion: 1,
+  vm.runInContext([fnSrc('applySnapshotPayload'), fnSrc('buildPicker'),
+                   'var peopleByUnit = {};'].join('\n'),
+                  ctx, { filename: 'staff.html-extract' });
+  ctx.applySnapshotPayload(Object.assign({ snapshot: {}, nameTable: nameTable || {},
+                                           snapshotVersion: 1,
                                            generatedAt: '2026-09-02 10:00' }, res));
   return { text: text, skip: els.snapskip.innerHTML };
 }

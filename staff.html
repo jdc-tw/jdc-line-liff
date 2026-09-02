@@ -396,25 +396,60 @@ function flashFrame(kind) {
 // ─── 手動報到：單位 → 姓名 兩層下拉 ─────────────────────────────────────────
 // 名單＝快照參加者 ∪ 在職名冊（聯集）。只取在職名冊會漏掉「不在職但受邀」的人；
 // 只取參加者會漏掉臨時出席。以內部碼為鍵去重，參加者的資料優先（它才有桌次）。
+/**
+ * 人工搜名的名單。**碰撞時誰都不是**——與後端 indexByInternalId 同一條規則。
+ *
+ * 🔴 為何（外審第五輪，同一形狀第三次）：舊寫法是 first-write-wins。
+ * 名冊有兩列共用一個內部碼時（nameTable 用姓名當鍵，兩個人都在裡面），
+ * 先到的占住那個碼、後到的整個消失——**那個人在門口完全找不到**。
+ * 而替留下的那位報到，寫進去的是一個指不出人的共享碼，事後也分不出是誰。
+ *
+ * 同一個人從 snapshot 與 nameTable 各出現一次是正常的，不算碰撞：
+ * 判準是「這個碼底下是不是兩個不同的人」，不是「這個碼出現幾次」。
+ *
+ * ⚠️ 識別只能用**姓名**，不能用「姓名＋單位」：同一個人在快照裡是活動單位、
+ *    在名冊裡是名冊單位，本來就不一樣。用單位當識別的話每個人都會被判成碰撞
+ *    而整份名單清空——這是我自己第一版的寫法，被既有測試擋下來的。
+ *    姓名的正規化與後端 buildEventNameTable 的鍵一致（去掉全半形空白）。
+ *
+ * @return {{people:Array, collisions:Array}} collisions 的形狀與後端的
+ *   skippedPeople 一致（name／unit／why），好讓同一塊展開區一起顯示。
+ */
 function allPeople() {
-  var byId = {};
-  for (var h in snapshot) {
-    var s = snapshot[h];
-    byId[s.internalId] = { internalId: s.internalId, name: s.name, unit: s.unit };
-  }
-  for (var k in nameTable) {
-    var n = nameTable[k];
-    if (n && n.internalId && !byId[n.internalId]) {
-      byId[n.internalId] = { internalId: n.internalId, name: n.name, unit: n.unit };
-    }
-  }
-  return Object.keys(byId).map(function (e) { return byId[e]; });
+  var byId = {}, seen = {};
+  var put = function (p) {
+    if (!p) return;
+    var c = String(p.internalId || '').trim();
+    if (!c) return;
+    var who = String(p.name || '').replace(/[\s\u3000]+/g, '');
+    if (!seen[c]) seen[c] = [];
+    var known = false;
+    seen[c].forEach(function (x) { if (x.who === who) known = true; });
+    if (known) return;                       // 同一個人再出現一次＝正常
+    seen[c].push({ who: who, name: p.name, unit: p.unit });
+    if (!byId[c]) byId[c] = { internalId: c, name: p.name, unit: p.unit };
+  };
+  for (var h in snapshot) put(snapshot[h]);
+  for (var k in nameTable) put(nameTable[k]);
+
+  var collisions = [];
+  Object.keys(seen).forEach(function (c) {
+    if (seen[c].length < 2) return;
+    delete byId[c];                          // 挑任何一個都是猜，而猜錯會把 A 記成 B
+    seen[c].forEach(function (x) {
+      collisions.push({ name: x.name, unit: x.unit, internalId: c,
+                        why: '內部碼與他人重複（' + c + '）——請先修名冊' });
+    });
+  });
+  return { people: Object.keys(byId).map(function (e) { return byId[e]; }),
+           collisions: collisions };
 }
 
 var peopleByUnit = {};
 function buildPicker() {
   peopleByUnit = {};
-  allPeople().forEach(function (p) {
+  var ap = allPeople();
+  ap.people.forEach(function (p) {
     var u = p.unit || '（未分單位）';
     (peopleByUnit[u] = peopleByUnit[u] || []).push(p);
   });
@@ -425,6 +460,7 @@ function buildPicker() {
   // 單位分「總公司／工地」兩組 optgroup＝與報到頁共用 groups.js，分類來源不分歧
   document.getElementById('selUnit').innerHTML =
     '<option value="">── 請選擇 ──</option>' + jdcGroupedOptions(units, 'unit', '');
+  return ap.collisions;   // 被拿掉的那些人要有人講出來，不可以靜靜地少
 }
 
 /** 這個人本機已知報到過？（後端冪等仍是最終權威，這裡只影響排序與提示） */
@@ -625,10 +661,10 @@ function setTopbar(actName, station) {
  * 卻答不出是哪 3 個——現場只能請人回頭找承辦，而承辦不在門口。
  * 理由一律取自後端（pfWhy／pfPeople 同一份），這裡不猜。
  */
-function renderSkipped(res) {
+function renderSkipped(res, extra) {
   var box = document.getElementById('snapskip');
   if (!box) return;
-  var people = pfPeople(res), gap = pfGap(res);
+  var people = pfPeople(res).concat(extra || []), gap = pfGap(res);
   if (!people.length && !gap) { box.innerHTML = ''; return; }   // 常態：整塊不存在
   var items = people.map(function (x) {
     return '<li>' + esc(x.unit || '（未分單位）') + '　' + esc(x.name)
@@ -654,9 +690,11 @@ function applySnapshotPayload(res) {
   // 長駐在名單版本那一行，不用 note()：note 會被下一次判定蓋掉，而這件事要一直看得到。
   // 🔴 光有數字不夠：現場站在門口的人要能回答「是誰、為什麼」，否則只能請人回頭問承辦。
   //    清單收在 <details> 裡，預設收合——手機版面小，但要展得開。
-  renderSkipped(res);
   rebuildEmpIndex();
-  buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
+  var collisions = buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
+  // 兩個來源合在同一塊：後端說簽不出碼的，加上這台自己算出「碼撞在一起」的。
+  // 分兩塊顯示的話，門口的人要看兩個地方才知道少了誰。
+  renderSkipped(res, collisions);
 }
 
 async function loadSnapshot(force) {
