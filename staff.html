@@ -403,11 +403,21 @@ function enqueue(internalId, method) {
  * @param {string} internalId
  * @param {string} method 'scan'｜'manual'
  * @param {string=} hash 快照鍵；臨時出席者沒有，沒有就不記 seen
+ * @param {boolean=} seenIsNew 這個 hash 是**這一次動作**才變成「已掃」的嗎？
+ *   🔴 這一格必須由呼叫端明傳，**不能從 state 推**（2026-09-02 主視窗提問後查證）：
+ *   掃碼路徑的 `applyScan` 在進到這裡之前**就已經把 seen 設好了**，
+ *   所以看 state 分不出「這次設的」與「之前設的」。
+ *   而兩邊的答案不一樣——掃碼永遠是新的（先前掃過的話 applyScan 給的是 dup，
+ *   根本不會叫到這裡），手動則允許替**先前已報到過**的人再送一次。
+ *   ⚠️ 這是共用述詞的代價面：**兩邊語意的差異會被共用函式藏起來**，
+ *   所以要把它拉出來當參數，而不是在函式裡猜。
  * @returns {boolean} false ⇒ 呼叫端**必須**顯示失敗，不可以說已受理
  */
-function commitCheckin(internalId, method, hash) {
+function commitCheckin(internalId, method, hash, seenIsNew) {
   if (!enqueue(internalId, method)) {
-    if (hash) delete state.seen[hash];
+    // 只收回這一次才設的。收回更早落地的那筆 ⇒ 這一場之內那個人變成「沒報到過」，
+    // 再掃會判 ok——那是把謊講到另一個方向去。
+    if (hash && seenIsNew) delete state.seen[hash];
     return false;
   }
   if (hash) state.seen[hash] = true;
@@ -603,7 +613,16 @@ function resetPicker() {
 var flushing = false;
 async function flush() {
   if (flushing) return;                 // in-flight guard：同機同時最多一個 flush
-  var q = loadQueue(); if (!q.length) return;
+  // 🔴 開頭這一讀也要分得開「沒有」與「讀不到」（外審第六輪後重取定義域時抓到）。
+  // 用 loadQueue 的話，佇列壞掉 ⇒ 回 [] ⇒ 這裡提早 return ⇒ **每 15 秒安靜地什麼都不做**，
+  // 而徽章顯示 0 筆待送。沒有人會知道有一批報到卡在這台手機裡送不出去。
+  var head = readQueue();
+  if (!head.ok) {
+    note('bad', '待送佇列讀不出來，這台手機的報到暫時送不出去',
+         '請告知工務管理組；先不要按「重設這台手機」，那會把它永久刪掉');
+    return;
+  }
+  var q = head.rows; if (!q.length) return;
   flushing = true;
   try {
     var packs = chunkByLen(q, 3000);    // D1：一律切包
@@ -625,22 +644,41 @@ async function flush() {
         // 原本是「這一包 ok:true ⇒ 整包移除」——而 `ok:true` 只代表**請求完成**，
         // 不代表每一列都寫進試算表。被拒絕的列會連同被刪掉
         // ⇒ **那個人報到了、紀錄不見了、佇列也清了**，三個地方都查不到他。
-        // 舊後端沒有 writtenKeys 時退回舊行為（整包移除）——那是相容，不是預設。
+        // 🔴 **缺少 writtenKeys 時一列都不移除**（2026-09-02 外審第六輪 ③）。
+        //
+        // 舊版寫「沒有 writtenKeys 就退回整包移除，那是相容不是預設」——
+        // **那句話讓這個分支讀起來像已經被想過了，於是沒有人再看它。**
+        // 而它正是 #5 要修掉的那個行為，原封不動留在相容分支裡。
+        //
+        // 更糟的是它最可能觸發的時機：**兩個 repo 必須同批上線**，
+        // 而部署窗口裡前端是新的、後端還是舊的 ⇒ 這個分支會走到，
+        // 而那正是最不能靜默刪資料的時候。
+        //
+        // 取捨講明：不移除 ⇒ 下一輪會重送，後端冪等擋住重複寫入；
+        // 佇列不歸零會被徽章與下面那句 note 看見。**吵，但看得見。**
+        // 舊行為是安靜地刪掉——**靜默漏資料比吵更糟。**
         var written = {};
-        if (Array.isArray(res.writtenKeys)) {
+        var noReceipt = !Array.isArray(res.writtenKeys);
+        if (!noReceipt) {
           res.writtenKeys.forEach(function (k) { written[k] = true; });
-        } else {
-          packs[i].forEach(function (r) { written[qkeyOf(r)] = true; });
         }
         // 送出去了、但後端沒說有寫進去的 ⇒ 搬進隔離區，不要留在主佇列無限重送、
         // 也不要直接刪掉。搬不成功就留在主佇列（留著至少還在）。
+        if (noReceipt) {
+          // 後端沒有逐列回報 ⇒ 這一批的去向不明，**不動佇列**。
+          note('bad', '後端沒有回報逐列結果，這 ' + packs[i].length + ' 筆先留著',
+               '下一輪會重送，不會重複寫入。若一直不歸零請告知工務管理組');
+          continue;   // 這一包不移除、不隔離；其餘包照跑
+        }
         var notWritten = packs[i].filter(function (r) { return !written[qkeyOf(r)]; });
         var quarantined = notWritten.length ? quarantineRows(QKEY + '_rejected', notWritten) : true;
         var removable = {};
         packs[i].forEach(function (r) {
           if (written[qkeyOf(r)] || quarantined) removable[qkeyOf(r)] = true;
         });
-        saveQueue(loadQueue().filter(function (r) { return !removable[qkeyOf(r)]; }));
+        var cur = readQueue();
+        // 讀不到就不可以拿過濾後的結果覆蓋回去——那是 A1 的同一個形狀，出口版。
+        if (cur.ok) saveQueue(cur.rows.filter(function (r) { return !removable[qkeyOf(r)]; }));
         if (notWritten.length) {
           note('bad', '有 ' + notWritten.length + ' 筆後端沒有寫入',
                quarantined ? '已保留在本機，請告知工務管理組'
@@ -678,7 +716,9 @@ function manualCheckin(p) {
   // ⚠️ 臨時出席者不在快照裡＝沒有 hash，seen 追蹤不到他（applyScan 全程以 hash 為鍵）。
   // 後果僅止於「同一位臨時出席者再手動報到一次時，不會跳已報到過的提醒」；
   // 資料端仍由後端冪等（活動ID＋內部碼）擋住，不會重複寫入。
-  if (!commitCheckin(p.internalId, 'manual', h)) {
+  // 第四格是 `!alreadySeen`：手動路徑允許替先前已報到過的人再送一次
+  //（上面那句 confirm 就是在問這個），那種情況下 seen 不是這一次設的，失敗不可以收回。
+  if (!commitCheckin(p.internalId, 'manual', h, !alreadySeen)) {
     note('bad', p.name + ' 這一筆沒有存起來，請再試一次',
          '若連續失敗：這台手機的儲存空間可能滿了，改用別台或先用紙本記下姓名');
     flashFrame('bad');
@@ -721,6 +761,27 @@ var ready = false;   // 快照載入 gate：未完成前掃描停用
  * （computeCheckinExpiry_＝活動日+1 天 23:59），換成 localStorage 之後
  * 它才真的派得上用場：撐過關窗、活動結束隔天自動清掉。
  */
+/**
+ * 「重設這台手機」的確認訊息。**抽成函式是為了測得到**——
+ * 原本這句話組在事件處理器裡，只能靠掃原始碼驗，而那種驗法會被下一次改寫悄悄繞過。
+ *
+ * 🔴 用 readQueue 不用 loadQueue：**讀不到時 loadQueue 回 0**，
+ * 那句話就會變成「目前 0 筆待送，不會遺失任何報到紀錄」——然後把它刪掉。
+ * A1 的同一個形狀，發生在刪除這一端（2026-09-02 重取定義域時抓到：
+ * 我上一輪只掃了「誰寫進去」的入口，漏了「誰刪掉」的出口）。
+ */
+function wipeConfirmText() {
+  var cur = readQueue();
+  var n = cur.rows.length;
+  if (!cur.ok) {
+    return '⚠️ 這台手機的待送佇列讀不出來，裡面可能還有沒回寫的報到。'
+      + '\n\n清除後那些資料會永久消失、無法復原。\n\n仍要清除？';
+  }
+  return n > 0
+    ? '⚠️ 尚有 ' + n + ' 筆報到還沒回寫到伺服器。\n\n清除後這 ' + n + ' 筆會永久消失、無法復原。\n\n仍要清除？'
+    : '清除本機快照？（目前 0 筆待送，不會遺失任何報到紀錄）';
+}
+
 function purgeIfExpired() {
   var exp = Number(localStorage.getItem(EXPIRE_KEY) || 0);
   if (exp && Date.now() > exp) {
@@ -868,7 +929,9 @@ async function handle(text, t0) {
   var ms = Math.round(performance.now() - t0);
   if (r.verdict.type === 'ok') {
     // 順序與手動路徑一致，且不是各自寫對——**兩條共用 commitCheckin**（見該函式標頭）。
-    if (commitCheckin(r.verdict.person.internalId, 'scan', h)) {
+    // 第四格傳 true：verdict 是 ok 就代表 applyScan 認定他先前沒掃過
+    // （先前掃過會回 dup，走不到這裡），所以 seen 這一格必然是這一次才設的。
+    if (commitCheckin(r.verdict.person.internalId, 'scan', h, true)) {
       // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
       personCard('ok', '已受理', r.verdict.person);
       flashFrame('ok');
@@ -974,11 +1037,7 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
   document.getElementById('wipe').addEventListener('click', function (e) {
     e.preventDefault();
     // 待送佇列只存在這台手機上，清掉就是報到紀錄真的不見——把筆數講出來，別讓人盲按
-    var n = loadQueue().length;
-    var msg = n > 0
-      ? '⚠️ 尚有 ' + n + ' 筆報到還沒回寫到伺服器。\n\n清除後這 ' + n + ' 筆會永久消失、無法復原。\n\n仍要清除？'
-      : '清除本機快照？（目前 0 筆待送，不會遺失任何報到紀錄）';
-    if (!confirm(msg)) return;
+    if (!confirm(wipeConfirmText())) return;
     localStorage.removeItem(SNAP_KEY); localStorage.removeItem(EXPIRE_KEY);
     localStorage.removeItem(QKEY); localStorage.removeItem(SEEN_KEY);
     note('bad', '已清除', '請重新整理這一頁');

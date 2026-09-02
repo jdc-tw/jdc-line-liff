@@ -89,7 +89,7 @@ function harness(opt) {
   vm.runInContext([
     varSrc('DEMO_CODES = \\['), varSrc('DEMO_PEOPLE = \\['),
     fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('saveQueue'),
-    fnSrc('quarantineRawQueue'), fnSrc('commitCheckin'),
+    fnSrc('quarantineRawQueue'), fnSrc('commitCheckin'), fnSrc('wipeConfirmText'),
     'var QUEUE_V = 2;',
     fnSrc('enqueue'), fnSrc('quarantineLegacyQueue'),
     fnSrc('rebuildEmpIndex'), fnSrc('tableOf'), fnSrc('isCheckedIn'),
@@ -238,13 +238,60 @@ test('★送出成功後佇列真的變空（移除用的組合鍵要跟佇列�
       { v: 2, internalId: 'JDC-BBBBBB', ts: 2, m: 'manual' },
     ]),
   });
+  // ⚠️ 這個 fixture 原本**沒有 writtenKeys**，而它照樣期待佇列清空——
+  //    也就是說它的期望值一直建立在「沒有回執就整包刪除」那個 fail-open 上
+  //    （外審第六輪 ③）。回執補上來，這條才是在測它原本要測的東西。
   const ctx = harness({ storage,
-    jgetRes: { ok: true, written: 2, allChecked: ['JDC-HJKMNP', 'JDC-BBBBBB'] } });
+    jgetRes: { ok: true, written: 2, allChecked: ['JDC-HJKMNP', 'JDC-BBBBBB'],
+               writtenKeys: ['JDC-HJKMNP|1', 'JDC-BBBBBB|2'] } });
   assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 2, '前置條件：先要有兩筆');
 
   await ctx.flush();
   assert.deepEqual(JSON.parse(ctx.localStorage.getItem('q')), [],
     '送出成功卻移不掉＝無限重送。剩下的是：' + ctx.localStorage.getItem('q'));
+});
+
+test('🔴★後端沒有回報 writtenKeys 時，一列都不可以移除', async () => {
+  // 外審第六輪 ③：舊寫法「沒有回執就整包當成已寫入」，而那正是 #5 要修掉的行為，
+  // 原封不動留在相容分支裡——**註解寫著「那是相容，不是預設」，
+  // 於是它讀起來像已經被想過了，沒有人再看它。**
+  // 最可能觸發的時機是部署窗口（前端新、後端舊），而那正是最不能靜默刪資料的時候。
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage, jgetRes: { ok: true, written: 1 } });   // 沒有 writtenKeys
+  await ctx.flush();
+  assert.equal(JSON.parse(ctx.localStorage.getItem('q')).length, 1,
+    '沒有回執卻把它刪了＝那個人報到了、紀錄不見了、佇列也清了，三個地方都查不到他');
+  assert.deepEqual(JSON.parse(ctx.localStorage.getItem('q_rejected') || '[]'), [],
+    '也不可以搬進隔離區——去向不明的東西留在原地，別再多搬一次');
+  const bad = ctx.calls.notes.filter((n) => n.cls === 'bad');
+  assert.equal(bad.length, 1, '留著卻不講＝佇列永遠不歸零而沒有人知道為什麼');
+  assert.match(bad[0].text, /沒有回報逐列結果/);
+});
+
+test('🔴★清除本機（wipe）的確認訊息：佇列讀不到時不可以說「不會遺失任何報到紀錄」', () => {
+  // 重取定義域時抓到的第二處出口（2026-09-02）：那句話用的是 loadQueue().length，
+  // 而 loadQueue 讀不到時回 0 ⇒ 訊息說「0 筆待送、不會遺失」，然後把它刪掉。
+  // A1 的同一個形狀，發生在刪除這一端。
+  const ctx = harness({ storage: fakeStorage({ q: '[{壞掉的 JSON' }) });
+  const r = ctx.readQueue();
+  assert.equal(r.ok, false, '前置條件：這份佇列確實讀不出來');
+  assert.equal(ctx.loadQueue().length, 0,
+    '前置條件：loadQueue 在這種情況回 0——所以拿它去組確認訊息會說謊');
+  const msg = ctx.wipeConfirmText();
+  assert.match(msg, /讀不出來/, '實際訊息：' + msg);
+  assert.doesNotMatch(msg, /不會遺失任何報到紀錄/,
+    '讀不到卻說不會遺失＝使用者按下去就永久消失，而他是被這句話說服的');
+});
+
+test('對照組：wipe 的確認訊息在真的 0 筆與真的有 N 筆時各講各的', () => {
+  const empty = harness({ storage: fakeStorage({}) });
+  assert.match(empty.wipeConfirmText(), /不會遺失任何報到紀錄/);
+  const two = harness({ storage: fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1 },
+                       { v: 2, internalId: 'JDC-BCDFGH', ts: 2 }]) }) });
+  assert.match(two.wipeConfirmText(), /尚有 2 筆/);
 });
 
 /* 🔴 外審第三輪 #5：`ok:true` 只代表**請求完成**，不代表每一列都寫進試算表。
@@ -573,4 +620,58 @@ test('對照組：寫得進去時兩條路徑都說「已受理」，且各自�
   c2.manualCheckin({ internalId: 'JDC-BCDFGH', name: '乙', unit: 'B部' });
   assert.equal(c2.calls.cards.filter((x) => x.cls === 'ok').length, 1);
   assert.equal(JSON.parse(c2.localStorage.getItem('q'))[0].internalId, 'JDC-BCDFGH');
+});
+
+test('🔴★flush 開頭讀不到佇列時，要講出來，不可以安靜地什麼都不做', async () => {
+  // 舊寫法 `var q = loadQueue(); if (!q.length) return;` ⇒ 佇列壞掉就提早 return，
+  // 每 15 秒安靜地什麼都不做，而徽章顯示 0 筆待送。
+  // **沒有人會知道有一批報到卡在這台手機裡送不出去。**
+  const storage = fakeStorage({ q: '[{壞掉的 JSON' });
+  const ctx = harness({ storage, jgetRes: { ok: true } });
+  await ctx.flush();
+  assert.equal(ctx.calls.jget.length, 0, '讀不出來卻還是送出去了＝送的是什麼沒人知道');
+  assert.equal(storage.getItem('q'), '[{壞掉的 JSON', '原始值要原封不動');
+  const bad = ctx.calls.notes.filter((n) => n.cls === 'bad');
+  assert.equal(bad.length, 1, '安靜地 return＝這台手機從此不再回寫，而畫面說 0 筆待送');
+  assert.match(bad[0].text, /讀不出來/);
+});
+
+test('🔴★flush 送出後、寫回佇列前佇列壞掉 → 不可以覆蓋', async () => {
+  // 中間隔著 await：另一個分頁、或這一輪等待期間的任何事都可能讓它壞掉。
+  // 這一格守的是「出口也要分得開沒有與讀不到」——入口修好了不代表出口修好了。
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage });
+  ctx.jget = async () => {
+    storage.setItem('q', '[{送出去之後才壞掉');   // 回應回來之前佇列壞了
+    return { ok: true, writtenKeys: ['JDC-HJKMNP|1'] };
+  };
+  await ctx.flush();
+  assert.equal(storage.getItem('q'), '[{送出去之後才壞掉',
+    '拿過濾後的結果覆蓋回去＝把讀不到的內容換成一個空陣列，原始值就永遠沒了');
+});
+
+test('🔴★手動替「先前已報到過」的人再送一次而寫入失敗 → seen 不可以被收回', async () => {
+  // seenIsNew 那一格的意義：掃碼永遠是新的（先前掃過會回 dup，走不到 commitCheckin），
+  // 手動則允許替先前已報到過的人再送（會先跳「仍要再送出？」）。
+  // 無條件收回的話，這一場之內那個人變成「沒報到過」，再掃會判 ok——
+  // **那是把謊講到另一個方向去。**
+  const storage = brokenStorage({}, 'q');
+  const ctx = harness({ storage });
+  ctx.idToHash = { 'JDC-HJKMNP': 'H9' };
+  ctx.state.seen['H9'] = true;                    // 先前已經報到過（更早落地的）
+  ctx.manualCheckin({ internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部' });
+  assert.equal(ctx.state.seen['H9'], true,
+    '把更早落地的 seen 收回去了＝這一場之內他變成沒報到過，再掃會被判 ok');
+  assert.equal(ctx.calls.notes.filter((n) => n.cls === 'bad').length, 1, '仍然要講失敗');
+});
+
+test('對照組：手動替「沒報到過」的人送而寫入失敗 → seen 要收回（證明上面不是永遠不收）', async () => {
+  const storage = brokenStorage({}, 'q');
+  const ctx = harness({ storage });
+  ctx.idToHash = { 'JDC-BCDFGH': 'H8' };
+  ctx.manualCheckin({ internalId: 'JDC-BCDFGH', name: '乙', unit: 'B部' });
+  assert.equal(!!ctx.state.seen['H8'], false,
+    '這一次才設的沒收回＝他其實沒被記錄，系統卻說他報到過');
 });
