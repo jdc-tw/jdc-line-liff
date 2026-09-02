@@ -70,11 +70,41 @@ async function open(page, opts) {
     await route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8',
       body: 'cb(' + JSON.stringify(payload) + ')' });
   });
+  // ── LIFF（2026-09-02 Task 1 前半：這一頁變成 LIFF 頁）────────────────
+  //
+  // 🔴 **CDN 一律擋掉，改注入替身。** 兩個理由，缺一都不行：
+  //   ① **不可以真的去打 LINE。** e2e 是常態執行的東西，讓它連外＝
+  //      每跑一次測試就對 LINE 發一次請求，而且測試會因為網路而紅。
+  //   ② 真 SDK 在 `localhost` 上 `liff.init` 一定失敗（endpoint 註冊的是
+  //      正式網域）⇒ 拿到的會是一個**跟受測物無關的**失敗。
+  //
+  // ⚠️ **所以這一層驗不到「LINE 真的收下這次轉址」**。那一段只有在正式網域上、
+  //    由本人登入一次才驗得到，**不在自動測試涵蓋範圍內**。
+  await page.route(/static\.line-scdn\.net/, (route) => route.abort('failed'));
+  const liffOpt = opts.liff || {};
+  // ⚠️ 記在**頁面裡**，不用 exposeFunction——同一個 page 開兩次的測試會撞
+  //    「Function has been already registered」，而那是量具壞掉、不是受測物壞掉。
+  await page.addInitScript(({ loggedIn, idToken, initFails }) => {
+    window.__liffLogins = [];
+    window.liff = {
+      init: () => (initFails ? Promise.reject(new Error(initFails)) : Promise.resolve()),
+      isLoggedIn: () => loggedIn,
+      getIDToken: () => idToken,
+      login: (o) => { window.__liffLogins.push(o); },
+    };
+  }, {
+    loggedIn: liffOpt.loggedIn === undefined ? true : liffOpt.loggedIn,
+    idToken: liffOpt.idToken === undefined ? 'stub-id-token' : liffOpt.idToken,
+    initFails: liffOpt.initFails || '',
+  });
+
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto('/welfare.html?t=TESTTOKEN');
+  const liffLogins = () => page.evaluate(() => window.__liffLogins || []);
+  if (opts.stopAtGate) return { calls, seen, errors, liffLogins };
   await page.waitForSelector('#audience-list details.grp');
-  return { calls, seen, errors };
+  return { calls, seen, errors, liffLogins };
 }
 
 /** 勾第 i 個人（用真實的滑鼠點擊，走真實的事件路徑）。 */
@@ -982,4 +1012,60 @@ test('⬛ 對照組：沒按停用時，兩則都留在下拉、已停用區是�
   expect(ctx.seen.some((c) => c.action === 'removeWelfareTemplate'),
     '沒按鈕卻送出了停用').toBe(false);
   expect(ctx.errors, 'console 有未捕捉的錯誤').toEqual([]);
+});
+
+/* ══ 身分閘：在真的瀏覽器裡，這三條路各自看到什麼 ═══════════════════════
+ *
+ * 前兩層（純函式、wiring）用的是假元素。這一層看的是**畫面實際變成什麼樣**、
+ * **底下的鈕是不是真的按不到**、**console 有沒有東西**。
+ *
+ * ⚠️ **涵蓋範圍**：LIFF SDK 是替身（見 open() 的說明）。
+ *    驗得到「頁面走到哪一步、顯示什麼、有沒有讓她按到不該按的東西」；
+ *    **驗不到「LINE 真的收下這次轉址並帶她回來」**——那要正式網域＋本人登入。
+ */
+
+test('未登入（電腦瀏覽器那條路）：畫面停在身分閘，送出鈕按不到，且轉去 LINE 登入', async ({ page }) => {
+  const r = await open(page, { liff: { loggedIn: false }, stopAtGate: true });
+  await expect(page.locator('#liff-gate')).toBeVisible();
+  await expect(page.locator('#liff-gate-msg')).toContainText('LINE 登入');
+
+  // 🔴 底下的鈕不是「看不到」而已，要真的**按不到**。
+  //    只驗 toBeVisible 的話，一個 z-index 沒蓋住的閘會通過，而她照樣按得到送出。
+  const blocked = await page.evaluate(() => {
+    const b = document.getElementById('btn-send');
+    const rect = b.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return { covered: top !== b, gate: !!(top && top.closest && top.closest('#liff-gate')) };
+  });
+  expect(blocked.covered, '身分閘沒有蓋住送出鈕').toBe(true);
+  expect(blocked.gate, '蓋住送出鈕的不是身分閘').toBe(true);
+
+  const logins = await r.liffLogins();
+  expect(logins.length, '沒有轉去 LINE 登入 ⇒ 她在電腦上永遠停在確認身分').toBe(1);
+  expect(logins[0].redirectUri).toContain('/welfare.html?t=TESTTOKEN');
+  expect(r.calls.getWelfareAudience, '還沒確認是誰就把全公司名單載出來了').toBe(0);
+  expect(r.errors, 'console 有錯').toEqual([]);
+});
+
+test('已登入但拿不到 ID token：擋住並講明重試沒用，不可以說「請先登入」', async ({ page }) => {
+  const r = await open(page, { liff: { loggedIn: true, idToken: null }, stopAtGate: true });
+  await expect(page.locator('#liff-gate')).toBeVisible();
+  const t = await page.locator('#liff-gate-msg').textContent();
+  expect(t, '沒講明重試沒用 ⇒ 她會一直重整一個永遠不會好的東西').toContain('重新整理不會好');
+  expect(t, '說「請先登入」——而她已經登入了').not.toContain('請先登入');
+  expect(r.calls.getWelfareAudience).toBe(0);
+  expect(r.errors).toEqual([]);
+});
+
+test('已登入且拿得到憑證：閘讓開，名單照常載出來', async ({ page }) => {
+  const r = await open(page, {});                 // 預設就是已登入＋有 token
+  await expect(page.locator('#liff-gate')).toBeHidden();
+  await expect(page.locator('#audience-list details.grp').first()).toBeVisible();
+  expect(r.calls.getWelfareAudience).toBe(1);
+  expect(r.errors).toEqual([]);
+});
+
+test('liff.init 失敗：畫面要說出原因，不可以靜默停在「確認身分中」', async ({ page }) => {
+  await open(page, { liff: { initFails: 'boom-原因' }, stopAtGate: true });
+  await expect(page.locator('#liff-gate-msg')).toContainText('boom-原因');
 });

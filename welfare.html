@@ -149,6 +149,22 @@
   }
 </style></head><body>
 
+<!-- 🔴 **身分閘：預設遮住整頁，JS 確認身分之後才拿掉。**
+     預設可見寫在 markup 裡而不是由 JS 打開，是為了 fail-closed——
+     JS 掛掉、SDK 載不到、init 卡住，她看到的是「正在確認身分」而不是一個能按的送出鈕。 -->
+<div id="liff-gate" style="position:fixed;inset:0;z-index:9999;background:#fff;
+     display:flex;align-items:center;justify-content:center;padding:24px;text-align:center">
+  <div style="max-width:32em">
+    <!-- 識別：被擋住的三種狀態（SDK 沒載到／拿不到憑證／init 失敗）她會**一直看著這一頁**，
+         全白配一行字讀起來像「網站壞了」。轉址那條只閃一下，但共用同一個閘。 -->
+    <img src="assets/logo-full.svg" alt="日本國土開發" style="height:28px;margin-bottom:18px"
+         onerror="this.style.display='none'">
+    <div style="font-size:17px;font-weight:600;margin-bottom:10px">福委會 LINE 發送</div>
+    <div id="liff-gate-msg" style="font-size:15px;line-height:1.7">正在確認身分…</div>
+    <div id="liff-gate-act" style="margin-top:16px"></div>
+  </div>
+</div>
+
 <div class="brand"><img src="assets/logo-full.svg" alt="日本國土開發" onerror="this.style.display='none'"></div>
 <div class="toplinks"><span id="msglog-entry"></span></div>
 
@@ -232,6 +248,8 @@
 
 <!-- 順序：資料 → 模組 → inline script。四支都要在 inline script 之前，
      否則 gasCall／LINE_EMOJI／encodeSelection is not defined，而畫面只會停在載入中。 -->
+<!-- LIFF SDK。**必須早於下面的 assets 與頁內 script**——startLiff() 會用到 window.liff。 -->
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script src="assets/gas-call.js"></script>
 <script src="assets/welfare-client.js"></script>
 <script src="assets/line-emoji.js"></script>
@@ -252,6 +270,18 @@
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
 function q(k){var m=location.search.match(new RegExp('[?&]'+k+'=([^&]+)'));return m?decodeURIComponent(m[1]):'';}
 var TOKEN = q('t');
+
+/**
+ * LIFF app。**與 index.html 同一條，不多開 LIFF ID**（`tools.md`：同一條 LIFF ＋ 參數）。
+ * 前綴 `2010451233` 就是 LINE Login channel「JDC調查平台」的 channel ID，
+ * 也是後端驗簽要帶的 `client_id`。
+ *
+ * ⚠️ **這一頁在 2026-09-02 之前完全不是 LIFF 頁**——身分只來自網址上的 `?t=`。
+ *    `liff.login()` 的 redirectUri 必須落在 LIFF app 註冊的 endpoint 底下；
+ *    endpoint 記載為站台根（`campaign.jdc-corpn.com.tw`，`tools.md` 2026-07-12），
+ *    本頁在它底下 ⇒ 成立。**那是記載，不是當日複核過的 Console 值。**
+ */
+var LIFF_ID = '2010451233-a781rqsm';
 
 // ── 本頁全域。**這一段就是 manifest**，page-load.test.js 會把整頁跑起來驗它。──
 var ROWS = [];              // 後端回的 canonical 名單，順序即 bitmap 的順序
@@ -1115,8 +1145,85 @@ function init() {
   wireButtons();
   syncSaveButton(); syncOtpButton(); syncSendButton();
 
-  // ② 載名單（含 audienceRev、counts、msgLogToken）③ 載範本清單
-  loadAudience().then(loadTemplates);
+  // ② 確認身分，通過才載資料。**不通過就不載**——沒有身分的畫面沒有東西該顯示。
+  startLiff();
+}
+
+/* ── LIFF 身分 ─────────────────────────────────────────────────────────
+ *
+ * 🔴 **不判斷「在 LINE 裡還是在電腦瀏覽器」**，問的是 `isLoggedIn()`：
+ *      在 LINE 裡開    → 已登入 → 直接往下
+ *      在電腦瀏覽器開  → 未登入 → login() 轉址 → 回來再走一次 → 已登入
+ *    ⇒ **兩條路收斂成同一條，沒有「判斷不出來」這個分支。**
+ *    做法照 index.html，不另起一套。
+ *
+ * ⚠️ **電腦那條路會多一次 LINE 登入轉址**，那是流程改變、不是 bug，要讓承辦人知道。
+ */
+
+/** 閘上寫字。`act` 是選填的一顆鈕（HTML 字串，只由本檔給，不吃外部輸入）。 */
+function liffGate(text, actHtml) {
+  var g = document.getElementById('liff-gate');
+  if (!g) return;
+  g.hidden = false; g.style.display = 'flex';
+  document.getElementById('liff-gate-msg').textContent = text;
+  document.getElementById('liff-gate-act').innerHTML = actHtml || '';
+}
+
+/** 擋住並具名。**不挑預設、不放行**——放行的失敗長相是「該擋的沒擋」，看不見。 */
+function liffBlock(why) {
+  liffGate(why, '<button type="button" class="btn btn-sm" '
+    + 'onclick="location.reload()">重新整理</button>');
+}
+
+function liffOpen() {
+  var g = document.getElementById('liff-gate');
+  if (g) { g.hidden = true; g.style.display = 'none'; }
+}
+
+/**
+ * 取一份**當下的** LINE ID token。**每次都重新取，絕不存起來。**
+ *
+ * 🔴 **為何不快取**：ID token 只有效一小時，而這一頁的流程有寄驗證碼、
+ *    有 45 秒的送出呼叫，開著超過一小時很正常。
+ *    存起來的失敗長相是：她按送出 → 驗簽失敗 → 畫面說「請重新登入」，
+ *    **而她根本沒登出過** ⇒ 失敗偽裝成使用者的錯。
+ *
+ * ⚠️ 這一輪（Task 1 前半）只把它準備好，**還沒有任何呼叫帶著它送出去**。
+ */
+function freshIdToken() {
+  if (!(window.liff && typeof liff.getIDToken === 'function')) return '';
+  var t = liff.getIDToken();
+  return t ? String(t) : '';
+}
+
+function startLiff() {
+  if (!(window.liff && typeof liff.init === 'function')) {
+    liffBlock('LINE 的元件沒有載入成功，沒辦法確認你的身分。'
+      + '請確認網路正常後重新整理；一直這樣的話請找資訊人員。');
+    return;
+  }
+  return liff.init({ liffId: LIFF_ID })
+    .then(function () {
+      if (!liff.isLoggedIn()) {
+        // 在電腦瀏覽器開會走到這裡：轉去 LINE 登入，回來時已登入，再走一次上面。
+        liffGate('正在前往 LINE 登入，登入後會自動回到這一頁…');
+        liff.login({ redirectUri: location.href });   // 保留 ?t= 過登入
+        return;
+      }
+      // 能力檢查：**取一次就丟掉，不留下來用**。目的是讓「拿不到憑證」在她開頁的
+      // 當下就現形，而不是等她選完 137 個人、按下送出才失敗。
+      if (!freshIdToken()) {
+        liffBlock('已經登入 LINE，但拿不到這一頁需要的憑證。'
+          + '這是 LINE 後台的設定問題，重新整理不會好，請找資訊人員。');
+        return;
+      }
+      liffOpen();
+      return loadAudience().then(loadTemplates);
+    })
+    .catch(function (err) {
+      // **不靜默**。訊息帶出原因，否則「畫面一直是載入中」查不出是哪一段。
+      liffBlock('確認身分時失敗：' + ((err && err.message) ? err.message : String(err)));
+    });
 }
 
 init();
