@@ -88,7 +88,7 @@ function harness(opt) {
                   ctx, { filename: 'partial-failure.js' });
   vm.runInContext([
     varSrc('DEMO_CODES = \\['), varSrc('DEMO_PEOPLE = \\['),
-    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('saveQueue'),
+    fnSrc('readQueue'), fnSrc('loadQueue'), fnSrc('qrowKey'), fnSrc('saveQueue'),
     fnSrc('quarantineRawQueue'), fnSrc('commitCheckin'), fnSrc('wipeConfirmText'),
     'var QUEUE_V = 2;',
     fnSrc('enqueue'), fnSrc('quarantineLegacyQueue'),
@@ -699,4 +699,70 @@ test('對照組：沒有 unidentified 時一個字都不多（會吵的告警會
   const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: ['JDC-HJKMNP|1'] } });
   await ctx.flush();
   assert.equal(ctx.calls.notes.filter((n) => n.cls === 'bad').length, 0);
+});
+
+/* ══ #10 跨分頁：「寫進去了」不等於「我那一筆在裡面」 ═══════════════════════
+   外審第八輪 #10：`saveQueue` 宣稱「證明這一筆已落地」，而**兩個分頁各寫一筆、
+   兩邊都回 true、實際只剩後寫的**——因為它驗的是**長度相等**，
+   而長度相等只證明「有那麼多列」，證明不了「是我那幾列」。
+
+   ⚠️ 🔴 **刻意沒有解到底的那一格（主視窗 2026-09-02 判定，四件都寫在這裡）**
+   1. **現象**：兩個分頁的 `setItem` **真正同時**發生時仍可能互蓋。
+      這個修法把 read-modify-write 的窗口收到最小（最後一刻才讀），但 localStorage
+      沒有原子操作，窗口不是零。
+   2. 🔴 **它對誰是靜默的**：**輸掉的那一方已經回報成功**——畫面說了「已受理」、
+      seen 也落地了，而那一筆不在佇列裡。**兩個分頁都不會知道。**
+      （這正是 #10 本身要修的東西，殘留的那一小塊仍然是這個形狀。）
+   3. **為什麼不修**：`navigator.locks` 要處理「這個瀏覽器沒有它」的退路，
+      **而退路是一條沒人走過的分支**——今天已經有兩條 fail-open 從那種分支長出來。
+      事後偵測（記下送出成功的鍵、回頭比對）要**新增一份得跟佇列同步的狀態**，
+      而新增狀態正是這一輪 9/11 條發現的來源。**為了一個邊緣競態，帳算不過來。**
+   4. **歸誰決定／什麼時候要回來修**：主視窗 2026-09-02 判定不修。
+      🔴 **觸發條件**：**如果掃描站開始被設計成「多人多分頁同時使用」，這一格就不夠了。**
+      （現況是一台手機一個站別、一個分頁。） */
+
+test('🔴★saveQueue 驗的是「我那幾列在不在」，不是長度相等', async () => {
+  // 兩個分頁各寫一筆時，長度都對得上 ⇒ 舊寫法兩邊都回 true，而只剩後寫的那筆。
+  const storage = fakeStorage({});
+  // 寫進去之後被別人整個換成「同樣長度、不同內容」——長度驗證完全看不出來。
+  const realSet = storage.setItem;
+  storage.setItem = (k, v) => {
+    realSet(k, v);
+    if (k === 'q') realSet(k, JSON.stringify([{ v: 2, internalId: 'JDC-OTHERX', ts: 99, m: 'scan' }]));
+  };
+  const ctx = harness({ storage });
+  const ok = ctx.saveQueue([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]);
+  assert.equal(ok, false,
+    '長度一樣就說成功＝我那一筆被別的分頁蓋掉了，而我回報「已受理」');
+});
+
+test('🔴★enqueue 在寫入的最後一刻才讀 → 不會蓋掉這中間別的分頁寫進來的', async () => {
+  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-AAAA11', ts: 1, m: 'scan' }]) });
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
+  // 第一次讀之後、寫入之前，別的分頁插進來一筆
+  let reads = 0;
+  const realGet = storage.getItem;
+  storage.getItem = (k) => {
+    const v = realGet(k);
+    if (k === 'q' && ++reads === 1) return v;   // 第一次：舊的
+    if (k === 'q' && reads === 2) {             // 最後一刻：已經有別人的新筆
+      return JSON.stringify([{ v: 2, internalId: 'JDC-AAAA11', ts: 1, m: 'scan' },
+                             { v: 2, internalId: 'JDC-BBBB22', ts: 2, m: 'scan' }]);
+    }
+    return v;
+  };
+  assert.equal(ctx.enqueue('JDC-CCCC33', 'scan'), true);
+  const ids = JSON.parse(storage.getItem('q')).map((r) => r.internalId);
+  assert.ok(ids.indexOf('JDC-BBBB22') >= 0,
+    '別的分頁那一筆被蓋掉了——它已經回報「已受理」。實際佇列：' + JSON.stringify(ids));
+  assert.ok(ids.indexOf('JDC-CCCC33') >= 0, '自己這一筆也要在');
+});
+
+test('對照組：單一分頁連續兩次入列，兩筆都在（證明不是「它永遠說失敗」）', async () => {
+  const storage = fakeStorage({});
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: [] } });
+  assert.equal(ctx.enqueue('JDC-AAAA11', 'scan'), true);
+  assert.equal(ctx.enqueue('JDC-BBBB22', 'manual'), true);
+  const ids = JSON.parse(storage.getItem('q')).map((r) => r.internalId).sort();
+  assert.deepEqual(ids, ['JDC-AAAA11', 'JDC-BBBB22']);
 });

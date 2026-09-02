@@ -282,9 +282,16 @@ function quarantineRawQueue() {
   } catch (_) { return false; }
 }
 
+/** 佇列項目的身分。移除、比對、驗證都用這一把，避免各處各自組鍵而漂開。 */
+function qrowKey(r) { return String(r && r.internalId) + '|' + String(r && r.ts); }
+
 /**
- * 佇列寫入。**回讀確認才算成功**——`setItem` 不拋錯不代表寫進去了
- * （配額滿、私密模式都可能靜靜失敗）。
+ * 佇列寫入。**回讀確認「我那幾列在不在」才算成功。**
+ *
+ * 🔴 2026-09-02 差異審查 #10：上一版驗的是 `back.rows.length === q.length`
+ * ⇒ 兩個分頁各寫一筆時，**兩邊的長度都對得上，兩邊都回 true，而實際只剩後寫的那筆**。
+ * 長度相等證明不了「是我那幾列」——它只證明「有那麼多列」。
+ *
  * @returns {boolean} false ⇒ 這一批沒有落地，呼叫端不可以宣稱成功
  */
 function saveQueue(q) {
@@ -292,7 +299,11 @@ function saveQueue(q) {
   try {
     localStorage.setItem(QKEY, JSON.stringify(q));
     var back = readQueue();
-    ok = back.ok && back.rows.length === q.length;
+    if (back.ok) {
+      var have = {};
+      back.rows.forEach(function (r) { have[qrowKey(r)] = true; });
+      ok = (q || []).every(function (r) { return !!have[qrowKey(r)]; });
+    }
   } catch (_) { ok = false; }
   updateQueueBadge();
   return ok;
@@ -380,7 +391,11 @@ function enqueue(internalId, method) {
     // 先把讀不到的原始值搬進隔離區；搬成功才允許從空的重新開始，搬不成功就整筆失敗。
     if (!quarantineRawQueue()) return false;
   }
-  var q = cur.rows;
+  // 🔴 **在寫入的最後一刻再讀一次**（2026-09-02 差異審查 #10）。
+  // 上一版拿幾行前讀到的快照去 push 再整個覆寫 ⇒ 這中間別的分頁寫進來的都被蓋掉。
+  // 入列語意上是 append，所以要 append 到**當下的內容**，不是幾行前的快照。
+  var latest = readQueue();
+  var q = latest.ok ? latest.rows : cur.rows;
   q.push({ v: QUEUE_V, internalId: internalId, ts: Date.now(), m: method || 'scan' });
   if (!saveQueue(q)) return false;
   flush();
