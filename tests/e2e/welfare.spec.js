@@ -94,7 +94,12 @@ async function open(page, opts) {
     };
   }, {
     loggedIn: liffOpt.loggedIn === undefined ? true : liffOpt.loggedIn,
-    idToken: liffOpt.idToken === undefined ? 'stub-id-token' : liffOpt.idToken,
+    // ⚠️ **長度要像真的。** 真的 LINE ID token 是 JWT，實務上約 1KB；
+    //    用 'stub-id-token'（13 字）去量網址長度，量到的數字沒有意義
+    //    ——那就是「拿假測資量出真數字」。
+    idToken: liffOpt.idToken === undefined
+      ? ('eyJhbGciOiJIUzI1NiJ9.' + 'A'.repeat(900) + '.c2lnbmF0dXJl')
+      : liffOpt.idToken,
     initFails: liffOpt.initFails || '',
   });
 
@@ -1068,4 +1073,63 @@ test('已登入且拿得到憑證：閘讓開，名單照常載出來', async ({
 test('liff.init 失敗：畫面要說出原因，不可以靜默停在「確認身分中」', async ({ page }) => {
   await open(page, { liff: { initFails: 'boom-原因' }, stopAtGate: true });
   await expect(page.locator('#liff-gate-msg')).toContainText('boom-原因');
+});
+
+/* ══ 憑證真的上了網址，而且沒有把網址撐爆 ═══════════════════════════════
+ *
+ * 前兩層看的是「參數物件裡有沒有那一格」。這一層看的是**瀏覽器實際送出的網址**。
+ * 🔴 而 URL 長度是這個 codebase 已知的真實限制（stats.html:559 為此寫了自適應切包：
+ *    「中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度」）——ID token 大約 1KB，
+ *    每一次呼叫都多背它，值得量一次而不是用猜的。
+ */
+
+test('LINE 憑證真的出現在每一次請求的網址上', async ({ page }) => {
+  const r = await open(page, {});
+  const withCred = r.seen.filter((c) => c.params.idToken);
+  expect(r.seen.length, '一次請求都沒有 ⇒ 這條什麼都沒測到').toBeGreaterThan(0);
+  expect(withCred.length, '有請求沒帶憑證：'
+    + JSON.stringify(r.seen.filter((c) => !c.params.idToken).map((c) => c.action)))
+    .toBe(r.seen.length);
+  expect(r.errors).toEqual([]);
+});
+
+test('🔴 量一次：帶了憑證之後，最長的那個網址有多長', async ({ page }) => {
+  const urls = [];
+  page.on('request', (q) => { if (/script\.google\.com/.test(q.url())) urls.push(q.url()); });
+  const ctx = await open(page, {});
+  // 🔴 **要走到送出那一支**——它帶名單 bitmap ＋ 範本全文，是最長的那一個。
+  //    只量載入時的三個請求，量到的是最短的那幾個。
+  await armed(page, ctx);
+  page.on('dialog', (d) => d.accept());          // 送出前的確認框
+  await page.locator('#btn-send').click();
+  await expect.poll(() => ctx.calls.sendWelfareBroadcast,
+    { message: '送出那一支沒有真的送出去 ⇒ 量到的不是最長的那個網址' }).toBe(1);
+  const longest = urls.reduce((a, b) => (a.length >= b.length ? a : b), '');
+  // 這裡不是要卡一個門檻，是要把數字**留在測試輸出裡**，
+  // 讓下一個人看得到「離爆掉還有多遠」，而不是等它某天爆掉才知道。
+  console.log('[網址長度] 這一輪最長 ' + longest.length + ' 字元，共 ' + urls.length + ' 個請求');
+  expect(urls.length).toBeGreaterThan(0);
+  // 2026-09-02 實測值遠低於 8000（GAS 的實務安全線）。這條在逼近時會先紅。
+  expect(longest.length,
+    '網址逼近 8000 字元 ⇒ 送出那一支（帶名單 bitmap ＋ 範本全文）會先爆。'
+    + '最長的是：' + longest.slice(0, 200)).toBeLessThan(8000);
+});
+
+test('🔴 量最壞的那一支：儲存一則滿長度的中文範本', async ({ page }) => {
+  // 🔴 送出那一支不帶範本全文（只帶 templateId ＋ bitmap），**儲存那一支才帶**。
+  //    而中文 URL 編碼後一個字變 9 個字元（stats.html:559 已為此寫過自適應切包）
+  //    ⇒ 上限 1500 字的範本，光內文就可能上萬。這一格量的是「加了憑證之後還剩多少」。
+  const urls = [];
+  page.on('request', (q) => { if (/script\.google\.com/.test(q.url())) urls.push(q.url()); });
+  await open(page, {});
+  urls.length = 0;                               // 只看接下來這一次
+  await page.locator('#wf-tpl').fill('中'.repeat(1500));
+  await page.locator('#btn-save').click();
+  await expect.poll(() => urls.length).toBeGreaterThan(0);
+  const longest = urls.reduce((a, b) => (a.length >= b.length ? a : b), '');
+  console.log('[網址長度·最壞] 滿長度中文範本 ' + longest.length + ' 字元');
+  expect(longest.length,
+    '儲存滿長度中文範本的網址是 ' + longest.length + ' 字元。'
+    + '加上 ID token 之後逼近上限 ⇒ 她存長範本會失敗，而錯誤讀起來像網路問題。')
+    .toBeLessThan(16000);
 });

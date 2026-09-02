@@ -119,7 +119,12 @@ function ctxWith(names, opt) {
   ctx.onAddTemplate = ctx.onDisableTemplate = ctx.onRestoreTemplate = () => {};
   ctx.setAllChecked = () => {};
   ctx.SAVE_IN_FLIGHT = false; ctx.OTP_IN_FLIGHT = false; ctx.SEND_IN_FLIGHT = false;
+  // 2026-09-02：九個呼叫點改走 wfCall（憑證只掛在那一支）。
+  // ⚠️ **載入真的 wfCall，不另做替身**——替身會把「憑證有沒有掛上去」整個跳過，
+  //    而那正是這一輪加的東西。底下的 gasCall 仍是替身。
+  ctx.freshIdToken = () => (opt.idToken === undefined ? 'stub-id-token' : opt.idToken);
   vm.createContext(ctx);
+  vm.runInContext(fnSrc('wfCall'), ctx, { filename: 'wfCall' });
   // ⚠️ 後載入的定義會覆寫上面的替身——這正是要的：受測的那幾支用真的，其餘用替身
   names.forEach((n) => vm.runInContext(fnSrc(n), ctx, { filename: n }));
   return { ctx, calls, els, el };
@@ -853,4 +858,62 @@ test('🔴 畫面上不可以有「刪除」入口（刪除已經改成停用，
   ].join('\n'));
   // 對照組：這個掃法真的找得到東西
   assert.ok(/停用/.test(page), '掃法壞了：連確定存在的「停用」都找不到');
+});
+
+/* ══ 憑證只掛在一個地方（2026-09-02 Task 1 後半的前端這一半）══════════════
+ *
+ * 🔴 讓九個呼叫點各自帶憑證，就是「同一個判斷散在多處」——
+ *    漏掉其中一支的症狀是**那一支永遠驗不過，而其他八支都好好的**
+ *    ⇒ 看起來像那支 action 壞了，不像漏帶憑證。
+ */
+
+test('🔴 每一支 welfare 呼叫都要走 wfCall，不可以有人直接呼叫 gasCall', () => {
+  // ⚠️ 判準要排除 wfCall 自己那一行——**它是唯一該直接呼叫 gasCall 的地方**。
+  //    不排除的話這條會永遠是紅的，而永遠響的紅燈比沒有判準更糟。
+  // ⚠️ **要剝註解**：第 858 行有一句註解提到 gasCall（在講 nonce 的產生時機）。
+  //    不剝的話這條永遠是紅的——而永遠響的紅燈比沒有判準更糟。
+  const WF_OWN = 'return gasCall(GAS_URL, action, p, timeoutMs);';
+  const 直呼 = [];
+  stripComments(SRC).split('\n').forEach((ln, i) => {
+    if (/gasCall\(/.test(ln) && ln.indexOf(WF_OWN) < 0) {
+      直呼.push('第 ' + (i + 1) + ' 行：' + ln.trim());
+    }
+  });
+  // 對照組先算（不要放在斷言之後——前面那條先擋住的話，它永遠輪不到）
+  const 找得到自己 = stripComments(SRC).indexOf(WF_OWN) >= 0;
+  assert.ok(找得到自己, '掃法壞了：連 wfCall 自己那一行都找不到，這條會恆綠');
+  assert.deepStrictEqual(直呼, [], [
+    '這幾處繞過 wfCall 直接呼叫 gasCall：', 直呼.join('\n'),
+    '⇒ 它們不會帶到 LINE 憑證，而症狀是「只有那一支永遠驗不過」。',
+  ].join('\n'));
+});
+
+test('🔴 wfCall 會帶上 token 與當下取的 idToken', () => {
+  const { ctx } = ctxWith(['wfCall'], {});
+  const seen = [];
+  ctx.gasCall = (url, action, params) => { seen.push({ action, params }); return Promise.resolve({}); };
+  let n = 0;
+  ctx.freshIdToken = () => { n += 1; return 'tok-' + n; };
+  vm.runInContext('wfCall("getWelfareAudience", {}, 1000)', ctx);
+  vm.runInContext('wfCall("getWelfareTemplates", {}, 1000)', ctx);
+  assert.equal(seen.length, 2);
+  seen.forEach((c) => {
+    assert.equal(c.params.token, 'T', c.action + ' 沒帶連結 token');
+    assert.ok(c.params.idToken, c.action + ' 沒帶 LINE 憑證');
+  });
+  assert.notEqual(seen[0].params.idToken, seen[1].params.idToken,
+    '兩次拿到同一份憑證 ⇒ 它被存起來了。ID token 只有效一小時，'
+    + '存起來的失敗長相是「請重新登入」而她根本沒登出過');
+});
+
+test('🔴 呼叫端自己的參數不可以被憑證蓋掉，也不可以蓋掉憑證', () => {
+  const { ctx } = ctxWith(['wfCall'], {});
+  let got = null;
+  ctx.gasCall = (url, action, params) => { got = params; return Promise.resolve({}); };
+  vm.runInContext('wfCall("x", { templateId: "t1", token: "冒充的" }, 1000)', ctx);
+  assert.equal(got.templateId, 't1', '呼叫端的參數不見了');
+  // 呼叫端傳同名參數時後蓋前——這裡把它釘成「呼叫端贏」，並寫明為何可以接受：
+  // token 本來就是呼叫端可見的值（在網址上），蓋掉它不會拿到更多權限。
+  // 🔴 但 idToken 不同：它是 wfCall 現場跟 SDK 要的，呼叫端沒有理由自己帶。
+  assert.ok(got.idToken, 'idToken 被呼叫端的參數蓋掉了');
 });

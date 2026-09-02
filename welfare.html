@@ -566,8 +566,8 @@ function onSaveTemplate() {
   setNote('tpl-note', '儲存中…');
   // ⚠️ **return 那條 Promise**。回傳值沒有任何生產程式碼在用，但少了它，
   //    接線測試只能靠「await 幾個 tick」去猜非同步跑完了沒——那是在賭運氣。
-  return gasCall(GAS_URL, 'saveWelfareTemplate',
-          { token: TOKEN, templateId: sentTpl, title: sentTitle, text: sentText }, 45000)
+  return wfCall('saveWelfareTemplate',
+          { templateId: sentTpl, title: sentTitle, text: sentText }, 45000)
     .then(function (r) {
       if (r && r.ok) { onTemplateSaved(sentTpl, sentText); setNote('tpl-note', '已儲存。', 'ok'); return; }
       // ⚠️ gasCall 永遠 resolve；傳輸失敗與伺服器拒絕的說法不同，
@@ -702,7 +702,7 @@ function renderStatus() {
 /** 載入某一則的狀態。**回應抵達時若已經切換範本，就丟掉不寫。** */
 function loadStatus(templateId) {
   var gen = ++STATUS_GEN;
-  gasCall(GAS_URL, 'getWelfareStatus', { token: TOKEN, templateId: templateId }, 30000)
+  wfCall('getWelfareStatus', { templateId: templateId }, 30000)
     .then(function (r) {
       // 🔴 **只有最新那一份可以落地。** 同一則範本連續查兩次時，先發的那份可能後到；
       //    只比 templateId 是擋不住的（兩份的 templateId 一樣）。
@@ -798,8 +798,8 @@ function onRequestOtp() {
   //    回來時重算的話，存進 OTP_STATE 的會是「她後來改的」，而碼綁的是「按下去那一刻的」。
   var sentTpl = CURRENT_TPL, sentRev = AUDIENCE_REV, sentSel = currentSelection();
   var sentGen = UI_GEN;
-  return gasCall(GAS_URL, 'requestWelfareOtp', {      // ← return：見 onSaveTemplate 的理由
-    token: TOKEN, templateId: sentTpl, audienceRev: sentRev, selection: sentSel
+  return wfCall('requestWelfareOtp', {      // ← return：見 onSaveTemplate 的理由
+    templateId: sentTpl, audienceRev: sentRev, selection: sentSel
   }, 45000)                                    // ⚠️ 數字，不是 { timeout: 45000 }
     .then(function (r) {
       // 🔴 回應抵達時先確認這份請求還算數。照舊武裝的話，碼綁的是舊的一份而畫面是新的。
@@ -874,8 +874,8 @@ function onSend() {
           + (OTP_STATE.quotaWarning ? ('⚠️ ' + OTP_STATE.quotaWarning + '\n') : '')
           + '\n⚠️ LINE 訊息送出後收不回來。';
   if (!confirm(msg)) { SEND_IN_FLIGHT = false; syncSendButton(); syncSaveButton(); return; }
-  return gasCall(GAS_URL, 'sendWelfareBroadcast',    // ← return：見 onSaveTemplate 的理由
-          { token: TOKEN, templateId: CURRENT_TPL, otp: otpValue(), nonce: nonce },
+  return wfCall('sendWelfareBroadcast',    // ← return：見 onSaveTemplate 的理由
+          { templateId: CURRENT_TPL, otp: otpValue(), nonce: nonce },
           120000)                                         // ⚠️ 數字；不是預設的 45 秒
     .then(function (r) {
       if (r && r.ok) { disarmOtp(); showState(r, sentTpl); return; }   // 送出成功＝這組碼用掉了
@@ -949,7 +949,7 @@ function onAudienceLoaded(r) {
 
 /** 載名單。**回應要用的三件事都在 onAudienceLoaded 裡做完，不往鏈上傳。** */
 function loadAudience() {
-  return gasCall(GAS_URL, 'getWelfareAudience', { token: TOKEN }, 45000)
+  return wfCall('getWelfareAudience', {}, 45000)
     .then(function (r) {
       if (!r || !r.ok) { setNote('audience-note',
         '名單讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
@@ -963,7 +963,7 @@ function loadAudience() {
  * ⚠️ 後端回的欄位是 `items` 不是 `templates`（一手碼 getWelfareTemplates）。
  */
 function loadTemplates() {
-  return gasCall(GAS_URL, 'getWelfareTemplates', { token: TOKEN }, 30000)
+  return wfCall('getWelfareTemplates', {}, 30000)
     .then(function (r) {
       if (!r || !r.ok) { setNote('tpl-note',
         '範本讀不到：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err'); return; }
@@ -1009,7 +1009,7 @@ function onAddTemplate() {
   if (!t) { setNote('tpl-life-note', '請先給這一則一個標題。', 'err'); return Promise.resolve(); }
   // ⚠️ **要 return**：不回傳的話呼叫端等不到它——測試等不到，
   //    日後要接「做完再做下一件」也接不上，而那時的症狀是「順序偶爾錯」。
-  return gasCall(GAS_URL, 'addWelfareTemplate', { token: TOKEN, title: t }, 30000)
+  return wfCall('addWelfareTemplate', { title: t }, 30000)
     .then(function (r) {
       if (!r || !r.ok) {
         setNote('tpl-life-note', '新增失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
@@ -1028,7 +1028,7 @@ function onDisableTemplate() {
   // 停用是**可以恢復的**，所以這裡問的重點不是「你確定嗎」，
   // 而是讓她知道它會去哪裡——不然她會以為東西不見了。
   if (!confirm('要停用「' + title + '」嗎？\n它會移到下面的「已停用的範本」，隨時可以恢復。')) return Promise.resolve();
-  return gasCall(GAS_URL, 'removeWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
+  return wfCall('removeWelfareTemplate', { templateId: id }, 30000)
     .then(function (r) {
       if (!r || !r.ok) {
         setNote('tpl-life-note', '停用失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
@@ -1040,7 +1040,7 @@ function onDisableTemplate() {
 
 function onRestoreTemplate(id) {
   var title = (TEMPLATES[id] && TEMPLATES[id].title) || id;
-  return gasCall(GAS_URL, 'restoreWelfareTemplate', { token: TOKEN, templateId: id }, 30000)
+  return wfCall('restoreWelfareTemplate', { templateId: id }, 30000)
     .then(function (r) {
       if (!r || !r.ok) {
         setNote('tpl-life-note', '恢復失敗：' + ((r && r.msg) || '沒有收到伺服器回應'), 'err');
@@ -1194,6 +1194,25 @@ function freshIdToken() {
   if (!(window.liff && typeof liff.getIDToken === 'function')) return '';
   var t = liff.getIDToken();
   return t ? String(t) : '';
+}
+
+/**
+ * 福委會的呼叫層。**每一支 action 都走這裡，憑證只掛在這一個地方。**
+ *
+ * 🔴 **為何不讓九個呼叫點各自帶**：那是「同一個判斷散在多處」——
+ *    漏掉其中一支的症狀是**那一支永遠驗不過**，而其他八支都好好的
+ *    ⇒ 看起來像那支 action 壞了，不像漏帶憑證。
+ *
+ * 🔴 **ID token 在這裡才取，不是頁面載入時取一次存起來。**
+ *    它只有效一小時，而這一頁的流程有寄驗證碼、有 45 秒的送出呼叫。
+ *
+ * ⚠️ **這一輪後端還沒有任何 action 會讀 `idToken`**——先把管線接起來，
+ *    授權完全沒變。後端換守門是另一輪，而那一輪之前這個參數是被忽略的。
+ */
+function wfCall(action, params, timeoutMs) {
+  var p = { token: TOKEN, idToken: freshIdToken() };
+  Object.keys(params || {}).forEach(function (k) { p[k] = params[k]; });
+  return gasCall(GAS_URL, action, p, timeoutMs);
 }
 
 function startLiff() {
