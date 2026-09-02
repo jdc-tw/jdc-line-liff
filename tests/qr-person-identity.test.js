@@ -97,8 +97,13 @@ function renderSeats(seats) {
 }
 
 test('★接線：座位表點名字時，帶進去的是內部碼不是只有姓名', () => {
+  // ⚠️ 外審第三輪 #6：這個 fixture 原本**同時手寫了 `id` 與 `internalId`**——
+  // 那是「測試自己造了供給端應有的欄位」，第五次同形狀。
+  // 改成**刻意不給 `id`**：如果前端真的只依賴 `internalId`，拿掉 id 這條仍然要綠；
+  // 而它一旦開始依賴 id，這條就會紅。
+  // 另一半在後端（seating-identity.test.js：getSeatingBoard 必須吐 internalId 且等於 id）。
   const html = renderSeats([
-    { kind: 'emp', id: 'JDC-HJKMNP', internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部', table: '1' },
+    { kind: 'emp', internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部', table: '1' },
   ]);
   assert.ok(html.indexOf("showPerson('JDC-HJKMNP','李明')") >= 0,
     '座位表沒有把內部碼傳給 showPerson，findQr 會收到 undefined 然後安靜地退回姓名比對。實際產出：' + html);
