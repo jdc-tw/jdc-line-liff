@@ -117,12 +117,17 @@ test('★★接線：真的 getSeatingBoard 產物直接餵進 renderDetail，�
     '後端真產物餵進來卻取不到內部碼。產物：' + JSON.stringify(REAL_SEAT) + '\n產出：' + html);
 });
 
-test('對照組：把真產物的 internalId 拿掉，這條要紅（證明它真的在讀那一格）', () => {
-  const without = Object.assign({}, REAL_SEAT);
-  delete without.internalId; delete without.id;
-  const html = renderSeats([without]);
+test('🔴對照組：只拿掉 internalId、`id` 換成別的值 → renderer 不可以改讀 id', () => {
+  // 🔴 這條原本**同時刪掉 `internalId` 與 `id`，而真產物裡兩欄的值一模一樣**
+  //    ⇒ renderer 就算完全忽略 internalId、只讀 id，這條也照樣綠。**證據沒有鑑別力。**
+  //    （外審 #11。改法：只動一格，另一格放**不同的值**當誘餌。）
+  const decoy = Object.assign({}, REAL_SEAT, { id: 'JDC-DECOYX' });
+  delete decoy.internalId;
+  const html = renderSeats([decoy]);
+  assert.ok(html.indexOf("showPerson('JDC-DECOYX'") < 0,
+    'renderer 改讀 `id` 了——那一格是後端另外給的，不是身分的權威。實際產出：' + html);
   assert.ok(html.indexOf("showPerson('" + REAL_SEAT.internalId + "'") < 0,
-    '拿掉了還是取得到＝上面那條讀的不是那一格');
+    'internalId 已經拿掉了卻還取得到，那上面那條讀的不是那一格');
 });
 
 test('★接線：座位表點名字時，帶進去的是內部碼不是只有姓名', () => {
@@ -138,12 +143,36 @@ test('★接線：座位表點名字時，帶進去的是內部碼不是只有�
     '座位表沒有把內部碼傳給 showPerson，findQr 會收到 undefined 然後安靜地退回姓名比對。實際產出：' + html);
 });
 
-test('對照組：同一個人只把內部碼拿掉，產出的就變成空的第一個參數', () => {
-  // 沒有這條，上面那條也可能只是因為字串剛好對上。
+test('🔴對照組：只把內部碼拿掉，`id` 給一個**不同的**誘餌值 → 產出仍要是空的', () => {
+  // 🔴 這條原本把 `id` 與 `internalId` **都設成空字串** ⇒ 一樣分不出 renderer 讀哪一格。
+  //    與上面那條是同一個形狀，而它出現了兩次——**這種形狀不會只出現一次。**
   const html = renderSeats([
-    { kind: 'emp', id: '', internalId: '', name: '李明', unit: 'A部', table: '1' },
+    { kind: 'emp', id: 'JDC-DECOYX', internalId: '', name: '李明', unit: 'A部', table: '1' },
   ]);
   assert.ok(html.indexOf("showPerson('','李明')") >= 0, '實際產出：' + html);
+  assert.ok(html.indexOf("showPerson('JDC-DECOYX'") < 0,
+    'internalId 是空的時候改去讀 `id`＝那個人會被當成別人叫出 QR。實際產出：' + html);
+});
+
+test('🔴★同一張座位卡把身分帶了兩份：點名字讀 internalId、移桌讀 id', () => {
+  // 這是上面那條對照組意外量出來的：誘餌值出現在 `moveSeat('emp','JDC-DECOYX',…)`。
+  // ⇒ **兩個動作各讀一格，而前端沒有任何東西要求那兩格相等。**
+  //   兩格一旦分歧：點名字叫出 A 的 QR、移桌移到 B 的位子，而畫面上完全看不出來。
+  //
+  // 目前是靠**後端**綁住的（seating-identity.test.js 斷言 getSeatingBoard 吐的
+  // internalId 必須 === id）。這一條把那個依賴**寫在前端這一側**，
+  // 免得日後有人改了後端而不知道前端在依賴它。
+  const html = renderSeats([
+    { kind: 'emp', id: 'JDC-AAAA11', internalId: 'JDC-BBBB22', name: '李明', unit: 'A部', table: '1' },
+  ]);
+  const person = /showPerson\('([^']*)'/.exec(html);
+  const move = /moveSeat\('emp','([^']*)'/.exec(html);
+  assert.ok(person && move, '兩個動作都要在產出裡。實際：' + html);
+  assert.notEqual(person[1], move[1],
+    '這一條刻意餵不相等的兩格，就是要暴露「兩個動作讀不同格」這件事');
+  // 🔴 真正的守門在後端：兩格必須相等。這裡只記載前端確實依賴那個保證。
+  assert.equal(person[1], 'JDC-BBBB22', '點名字讀的是 internalId');
+  assert.equal(move[1], 'JDC-AAAA11', '移桌讀的是 id——後端保證它等於 internalId');
 });
 
 /* ── 批次下載的檔名：同名同單位不可以互相覆蓋 ───────────────────────────── */
