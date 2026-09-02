@@ -131,3 +131,125 @@ test('★批次 zip：同名同單位的兩個人不會共用同一個檔名（�
   assert.equal(files[0], 'A部_李明.png', '沒撞名的那一張要維持原本乾淨的檔名');
   assert.equal(files[1], 'A部_李明_JDC-BBBBBB.png');
 });
+
+/* ═══ 後端算出來的「誰沒拿到碼」不可以在前端接縫被裁掉（外審第三輪 #3／#4）═══
+   原本 `qrRows()` 是 `qrCache[id]=rs[1].rows; return rs[1].rows;`
+   ⇒ 後端逐人算出的 `unsigned`／`duplicated`／`total` **在第一個消費接縫全部消失**。
+
+   **後端守恆只證明 JSON 回應完整，證明不了操作端看得到。**
+   從產生資訊的地方到承辦人的眼睛，中間每一個接縫都要保留它。 */
+
+function loadQrRows(res) {
+  let cached = null;
+  const ctx = {
+    console, Promise, String, Object, Array,
+    qrCache: {},
+    qrBadgeReady: () => Promise.resolve(),
+    q: () => 'tok',
+    jsonp: () => Promise.resolve(res),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fnSrc('qrRows'), ctx, { filename: 'stats.html-extract' });
+  return ctx.qrRows('act').then((r) => { cached = ctx.qrCache['act']; return { r, cached }; });
+}
+
+const FULL = {
+  ok: true, total: 4,
+  rows: [{ internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', code: 'CHK|a|JDC-HJKMNP|S' }],
+  unsigned: [{ name: '乙', unit: 'B部', why: '缺內部碼' },
+             { name: '丙', unit: 'B部', why: '名冊查無此碼' }],
+  duplicated: [{ name: '丁', unit: 'A部', internalId: 'JDC-JKMNPQ' }],
+};
+
+test('★qrRows：整個回應都要留住，不可以只留 rows', async () => {
+  const { r, cached } = await loadQrRows(FULL);
+  assert.ok(r.rows, 'rows 還在');
+  assert.equal(r.total, 4, 'total 被裁掉了＝畫面算不出 N/total');
+  assert.equal(r.unsigned.length, 2, 'unsigned 被裁掉了＝少了誰永遠沒人知道');
+  assert.equal(r.duplicated.length, 1);
+  assert.equal(cached.total, 4, '快取存的也要是完整的——否則第二次點更慘（連第一次的資訊都沒了）');
+});
+
+test('★unsignedText：把「是誰、為什麼」講出來，不是只給一個數字', () => {
+  const ctx = { console, String, Object, Array };
+  vm.createContext(ctx);
+  vm.runInContext(fnSrc('unsignedText'), ctx, { filename: 'stats.html-extract' });
+  const t = ctx.unsignedText(FULL);
+  assert.match(t, /未簽發（2 人）/);
+  assert.match(t, /乙/); assert.match(t, /缺內部碼/);
+  assert.match(t, /丙/); assert.match(t, /名冊查無此碼/);
+  assert.match(t, /重複回覆、只簽一張（1 筆）/);
+  assert.match(t, /丁/);
+});
+
+test('對照組：全部都簽得出來時，unsignedText 是空字串（不可以永遠有東西）', () => {
+  const ctx = { console, String, Object, Array };
+  vm.createContext(ctx);
+  vm.runInContext(fnSrc('unsignedText'), ctx, { filename: 'stats.html-extract' });
+  assert.equal(ctx.unsignedText({ ok: true, total: 1, rows: [{}], unsigned: [], duplicated: [] }), '');
+  assert.equal(ctx.unsignedText({}), '');
+});
+
+/* ── 動作前要明示：承辦人是拿這批 QR 去發給人的 ─────────────────────────── */
+
+function runDlAllQr(res, confirmAnswer) {
+  const out = { msgs: [], confirms: [], files: [], downloaded: false };
+  const ctx = {
+    console, Promise, String, Object, Array, Date, JSON,
+    JSZip: function () {
+      this.file = (n, b) => out.files.push(n);
+      this.generateAsync = () => Promise.resolve('BLOB');
+    },
+    __tmLib: () => Promise.resolve(),
+    qrRows: () => Promise.resolve(res),
+    ckActId: () => 'act', ckActName: () => '年中聚餐',
+    __rdlToday: () => '2026/09/02',
+    qrBadgeCanvas: () => ({ toBlob: (cb) => cb('IMG') }),
+    qrFileName: (p) => p.name + '.png',
+    confirm: (t) => { out.confirms.push(t); return confirmAnswer; },
+    setMsg: (id, t, cls) => out.msgs.push({ t, cls }),
+    URL: { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} },
+    document: { createElement: () => ({ click: () => { out.downloaded = true; }, set href(v) {}, set download(v) {} }) },
+  };
+  vm.createContext(ctx);
+  // dlAllQr 會呼叫 unsignedText——給真貨，不要 stub。stub 掉的話「訊息裡有沒有原因」
+  // 就變成在測我寫的替身，而不是測實際會顯示的內容。
+  vm.runInContext([fnSrc('unsignedText'), fnSrc('dlAllQr')].join('\n'),
+                  ctx, { filename: 'stats.html-extract' });
+  ctx.dlAllQr();
+  return new Promise((r) => setTimeout(() => r(out), 30));
+}
+
+test('★★下載前要先講「只簽得出 N／total」並列出是誰——不是印完發完才發現', async () => {
+  const out = await runDlAllQr(FULL, true);
+  assert.equal(out.confirms.length, 1, '少了誰卻直接下載＝承辦人拿著不完整的一批去發');
+  assert.match(out.confirms[0], /4 人/);
+  assert.match(out.confirms[0], /只簽得出 1 張/);
+  assert.match(out.confirms[0], /缺內部碼/, '要講出原因，不是只給數字');
+});
+
+test('★★未簽發清單要放進 zip——資訊跟著成品走', async () => {
+  const out = await runDlAllQr(FULL, true);
+  assert.ok(out.files.indexOf('_未簽發清單.txt') >= 0,
+    '清單只出現在一個關掉就沒有的對話框裡＝隔天沒有人知道少了誰。實際檔案：'
+    + JSON.stringify(out.files));
+  assert.equal(out.downloaded, true);
+});
+
+test('★★承辦人選擇取消時不下載，而且訊息要講出還有幾人未處理', async () => {
+  const out = await runDlAllQr(FULL, false);
+  assert.equal(out.downloaded, false);
+  assert.equal(out.files.length, 0);
+  const m = out.msgs.map((x) => x.t).join('｜');
+  assert.match(m, /未簽發 3 人/, '實際訊息：' + m);
+});
+
+test('對照組：全部簽得出來時不問、直接下載，且 zip 裡沒有清單', async () => {
+  // 沒有這條，上面那些也可能只是「它每次都問」。
+  const clean = { ok: true, total: 1, rows: FULL.rows, unsigned: [], duplicated: [] };
+  const out = await runDlAllQr(clean, true);
+  assert.equal(out.confirms.length, 0, '正常情況多問一次＝下次沒有人會看那個對話框');
+  assert.ok(out.files.indexOf('_未簽發清單.txt') < 0);
+  assert.equal(out.downloaded, true);
+  assert.match(out.msgs.map((x) => x.t).join('｜'), /1／1 張/);
+});

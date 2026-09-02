@@ -2114,13 +2114,38 @@ function __tmLib(src,flag){
 var qrCache={};
 // ⚠️ 三個呼叫端分屬兩個分頁（showQr／dlOneQr 在桌次、dlAllQr 在報到），
 // 所以活動 id 一律由呼叫端傳入，這支不自己決定。
+/**
+ * 取這場活動的批次報到碼。**回整個回應，不是只回 rows。**
+ *
+ * 🔴 2026-09-02（外審第三輪 #3／#4）：原本是 `qrCache[id]=rs[1].rows; return rs[1].rows;`
+ * ——後端好不容易逐人算出「誰沒拿到碼、為什麼」（`unsigned`／`duplicated`／`total`），
+ * **三個欄位在第一個消費接縫就全部消失**。
+ *
+ * 後端守恆只證明 JSON 回應完整，**證明不了操作端看得到**。
+ * 從產生資訊的地方到承辦人的眼睛，中間每一個接縫都要保留它——有一個丟掉，前面全白做。
+ */
 function qrRows(id){
   if(qrCache[id])return Promise.resolve(qrCache[id]);
   return Promise.all([qrBadgeReady(),
     jsonp('getCheckinCodes',{token:q('t'),actId:id})]).then(function(rs){
     if(!rs[1]||!rs[1].ok)throw new Error((rs[1]&&rs[1].msg)||'簽發失敗');
-    qrCache[id]=rs[1].rows;return rs[1].rows;
+    qrCache[id]=rs[1];return rs[1];
   });
+}
+
+/** 未簽發清單的可讀文字（畫面與 zip 內的清單共用同一份，不寫兩處）。 */
+function unsignedText(res){
+  var u=(res&&res.unsigned)||[],d=(res&&res.duplicated)||[];
+  var out=[];
+  if(u.length){
+    out.push('未簽發（'+u.length+' 人）：');
+    u.forEach(function(x){ out.push('  ・'+(x.unit||'（未分單位）')+'　'+x.name+'　—　'+x.why); });
+  }
+  if(d.length){
+    out.push('重複回覆、只簽一張（'+d.length+' 筆）：');
+    d.forEach(function(x){ out.push('  ・'+(x.unit||'（未分單位）')+'　'+x.name); });
+  }
+  return out.join('\n');
 }
 /**
  * 批次 zip 裡這張 QR 的檔名。`used` 是同一次批次共用的已用檔名表（呼叫端建立）。
@@ -2168,7 +2193,8 @@ function findQr(rows,id){
  * （2026-08-16 使用者要求）。同一張 canvas 既顯示也下載，看到什麼就存到什麼。
  */
 function showPerson(id,name){
-  qrRows(actId()).then(function(rows){
+  qrRows(actId()).then(function(res){
+    var rows=res.rows||[];
     var code=String(id||'').trim();
     // 兩種失敗要分得開：沒有內部碼是**資料問題**（找工務管理組），
     // 有碼但沒簽出來才可能是「沒回覆參加」。用同一句話講會把人導向錯的排查方向。
@@ -2223,9 +2249,23 @@ function dlAllQr(){
   if(!ckActId()){setMsg('qr-msg','請先選活動','err');return;}
   setMsg('qr-msg','產生中…','');
   Promise.all([__tmLib('assets/jszip.min.js','JSZip'),qrRows(ckActId())]).then(function(rs){
-    var rows=rs[1];
+    var res=rs[1],rows=res.rows||[];
+    var total=(res.total!=null)?res.total:rows.length;
+    var miss=((res.unsigned||[]).length)+((res.duplicated||[]).length);
     if(!rows.length){setMsg('qr-msg','此活動還沒有「參加」的回覆，無 QR 可產。','err');return;}
+    // 🔴 在動作前明示 N/total（外審第三輪 #4）。承辦人是拿這批 QR 去發給人的——
+    // 少了誰要在**下載之前**知道，不是印出來發完才發現。
+    if(miss){
+      if(!confirm('座位名單 '+total+' 人，這次只簽得出 '+rows.length+' 張。\n\n'
+                  +unsignedText(res)+'\n\n仍要下載嗎？（未簽發清單會一併放進 zip）')){
+        setMsg('qr-msg','已取消。未簽發 '+miss+' 人，請先處理再下載。','err');return;
+      }
+    }
     var zip=new JSZip(),chain=Promise.resolve(),used={};
+    // 清單放進 zip：資訊跟著成品走，而不是留在一個關掉就沒有的對話框裡。
+    if(miss)zip.file('_未簽發清單.txt',
+      '活動：'+ckActName()+'\n座位名單 '+total+' 人，本檔含 '+rows.length+' 張 QR。\n\n'
+      +unsignedText(res)+'\n');
     rows.forEach(function(p){
       chain=chain.then(function(){
         return new Promise(function(res){
@@ -2239,7 +2279,8 @@ function dlAllQr(){
       a.href=URL.createObjectURL(blob);
       a.download='員工QR_'+ckActName()+'_'+__rdlToday().replace(/\//g,'-')+'.zip';
       a.click();URL.revokeObjectURL(a.href);
-      setMsg('qr-msg','已下載（'+rows.length+' 張）','ok');
+      setMsg('qr-msg','已下載（'+rows.length+'／'+total+' 張'
+        +(miss?'，未簽發 '+miss+' 人，清單在 zip 內':'')+'）',miss?'err':'ok');
     });
   }).catch(function(e){setMsg('qr-msg',String(e&&e.message||e),'err');});
 }
