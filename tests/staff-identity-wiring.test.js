@@ -78,6 +78,7 @@ function harness(opt) {
     setTimeout: (f) => { void f; return 0; },
     document: { getElementById: () => ({ innerHTML: '', className: '', textContent: '' }) },
     jget: async (action, params) => { calls.jget.push({ action, params }); return opt.jgetRes; },
+    // 2026-09-02（外審 #5）：後端改成逐列回 writtenKeys，前端只移除真的寫進去的那幾列。
     flushing: false,
     lastSyncAt: '',
   };
@@ -90,7 +91,7 @@ function harness(opt) {
     fnSrc('rebuildEmpIndex'), fnSrc('tableOf'), fnSrc('isCheckedIn'),
     fnSrc('allPeople'), fnSrc('buildDemoSnapshot'), fnSrc('manualCheckin'),
     fnSrc('flush'), fnSrc('handle'), fnSrc('applySnapshotPayload'),
-    fnSrc('updateQueueBadge'), 'var legacyQueueCount = 0;',
+    fnSrc('updateQueueBadge'), fnSrc('quarantineRows'), fnSrc('quarantinedCount'),
     'var idToHash = {};',
   ].join('\n'), ctx, { filename: 'staff.html-extract' });
   ctx.calls = calls;
@@ -209,12 +210,77 @@ test('★送出成功後佇列真的變空（移除用的組合鍵要跟佇列�
     '送出成功卻移不掉＝無限重送。剩下的是：' + ctx.localStorage.getItem('q'));
 });
 
-test('★後端丟掉的列要講出來，不可以靜靜吞掉', async () => {
-  const storage = fakeStorage({ q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]) });
-  const ctx = harness({ storage, jgetRes: { ok: true, written: 1, rejected: 2, allChecked: [] } });
+/* 🔴 外審第三輪 #5：`ok:true` 只代表**請求完成**，不代表每一列都寫進試算表。
+   舊寫法把整包移除 ⇒ 被拒絕的列連同被刪掉 ⇒ **那個人報到了、紀錄不見了、佇列也清了**，
+   三個地方都查不到他。實測過。這是資料遺失，不是顯示問題。 */
+
+test('🔴★後端只寫了一列時，另一列不可以被刪掉——要進隔離區', () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([
+      { v: 2, internalId: 'JDC-BCDFGH', ts: 1, m: 'scan' },
+      { v: 2, internalId: 'JDC-JKMNPQ', ts: 2, m: 'scan' },
+    ]),
+  });
+  const ctx = harness({ storage,
+    jgetRes: { ok: true, written: 1, rejected: 1,
+               writtenKeys: ['JDC-BCDFGH|1'], allChecked: ['JDC-BCDFGH'] } });
+  return ctx.flush().then(() => {
+    assert.deepEqual(JSON.parse(storage.getItem('q')), [], '寫進去的與已隔離的都該離開主佇列');
+    const kept = JSON.parse(storage.getItem('q_rejected') || '[]');
+    assert.equal(kept.length, 1, '沒寫進去的那列必須留著——刪了就永遠沒了');
+    assert.equal(kept[0].internalId, 'JDC-JKMNPQ');
+    const msg = ctx.calls.notes.map((n) => n.text).join('｜');
+    assert.match(msg, /1 筆後端沒有寫入/, '實際訊息：' + msg);
+  });
+});
+
+test('🔴★隔離也失敗時，那幾列要留在主佇列——不可以兩邊都沒有', () => {
+  // 留著至少還在，刪掉就永遠沒了。
+  const store = { q: JSON.stringify([{ v: 2, internalId: 'JDC-JKMNPQ', ts: 2, m: 'scan' }]) };
+  const storage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { if (k === 'q_rejected') throw new Error('QuotaExceededError'); store[k] = String(v); },
+  };
+  const ctx = harness({ storage, jgetRes: { ok: true, written: 0, writtenKeys: [], allChecked: [] } });
+  return ctx.flush().then(() => {
+    assert.equal(JSON.parse(store.q).length, 1, '隔離失敗還把它從主佇列刪掉＝兩邊都沒有了');
+  });
+});
+
+test('對照組：後端把整包都寫進去時，主佇列清空、隔離區是空的', () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-BCDFGH', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage,
+    jgetRes: { ok: true, written: 1, writtenKeys: ['JDC-BCDFGH|1'], allChecked: [] } });
+  return ctx.flush().then(() => {
+    assert.deepEqual(JSON.parse(storage.getItem('q')), []);
+    assert.equal(storage.getItem('q_rejected'), null, '正常情況不該產生隔離區');
+  });
+});
+
+test('★後端丟掉的列要講出來，而且那幾列要留著（不只是講一句）', async () => {
+  // ⚠️ 這條的第一版**只斷言訊息裡有數字**，完全不驗那幾列還在不在——
+  // 它的名字宣稱守「不可吞掉」，實際只守「有印一句話」。外審第三輪點出來的。
+  // 這一輪第三次撞到「測試的名字不等於它實際讀的東西」。
+  const storage = fakeStorage({
+    q: JSON.stringify([
+      { v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' },
+      { v: 2, internalId: 'JDC-JKMNPQ', ts: 2, m: 'scan' },
+    ]),
+  });
+  const ctx = harness({ storage,
+    jgetRes: { ok: true, written: 1, rejected: 1,
+               writtenKeys: ['JDC-HJKMNP|1'], allChecked: [] } });
   await ctx.flush();
+
   const msg = ctx.calls.notes.map((n) => n.text).join('｜');
-  assert.match(msg, /2 筆/, '後端說它丟了 2 筆，畫面上要看得到。實際訊息：' + msg);
+  assert.match(msg, /1 筆後端沒有寫入/, '要講出來。實際訊息：' + msg);
+
+  // 🔴 真正該守的：那一列還在不在
+  const kept = JSON.parse(storage.getItem('q_rejected') || '[]');
+  assert.equal(kept.length, 1, '講了一句但資料沒了＝還是吞掉了');
+  assert.equal(kept[0].internalId, 'JDC-JKMNPQ');
 });
 
 test('對照組：後端回失敗時佇列原封不動（證明上面那條測的是「成功才移除」）', async () => {
@@ -279,9 +345,40 @@ test('★舊格式（v1，帶員編）的殘留：挑出來、留著、在畫面
   let badge = '';
   ctx.document = { getElementById: () => ({ set innerHTML(v) { badge = v; }, set className(v) {} }) };
   ctx.updateQueueBadge();
-  assert.match(badge, /2<\/span> 筆舊格式/,
-    '舊格式的筆數要長駐在徽章上。實際內容：' + badge);
+  assert.match(badge, /2<\/span> 筆送不出去/,
+    '筆數要長駐在徽章上。實際內容：' + badge);
   assert.match(badge, /工務管理組/, '要講出該找誰');
+});
+
+/* 🔴 外審第三輪 #2：那個數字原本存在模組變數裡（本次移出幾筆）
+   ⇒ **第二次開頁時它是 0**，隔離區明明還有資料而畫面一個字都不說。
+   訊息只在「發生的當下」存在，而現場的人多半不是在那一刻看畫面的。 */
+
+test('🔴★重新開頁後，隔離區的筆數仍然看得到（數字要從 storage 讀）', () => {
+  const storage = fakeStorage({ q: '[]', q_v1: JSON.stringify([{ empNo: '00011', ts: 1 }]) });
+  const ctx = harness({ storage });
+  ctx.quarantineLegacyQueue();   // 第二次開頁：主佇列已無舊格式，這支會回 0
+  let badge = '';
+  ctx.document = { getElementById: () => ({ set innerHTML(v) { badge = v; }, set className(v) {} }) };
+  ctx.updateQueueBadge();
+  assert.match(badge, /1<\/span> 筆送不出去/,
+    '重載後就不講了＝那批資料從此沒有人知道。實際內容：' + badge);
+});
+
+test('🔴★備份寫不進去時，舊格式那幾列要留在主佇列——不可以兩邊都沒有', () => {
+  // 原本是 try{寫備份}catch(_){} 然後**無條件**移除主佇列
+  // ⇒ 備份失敗時那幾列同時不在主佇列、也不在備份。實測過。
+  const store = { q: JSON.stringify([{ empNo: '00011', ts: 1, m: 'scan' }]) };
+  const storage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { if (k === 'q_v1') throw new Error('QuotaExceededError'); store[k] = String(v); },
+  };
+  const ctx = harness({ storage });
+  const n = ctx.quarantineLegacyQueue();
+  assert.equal(n, 0, '沒有真的搬走就不可以回報搬走了幾筆');
+  assert.equal(JSON.parse(store.q).length, 1, '搬不走就要留著——留著至少還在');
+  const msg = ctx.calls.notes.map((x) => x.text).join('｜');
+  assert.match(msg, /無法備份/, '要講出來。實際訊息：' + msg);
 });
 
 test('對照組：沒有舊格式時，徽章一個字都不多（會吵的告警會被訓練成無視）', () => {
@@ -304,4 +401,8 @@ test('對照組：佇列全是新格式時，一句話都不會多講', () => {
   assert.equal(ctx.quarantineLegacyQueue(), 0);
   assert.equal(ctx.calls.notes.length, 0, '正常情況不該有任何訊息——會吵的告警會被訓練成無視');
   assert.equal(JSON.parse(storage.getItem('q')).length, 1);
+  let badge = '';
+  ctx.document = { getElementById: () => ({ set innerHTML(v) { badge = v; }, set className(v) {} }) };
+  ctx.updateQueueBadge();
+  assert.ok(badge.indexOf('送不出去') < 0, '徽章也不該多講。實際內容：' + badge);
 });

@@ -248,17 +248,63 @@ function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQue
  *
  * 這一格與名單版本那一行同一個判斷：**要一直看得到的事，不能用會被蓋掉的位置。**
  */
-var legacyQueueCount = 0;
 function updateQueueBadge() {
   var n = loadQueue().length;
+  // 🔴 **從 storage 讀，不是記「這次搬了幾筆」**（2026-09-02 外審 #2）。
+  // 原本用一個模組變數存本次移出的數量 ⇒ **第二次開頁時它是 0**，
+  // 隔離區明明還有資料而畫面一個字都不說。那是「訊息只在發生的當下存在」，
+  // 而現場的人多半不是在那一刻看畫面的。
+  var q = quarantinedCount();
   var el = document.getElementById('qbadge');
   el.innerHTML = '待送 <span class="n">' + n + '</span> 筆'
-    + (legacyQueueCount ? '　⚠ 另有 <span class="n">' + legacyQueueCount
-       + '</span> 筆舊格式無法送出，請告知工務管理組' : '');
-  el.className = (n > 0 || legacyQueueCount > 0) ? 'warn' : '';
+    + (q ? '　⚠ 另有 <span class="n">' + q
+       + '</span> 筆送不出去（已保留在本機），請告知工務管理組' : '');
+  el.className = (n > 0 || q > 0) ? 'warn' : '';
 }
 /** 佇列項目的格式版本。v1（沒有這個欄位）帶的是員編，後端已經不認得。 */
 var QUEUE_V = 2;
+
+/**
+ * 把送不出去的列**搬到隔離區**，並回報有沒有成功。
+ *
+ * 🔴 **先確認備份寫成功，才可以從主佇列移除**（2026-09-02 外審 #1）。
+ * 原本的寫法是 `try{ 寫備份 }catch(_){}` 然後**無條件** `saveQueue(modern)`——
+ * 備份寫失敗（例如 localStorage 滿了）時，那幾列**同時不在主佇列、也不在備份**。
+ * 實測過：拋 QuotaExceededError 之後，舊格式那一筆兩邊都查不到。
+ *
+ * `catch(_){}` 讀起來像「這件事不重要」，而它吞掉的是「我剛剛沒存成功」——
+ * 而下一行就把原始資料刪了。
+ *
+ * ⚠️ 兩條路共用這一支（舊格式 v1、後端拒絕），不是各寫一份：
+ * 「什麼情況下可以把資料從主佇列拿掉」這個判斷只能有一個地方說了算。
+ *
+ * @returns {boolean} true=已安全搬走（呼叫端才可以從主佇列移除）
+ */
+function quarantineRows(bucketKey, rows) {
+  if (!rows || !rows.length) return true;
+  try {
+    var prev = JSON.parse(localStorage.getItem(bucketKey) || '[]');
+    if (!Array.isArray(prev)) prev = [];
+    localStorage.setItem(bucketKey, JSON.stringify(prev.concat(rows)));
+    // 回讀確認——setItem 不拋錯不代表寫進去了（配額、私密模式都可能靜靜失敗）
+    var back = JSON.parse(localStorage.getItem(bucketKey) || '[]');
+    return Array.isArray(back) && back.length >= prev.length + rows.length;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 隔離區目前有幾筆（兩個桶加總）。**從 storage 讀，不是記這次搬了幾筆。** */
+function quarantinedCount() {
+  var n = 0;
+  [QKEY + '_v1', QKEY + '_rejected'].forEach(function (k) {
+    try {
+      var a = JSON.parse(localStorage.getItem(k) || '[]');
+      if (Array.isArray(a)) n += a.length;
+    } catch (_) {}
+  });
+  return n;
+}
 
 function enqueue(internalId, method) {
   if (DEMO) return;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
@@ -284,11 +330,14 @@ function quarantineLegacyQueue() {
   var modern = q.filter(function (r) { return r && Number(r.v || 0) >= QUEUE_V; });
   var legacy = q.filter(function (r) { return !(r && Number(r.v || 0) >= QUEUE_V); });
   if (!legacy.length) return 0;
-  try {
-    var prev = JSON.parse(localStorage.getItem(QKEY + '_v1') || '[]');
-    localStorage.setItem(QKEY + '_v1', JSON.stringify(prev.concat(legacy)));
-  } catch (_) {}
-  legacyQueueCount = legacy.length;   // 長駐在佇列徽章上，不用 note()——那會被蓋掉
+  // 🔴 搬成功才可以從主佇列移除。搬不成功就原封不動留著——
+  // 留著至少還在，刪掉就永遠沒了。
+  if (!quarantineRows(QKEY + '_v1', legacy)) {
+    note('bad', '有 ' + legacy.length + ' 筆舊格式紀錄無法備份，已保留在待送佇列',
+         '請告知工務管理組，先不要清除瀏覽器資料');
+    updateQueueBadge();
+    return 0;
+  }
   saveQueue(modern);                  // （saveQueue 自己會呼叫 updateQueueBadge）
   return legacy.length;
 }
@@ -434,14 +483,33 @@ async function flush() {
         // ⚠️ 這把組合鍵要跟佇列項目實際帶的欄位一致。不一致的話送出成功、卻從佇列
         //    移不掉 ⇒ **每 15 秒重送一次，永遠不會停**，而畫面上待送筆數一直不歸零。
         var qkeyOf = function (r) { return r.internalId + '|' + r.ts; };
-        var sent = {}; packs[i].forEach(function (r) { sent[qkeyOf(r)] = true; });
-        saveQueue(loadQueue().filter(function (r) { return !sent[qkeyOf(r)]; }));
+        // 🔴 **只移除後端說「真的寫進去了」的那幾列**（2026-09-02 外審 #5）。
+        // 原本是「這一包 ok:true ⇒ 整包移除」——而 `ok:true` 只代表**請求完成**，
+        // 不代表每一列都寫進試算表。被拒絕的列會連同被刪掉
+        // ⇒ **那個人報到了、紀錄不見了、佇列也清了**，三個地方都查不到他。
+        // 舊後端沒有 writtenKeys 時退回舊行為（整包移除）——那是相容，不是預設。
+        var written = {};
+        if (Array.isArray(res.writtenKeys)) {
+          res.writtenKeys.forEach(function (k) { written[k] = true; });
+        } else {
+          packs[i].forEach(function (r) { written[qkeyOf(r)] = true; });
+        }
+        // 送出去了、但後端沒說有寫進去的 ⇒ 搬進隔離區，不要留在主佇列無限重送、
+        // 也不要直接刪掉。搬不成功就留在主佇列（留著至少還在）。
+        var notWritten = packs[i].filter(function (r) { return !written[qkeyOf(r)]; });
+        var quarantined = notWritten.length ? quarantineRows(QKEY + '_rejected', notWritten) : true;
+        var removable = {};
+        packs[i].forEach(function (r) {
+          if (written[qkeyOf(r)] || quarantined) removable[qkeyOf(r)] = true;
+        });
+        saveQueue(loadQueue().filter(function (r) { return !removable[qkeyOf(r)]; }));
+        if (notWritten.length) {
+          note('bad', '有 ' + notWritten.length + ' 筆後端沒有寫入',
+               quarantined ? '已保留在本機，請告知工務管理組'
+                           : '仍留在待送佇列，請告知工務管理組');
+        }
         lastSyncAt = new Date().toLocaleTimeString();
         document.getElementById('lastsync').textContent = lastSyncAt;
-        // 後端丟掉的列要看得見。正常永遠是 0（舊格式在開頁時就被隔離掉了）。
-        if (res.rejected) {
-          note('dup', '有 ' + res.rejected + ' 筆紀錄後端無法辨識', '請告知工務管理組');
-        }
         // C2：後端回傳全場已報到的內部碼 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
         state.seen = seenMerge(state.seen, res.allChecked, idToHash);
         saveSeen(state.seen);   // 別台掃的也要留在本機，否則重整後又會判成 ok
