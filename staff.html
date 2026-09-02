@@ -692,6 +692,15 @@ async function flush() {
         var cur = readQueue();
         // 讀不到就不可以拿過濾後的結果覆蓋回去——那是 A1 的同一個形狀，出口版。
         if (cur.ok) saveQueue(cur.rows.filter(function (r) { return !removable[qkeyOf(r)]; }));
+        // 🔴 後端寫進去了，但**認不出那是誰**（內部碼在兩個來源之間對不起來）。
+        // 那一列的姓名／單位／桌次是空的——現場的人要當下知道，
+        // 而不是回頭看試算表才發現。留白不講＝把「沒人知道的錯」換成「沒人知道的空」。
+        var unid = (res && res.unidentified) || [];
+        if (unid.length) {
+          note('bad', '有 ' + unid.length + ' 筆認不出是誰（已記錄，姓名欄是空的）',
+               unid.map(function (x) { return x.internalId + '：' + x.why; }).join('；')
+               + '　請告知工務管理組');
+        }
         if (notWritten.length) {
           note('bad', '有 ' + notWritten.length + ' 筆後端沒有寫入',
                quarantined ? '已保留在本機，請告知工務管理組'

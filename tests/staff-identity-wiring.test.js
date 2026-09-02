@@ -675,3 +675,28 @@ test('對照組：手動替「沒報到過」的人送而寫入失敗 → seen �
   assert.equal(!!ctx.state.seen['H8'], false,
     '這一次才設的沒收回＝他其實沒被記錄，系統卻說他報到過');
 });
+
+test('🔴★後端說「認不出是誰」時，掃描站要當下講出來（不是回頭看試算表才發現）', async () => {
+  // 外審 #7／#8 的另一半：後端把不可信的碼留白是對的，**但留白不講就是靜默漏資訊**。
+  // 那一列確實寫進去了，姓名欄卻是空的——現場沒有人會知道。
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: ['JDC-HJKMNP|1'],
+    unidentified: [{ internalId: 'JDC-HJKMNP', why: '兩個來源指向不同的人（甲／乙）' }] } });
+  await ctx.flush();
+  const bad = ctx.calls.notes.filter((n) => n.cls === 'bad');
+  assert.equal(bad.length, 1, '後端講了、前端沒轉達＝資訊在最後一個接縫上掉了');
+  assert.match(bad[0].text, /認不出是誰/);
+  assert.match(bad[0].sub, /JDC-HJKMNP/, '要具名，不是只給一個數字。實際：' + bad[0].sub);
+  assert.match(bad[0].sub, /不同的人/, '原因也要帶出來');
+});
+
+test('對照組：沒有 unidentified 時一個字都不多（會吵的告警會被訓練成無視）', async () => {
+  const storage = fakeStorage({
+    q: JSON.stringify([{ v: 2, internalId: 'JDC-HJKMNP', ts: 1, m: 'scan' }]),
+  });
+  const ctx = harness({ storage, jgetRes: { ok: true, writtenKeys: ['JDC-HJKMNP|1'] } });
+  await ctx.flush();
+  assert.equal(ctx.calls.notes.filter((n) => n.cls === 'bad').length, 0);
+});
