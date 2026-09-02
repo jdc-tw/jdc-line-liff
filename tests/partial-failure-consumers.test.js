@@ -163,6 +163,25 @@ test('對照組：0 人時兩邊都一個字都不多——天天出現的告警
   assert.equal(pfText(clean), '');
 });
 
+test('🔴★展開區抬頭的人數＝具名人數＋未分類人數（兩者不可以各自算）', () => {
+  // 🔴 為何是不變量而不是「等於 3」：抬頭與清單是**同一份資料的兩種呈現**，
+  // 各自算就會漂開——現場會看到「⚠ 2 人掃不進去」而清單列了 3 個人，
+  // 而那種畫面會讓人以為自己看錯，不會讓人去查。
+  // 實測：把抬頭的 `people.length + gap` 改成 `people.length`，原本那條斷言全綠。
+  // ⚠️ 不是「抬頭＝<li> 筆數」——那條我寫錯過：清單裡「另有 3 人」**一行代表 3 個人**。
+  //    正確的不變量是「**抬頭的人數 ＝ 具名的人數 ＋ 那一行自己宣稱的人數**」。
+  const res = { unusable: 5, skippedPeople: PAYLOAD.unsigned, unclassified: 3 };
+  const html = runRenderSkipped(res);
+  const head = html.match(/⚠ (\d+) 人掃不進去/);
+  assert.ok(head, '抬頭抓不到人數，這條判準沒跑到。實際：' + html);
+  const gapLine = html.match(/另有 (\d+) 人/);
+  const gapN = gapLine ? Number(gapLine[1]) : 0;
+  const named = (html.match(/<li>/g) || []).length - (gapLine ? 1 : 0);
+  assert.equal(Number(head[1]), named + gapN,
+    '抬頭說 ' + head[1] + ' 人，而清單交代得出來的是具名 ' + named + ' ＋ 未分類 ' + gapN
+    + '——兩邊各自算就會這樣漂開，而現場只會覺得自己看錯。實際產出：' + html);
+});
+
 test('★清單比權威數字少人時要講出來（unclassified＞0）', () => {
   // 減法得到的數字是權威的，列舉出來的清單可能漏一整類。
   // 不講的話，操作者會把這份清單讀成完整的。
