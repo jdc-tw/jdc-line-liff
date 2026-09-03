@@ -4,9 +4,28 @@ const { passCacheKey, passCacheUsable } = require('../assets/pass-cache.js');
 const OK = { v: '21', res: { published: true, code: 'CHK|a|1|s', table: '21' } };
 
 test('passCacheKey：以「人＋活動」分開；act 省略時歸 auto，不會跟指定場次互相污染', () => {
-  assert.equal(passCacheKey('U1', 'midyear2026'), 'jdcPass:U1:midyear2026');
-  assert.equal(passCacheKey('U1', ''), 'jdcPass:U1:auto');
+  assert.equal(passCacheKey('U1', 'midyear2026'), 'jdcPass:v2:U1:midyear2026');
+  assert.equal(passCacheKey('U1', ''), 'jdcPass:v2:U1:auto');
   assert.notEqual(passCacheKey('U1', 'a'), passCacheKey('U2', 'a'));
+});
+
+/**
+ * 版本段（2026-09-02，第三階段）。
+ *
+ * 為何存在：報到 QR 裡的身分從員編換成內部碼，而手機上那份快取存的是**換之前**簽出來的碼。
+ * 沒有版本段的話，圖文選單那顆常駐鈕（走 `:auto` 鍵、且「沒帶 v 就永不重抓」）會一直
+ * 拿舊碼畫 QR，到現場掃不進去——而且畫面完全正常，沒有任何一層會喊。
+ *
+ * 加了 `v2` 之後，前端一部署，舊鍵整批讀不到 → 自動重抓一次 → 拿到內部碼版的 QR。
+ * 零使用者動作、零錯誤訊息。讀寫清三支全走 passCacheKey（index.html:516-526），所以改這裡就夠。
+ *
+ * ⚠️ 這裡**只驗鍵字串**。「舊鍵讀不到」要走真的 storage loader 才驗得出來（見 Task 6 Step 6）——
+ * 把舊鍵存的有效 record 直接餵給 passCacheUsable，它會回 true，那是假綠。
+ */
+test('passCacheKey：帶版本段 v2，舊鍵不可能再被產生出來', () => {
+  assert.ok(passCacheKey('U1', 'a').indexOf(':v2:') !== -1, '鍵裡要有 v2 版本段');
+  assert.notEqual(passCacheKey('U1', 'a'), 'jdcPass:U1:a');       // 舊格式
+  assert.notEqual(passCacheKey('U1', ''), 'jdcPass:U1:auto');     // 舊格式（auto 鍵）
 });
 
 test('沒帶 v（圖文選單常駐鈕）→ 有快取就用，永不重抓', () => {
