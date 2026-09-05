@@ -129,6 +129,12 @@
   #foot .warn{color:var(--wa-fg)}
   /* 連結名稱不可從中間斷行——實機截圖看到「重新載入名／單」，讀起來像壞掉。 */
   #diag button{white-space:nowrap}
+  /* 簽不出碼的人。0 人時整塊不存在（不是隱藏）——常態畫面一個字都不多。 */
+  #snapskip{margin-top:4px}
+  #snapskip details{border:1px solid #d9534f;border-radius:3px;background:#fff5f5}
+  #snapskip summary{padding:5px 7px;cursor:pointer;color:#a12622;font-weight:600}
+  #snapskip ul{margin:0;padding:4px 7px 7px 22px;color:#5a2b29}
+  #snapskip li{margin:2px 0;line-height:1.4}
   /* 這兩個原本是 <a href="#">，2026-08-21 改成 <button>。
      為何：href="#" 只靠 preventDefault 擋著，處理函式若在那之前拋錯，網址就會多一個 `#`。
      在 iOS 的獨立 App 模式下，**hash 變動會當場重設相機權限並中斷串流**
@@ -166,7 +172,7 @@
     <span id="stat"></span>
     <div id="qbadge">待送 0 筆</div>
     <div id="diag">
-      <span id="snapver">名單版本：—</span>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
+      <span id="snapver">名單版本：—</span><div id="snapskip"></div>｜build <span id="buildver">v1</span>｜最後回寫 <span id="lastsync">—</span>
       ｜<button type="button" id="reload" title="跟伺服器重新抓一次參加者名單。有人臨時補回覆、或桌次重新發佈後用">重新載入名單</button>
       ｜<button type="button" id="wipe" title="把這台手機的名單與未回傳的報到全部清空，回到剛開頁的狀態">重設這台手機</button>
     </div>
@@ -175,6 +181,7 @@
 <canvas id="cv" style="display:none"></canvas>
 <script src="assets/jsQR.min.js"></script>
 <script src="assets/groups.js"></script>
+<script src="assets/partial-failure.js"></script>
 <script src="assets/staff-scan.js"></script>
 <script>
 /** 同 assets/checkin-board.js 寫法：塞進 innerHTML 前先中和 & < >。 */
@@ -190,15 +197,19 @@ var state = { seen: {}, queue: [] };
 var snapshot = {};   // {hash: person}
 var lastText = '', lastAt = 0;
 
-var DEMO_CODES = [   // 假快照原始碼（真機測試掃桌面那五張 QR）
-  'CHK|zzdemo2026|00001|sigA', 'CHK|zzdemo2026|00002|sigB',
-  'CHK|zzdemo2026|00003|sigC', 'CHK|zzdemo2026|00004|sigD', 'CHK|zzdemo2026|00005|sigE'];
+// 示範模式的假快照（真機測試掃桌面那五張 QR）。
+// ⚠️ 這五筆要跟正式路徑用同一種身分（2026-09-02 起是內部碼）——不然示範模式會整個
+//    壞掉，而那是承辦人唯一的練習管道，通常在活動前一晚才被打開。
+var DEMO_CODES = [
+  'CHK|zzdemo2026|JDC-DMBCDF|sigA', 'CHK|zzdemo2026|JDC-DMGHJK|sigB',
+  'CHK|zzdemo2026|JDC-DMMNPQ|sigC', 'CHK|zzdemo2026|JDC-DMRSTV|sigD',
+  'CHK|zzdemo2026|JDC-DMWXYZ|sigE'];
 var DEMO_PEOPLE = [
-  { empNo:'00001', name:'測試甲', unit:'管理部',   table:'1' },
-  { empNo:'00002', name:'測試乙', unit:'工務管理組', table:'2' },
-  { empNo:'00003', name:'測試丙', unit:'南港玉成', table:'3' },
-  { empNo:'00004', name:'測試丁', unit:'富貴莊園', table:'主桌' },
-  { empNo:'00005', name:'測試戊', unit:'宸實永寧', table:'5' }];
+  { internalId:'JDC-DMBCDF', name:'測試甲', unit:'管理部',   table:'1' },
+  { internalId:'JDC-DMGHJK', name:'測試乙', unit:'工務管理組', table:'2' },
+  { internalId:'JDC-DMMNPQ', name:'測試丙', unit:'南港玉成', table:'3' },
+  { internalId:'JDC-DMRSTV', name:'測試丁', unit:'富貴莊園', table:'主桌' },
+  { internalId:'JDC-DMWXYZ', name:'測試戊', unit:'宸實永寧', table:'5' }];
 
 async function buildDemoSnapshot() {
   for (var i = 0; i < DEMO_CODES.length; i++) {
@@ -232,34 +243,338 @@ var lastSyncAt = '';   // 版本診斷列用
 function loadSeen() { return seenLoad(localStorage, SEEN_KEY); }
 function saveSeen(seen) { return seenSave(localStorage, SEEN_KEY, seen); }
 state.seen = loadSeen();   // 開頁就把上次的已掃名單接回來（宣告在上面、鍵在這裡，故於此回填）
-function loadQueue() { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(_) { return []; } }
-function saveQueue(q) { localStorage.setItem(QKEY, JSON.stringify(q)); updateQueueBadge(); }
-function updateQueueBadge() {   // D4：佇列筆數長駐畫面
-  var n = loadQueue().length;
-  var el = document.getElementById('qbadge');
-  el.innerHTML = '待送 <span class="n">' + n + '</span> 筆';
-  el.className = n > 0 ? 'warn' : '';
-}
-function enqueue(empNo, method) {
-  if (DEMO) return;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
-  var q = loadQueue(); q.push({ empNo: empNo, ts: Date.now(), m: method || 'scan' });
-  saveQueue(q); flush();
+/**
+ * 佇列讀取。**「本來就沒有」與「讀不到」要分得開。**
+ *
+ * 🔴 為何（2026-09-02 自查 A1）：舊寫法壞 JSON 一律回 `[]`，而呼叫端全是**讀-改-寫**
+ * （`var q = loadQueue(); … saveQueue(q);`）⇒ 讀壞一次就把整份待送報到**永久覆蓋消滅**，
+ * 而徽章顯示「待送 0 筆」＝**看起來全部送完了**。零錯誤訊息。
+ *
+ * @returns {{ok:boolean, rows:Array}} ok:false ⇒ **不可以**拿 rows 去覆蓋 storage
+ */
+function readQueue() {
+  var raw;
+  try { raw = localStorage.getItem(QKEY); } catch (_) { return { ok: false, rows: [] }; }
+  if (raw == null || raw === '') return { ok: true, rows: [] };   // 真的沒有東西
+  try {
+    var v = JSON.parse(raw);
+    if (!Array.isArray(v)) return { ok: false, rows: [] };
+    return { ok: true, rows: v };
+  } catch (_) { return { ok: false, rows: [] }; }
 }
 
-/** empNo → hash 反查索引（C2 合併 seen 用），快照替換時重建。 */
-var empToHash = {};
-function rebuildEmpIndex() {
-  empToHash = {};
-  for (var h in snapshot) empToHash[snapshot[h].empNo] = h;
+/** 只是要看幾筆時用這支（顯示用途沒有覆蓋風險）。要寫回去的一律走 readQueue。 */
+function loadQueue() { return readQueue().rows; }
+
+/**
+ * 讀不到的原始值先留一份再說。**搬不成功就不准覆蓋**——留著至少還在，蓋掉就永遠沒了。
+ * 存的是原始字串不是解析後的列：解析不出來才會走到這裡，硬解會再丟一次。
+ */
+function quarantineRawQueue() {
+  try {
+    var raw = localStorage.getItem(QKEY);
+    if (raw == null || raw === '') return true;   // 沒有可失去的
+    var k = QKEY + '_unreadable';
+    var prev = localStorage.getItem(k) || '';
+    localStorage.setItem(k, prev + (prev ? '\n' : '') + raw);
+    var back = localStorage.getItem(k) || '';
+    return back.length >= prev.length + raw.length;   // 回讀確認，不信 setItem 沒拋錯
+  } catch (_) { return false; }
 }
 
 /**
- * 桌次一律回查快照（唯一有桌次的來源）——搜名用的 nameTable 只有 {empNo,name,unit}，
+ * 佇列項目的身分。移除、比對、驗證都用這一把，避免各處各自組鍵而漂開。
+ *
+ * 🔴 **這把鍵有第二個持有人，而且在另一個 repo**（2026-09-02 外審 R2 #9 順藤摸到）。
+ * 後端 `accountedKeys()` 產生 `writtenKeys`，前端拿它比對「哪幾列真的寫進去了」
+ * ⇒ **兩邊組鍵的方式必須逐字相同，否則比對全部落空。**
+ * 上一版三處各寫各的：這裡不 trim、`flush` 裡那一把連 `String()` 都沒有、
+ * 後端有 `.trim()` ⇒ **內部碼只要帶一個空白，後端回的鍵就永遠對不上**
+ * ⇒ 那一列被判「後端沒寫入」⇒ 進隔離區＋跳假警告，**而資料其實已經寫進去了**。
+ * 契約與案例在 `tests/fixtures/queue-key-contract.json`（兩個 repo 各一份、必須逐字相同）。
+ * ⚠️ **跨 repo 沒有機械強制點**——與「兩個 repo 必須同批上線」是同一個已知缺口。
+ */
+function qrowKey(r) { return String(r && r.internalId).trim() + '|' + String(r && r.ts); }
+
+/**
+ * 後端回的收據，跟**我這一側自己組的鍵**對不對得起來（2026-09-02 外審 R3 #2）。
+ *
+ * 問題：組鍵的規則有兩個持有人、在兩個 repo，**兩邊的測試各讀自己那份契約檔**
+ * ⇒ 任一側同時改實作與自己的契約檔，那一側全綠、另一側維持舊的也全綠，
+ * 中間沒有任何 CI、部署或執行期訊號。分岔的後果是「後端說寫進去了、前端永遠移不掉」。
+ *
+ * 解法：後端連同 `writtenKeys` 回一份 `writtenIdx`（那幾列在送出陣列裡的位置）。
+ * 前端拿位置取回**同一列**，用自己的 `qrowKey` 重算，逐字比對。
+ * ⇒ 鍵格式一旦分岔，第一次回寫就對不上 ⇒ 當場擋下來，不動佇列。
+ *
+ * 🔴 **刻意不用「格式版本號」**：版本號是第三份要靠人記得改的東西。
+ * 改了格式忘了改版本 ⇒ 什麼都不會發生 ⇒ 只是把「兩份會分岔」換成「三份會分岔」。
+ * 這裡的判準**從真實資料導出**，沒有東西可以忘記改。
+ *
+ * ⚠️ 已知界線（寫出來，不要當它不存在）：
+ * - 只在「這一包真的有寫進去的列」時才有訊號；整包都沒寫入時 `keys` 是空的，對得起來也證明不了什麼。
+ * - 它抓的是**上線後第一次回寫**，不是部署前。部署前的分岔沒有機械偵測（R3 #2 原話：以目前設計，沒有）。
+ * - 拿不到 `writtenIdx`（舊後端）⇒ **當成不符**，一列都不移除。fail-closed。
+ */
+function receiptAgrees(rows, res) {
+  var idx = res && res.writtenIdx, keys = res && res.writtenKeys;
+  if (!Array.isArray(idx) || !Array.isArray(keys)) return false;
+  if (idx.length !== keys.length) return false;
+  return keys.every(function (k, n) {
+    var row = rows[idx[n]];
+    return !!row && qrowKey(row) === k;
+  });
+}
+
+/**
+ * 佇列項目的**全部內容**（不只身分）。`qrowKey` 只回答「這是哪一列」，
+ * 這一支回答「這一列長什麼樣」——存檔驗證要用這一支。
+ *
+ * 🔴 2026-09-02 外審 R2 #8：只驗身分鍵 ⇒ **報到方式（`m`）與 schema 版本（`v`）
+ * 被改壞也照樣回 true**。那兩欄是實際資料，不是可忽略的 metadata。
+ */
+function qrowCanon(r) {
+  return JSON.stringify([Number(r && r.v) || 0, String(r && r.internalId).trim(),
+                         String(r && r.ts), String((r && r.m) || '')]);
+}
+
+/** 逐項計數（不是集合）——同一列出現兩次與出現一次是不同的東西。 */
+function qrowCounts(rows) {
+  var m = {};
+  (rows || []).forEach(function (r) { var k = qrowCanon(r); m[k] = (m[k] || 0) + 1; });
+  return m;
+}
+
+/** 兩份佇列內容完全相同：同樣的列、同樣的次數、**而且沒有多出來的**。 */
+function qrowCountsEqual(a, b) {
+  var ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every(function (k) { return a[k] === b[k]; });
+}
+
+/**
+ * 佇列寫入。**回讀確認「我那幾列在不在」才算成功。**
+ *
+ * 🔴 2026-09-02 差異審查 #10：上一版驗的是 `back.rows.length === q.length`
+ * ⇒ 兩個分頁各寫一筆時，**兩邊的長度都對得上，兩邊都回 true，而實際只剩後寫的那筆**。
+ * 長度相等證明不了「是我那幾列」——它只證明「有那麼多列」。
+ *
+ * 🔴 2026-09-02 外審 R2 #2：上一版改成 `q.every(在不在回讀結果裡)`，那是**子集合**檢查。
+ * `saveQueue` 是**整份取代**，不是「至少包含這幾列」⇒ 子集合檢查放過三種錯誤成功：
+ *   ① `q = []` 時 `every` **恆真** ⇒ 寫入靜默失敗、舊佇列原封不動，照樣回 true
+ *      （而 `flush` 正是拿它保存「過濾掉已寫入列」的結果——清空那一步永遠說成功）
+ *   ② 回讀多出不該在的列（別的分頁剛寫進來）驗不出來
+ *   ③ 同一列該有兩筆、只回讀到一筆，驗不出來
+ * ⇒ 改成**逐項計數的完全相等**：同樣的列、同樣的次數、沒有多出來的。
+ *
+ * @returns {boolean} false ⇒ 這一批沒有落地，呼叫端不可以宣稱成功
+ */
+function saveQueue(q) {
+  var ok = false;
+  try {
+    localStorage.setItem(QKEY, JSON.stringify(q));
+    var back = readQueue();
+    if (back.ok) ok = qrowCountsEqual(qrowCounts(q), qrowCounts(back.rows));
+  } catch (_) { ok = false; }
+  updateQueueBadge();
+  return ok;
+}
+/**
+ * 佇列筆數長駐畫面（D4）。
+ *
+ * 🔴 2026-09-02（外審第二輪 C）：舊格式殘留的數字也放這裡。
+ * 原本用 `note()` 講一次——而 `note()` 是**判定卡**，開頁流程接著就會被
+ * loadSnapshot 的「名單載入中，請稍候…」蓋掉，工作人員根本來不及看到。
+ * 那是「發了就不管」的一種：訊息確實送出去了，但沒有人收得到。
+ *
+ * 這一格與名單版本那一行同一個判斷：**要一直看得到的事，不能用會被蓋掉的位置。**
+ */
+function updateQueueBadge() {
+  var n = loadQueue().length;
+  // 🔴 **從 storage 讀，不是記「這次搬了幾筆」**（2026-09-02 外審 #2）。
+  // 原本用一個模組變數存本次移出的數量 ⇒ **第二次開頁時它是 0**，
+  // 隔離區明明還有資料而畫面一個字都不說。那是「訊息只在發生的當下存在」，
+  // 而現場的人多半不是在那一刻看畫面的。
+  var q = quarantinedCount();
+  var el = document.getElementById('qbadge');
+  el.innerHTML = '待送 <span class="n">' + n + '</span> 筆'
+    + (q ? '　⚠ 另有 <span class="n">' + q
+       + '</span> 筆送不出去（已保留在本機），請告知工務管理組' : '');
+  el.className = (n > 0 || q > 0) ? 'warn' : '';
+}
+/** 佇列項目的格式版本。v1（沒有這個欄位）帶的是員編，後端已經不認得。 */
+var QUEUE_V = 2;
+
+/**
+ * 把送不出去的列**搬到隔離區**，並回報有沒有成功。
+ *
+ * 🔴 **先確認備份寫成功，才可以從主佇列移除**（2026-09-02 外審 #1）。
+ * 原本的寫法是 `try{ 寫備份 }catch(_){}` 然後**無條件** `saveQueue(modern)`——
+ * 備份寫失敗（例如 localStorage 滿了）時，那幾列**同時不在主佇列、也不在備份**。
+ * 實測過：拋 QuotaExceededError 之後，舊格式那一筆兩邊都查不到。
+ *
+ * `catch(_){}` 讀起來像「這件事不重要」，而它吞掉的是「我剛剛沒存成功」——
+ * 而下一行就把原始資料刪了。
+ *
+ * ⚠️ 兩條路共用這一支（舊格式 v1、後端拒絕），不是各寫一份：
+ * 「什麼情況下可以把資料從主佇列拿掉」這個判斷只能有一個地方說了算。
+ *
+ * @returns {boolean} true=已安全搬走（呼叫端才可以從主佇列移除）
+ */
+function quarantineRows(bucketKey, rows) {
+  if (!rows || !rows.length) return true;
+  try {
+    var prev = JSON.parse(localStorage.getItem(bucketKey) || '[]');
+    if (!Array.isArray(prev)) prev = [];
+    localStorage.setItem(bucketKey, JSON.stringify(prev.concat(rows)));
+    // 回讀確認——setItem 不拋錯不代表寫進去了（配額、私密模式都可能靜靜失敗）
+    var back = JSON.parse(localStorage.getItem(bucketKey) || '[]');
+    return Array.isArray(back) && back.length >= prev.length + rows.length;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 隔離區目前有幾筆（兩個桶加總）。**從 storage 讀，不是記這次搬了幾筆。** */
+function quarantinedCount() {
+  var n = 0;
+  // 讀不到的原始佇列存的是字串不是列，算不出筆數；有東西就記 1 筆，
+  // 讓它至少出現在畫面上——不然「整份讀不到」會是唯一沒有人被告知的情況。
+  try { if ((localStorage.getItem(QKEY + '_unreadable') || '')) n += 1; } catch (_) {}
+  [QKEY + '_v1', QKEY + '_rejected'].forEach(function (k) {
+    try {
+      var a = JSON.parse(localStorage.getItem(k) || '[]');
+      if (Array.isArray(a)) n += a.length;
+    } catch (_) {}
+  });
+  return n;
+}
+
+/**
+ * 入列。**回傳這一筆到底有沒有落地**——呼叫端要拿它決定畫面說什麼。
+ * @returns {boolean}
+ */
+function enqueue(internalId, method) {
+  if (DEMO) return true;   // DEMO 模式不入佇列不回寫，避免污染真活動的報到紀錄
+  var cur = readQueue();
+  if (!cur.ok) {
+    // 讀不到就**不可以**拿一個空陣列寫回去——那會把還沒送出的報到整份蓋掉。
+    // 先把讀不到的原始值搬進隔離區；搬成功才允許從空的重新開始，搬不成功就整筆失敗。
+    if (!quarantineRawQueue()) return false;
+  }
+  // 🔴 **在寫入的最後一刻再讀一次**（2026-09-02 差異審查 #10）。
+  // 上一版拿幾行前讀到的快照去 push 再整個覆寫 ⇒ 這中間別的分頁寫進來的都被蓋掉。
+  // 入列語意上是 append，所以要 append 到**當下的內容**，不是幾行前的快照。
+  var latest = readQueue();
+  if (!latest.ok) {
+    // 🔴 2026-09-02 外審 R2 #3：上一版在這裡是「第二次讀失敗就退回幾行前的快照」
+    // ——繞過了上面那段自己剛立的隔離語意。這條路真的走得到：第一次讀成功之後，
+    // 另一個分頁把佇列寫成讀不出來的樣子。拿舊快照覆寫 ⇒ 那個分頁寫進來的整份消失，
+    // 而且回 true。⇒ **兩次讀失敗的處置必須一樣**：先留底，留不成就整筆失敗。
+    if (!quarantineRawQueue()) return false;
+    latest = { ok: true, rows: [] };   // 原始值已留底，才可以從空的重新開始
+  }
+  var q = latest.rows;
+  q.push({ v: QUEUE_V, internalId: internalId, ts: Date.now(), m: method || 'scan' });
+  if (!saveQueue(q)) return false;
+  flush();
+  return true;
+}
+
+/**
+ * 報到落地：**入列成功才可以對操作員說「已受理」，也才可以把人記進 seen。**
+ *
+ * 🔴 為何兩條路徑共用這一支（2026-09-02 自查 A2）：
+ * 掃碼路徑原本是「先顯示綠燈 → saveSeen → enqueue」，手動路徑是「enqueue → saveSeen → 顯示」。
+ * **同一個判斷散在兩處，而沒有任何東西要求它們相等**，於是順序漂掉了。
+ * 掃碼那個順序在寫入失敗時：操作員**已經看到綠燈**、seen **已經落地**
+ * （同一個人再掃會被判「已報到過」）、而那筆報到**從未進入佇列**
+ * ⇒ **這個人永遠不會被記錄，而系統會堅稱他報到過。** 零錯誤訊息。
+ *
+ * 失敗時要把 seen 收回去：applyScan 已經在記憶體裡把他標成掃過了，
+ * 不收回的話同一場再掃一次會被判「已報到過」——那是同一個謊，只是換個地方講。
+ *
+ * @param {string} internalId
+ * @param {string} method 'scan'｜'manual'
+ * @param {string=} hash 快照鍵；臨時出席者沒有，沒有就不記 seen
+ * @param {boolean=} seenIsNew 這個 hash 是**這一次動作**才變成「已掃」的嗎？
+ *   🔴 這一格必須由呼叫端明傳，**不能從 state 推**（2026-09-02 主視窗提問後查證）：
+ *   掃碼路徑的 `applyScan` 在進到這裡之前**就已經把 seen 設好了**，
+ *   所以看 state 分不出「這次設的」與「之前設的」。
+ *   而兩邊的答案不一樣——掃碼永遠是新的（先前掃過的話 applyScan 給的是 dup，
+ *   根本不會叫到這裡），手動則允許替**先前已報到過**的人再送一次。
+ *   ⚠️ 這是共用述詞的代價面：**兩邊語意的差異會被共用函式藏起來**，
+ *   所以要把它拉出來當參數，而不是在函式裡猜。
+ * @returns {boolean} false ⇒ 呼叫端**必須**顯示失敗，不可以說已受理
+ */
+function commitCheckin(internalId, method, hash, seenIsNew) {
+  if (!enqueue(internalId, method)) {
+    // 只收回這一次才設的。收回更早落地的那筆 ⇒ 這一場之內那個人變成「沒報到過」，
+    // 再掃會判 ok——那是把謊講到另一個方向去。
+    if (hash && seenIsNew) delete state.seen[hash];
+    return false;
+  }
+  if (hash) state.seen[hash] = true;
+  // ⚠️ **刻意沒有檢查 saveSeen 的回傳值**（2026-09-02 主視窗判定，標在這裡而不是交接文）。
+  //
+  // 現象：seen 沒落地而佇列落地了 ⇒ 重整後畫面說「未報到」，而那筆其實已經入列。
+  //       那是「畫面與資料不一致」的另一個方向，與上面剛修的同族。
+  //
+  // 為什麼不修：(1) 方向安全——重掃會再送一次，**後端冪等（活動ID＋內部碼）擋住重複寫入**；
+  //   (2) 它不在外審的舊族清單裡，而舊族歸零是這條線的部署判準，混進去會讓判準變模糊；
+  //   (3) 這一輪十二個突變全綠，而「修一輪注入新缺陷」的實測比例是 7/7
+  //       ——**再動一次的風險大於這條的收益**。
+  //
+  // 🔴 歸誰決定／什麼時候該回來修：主視窗 2026-09-02 判定不修。
+  //   **它是靠後端冪等才安全的** ⇒ **`recordEventCheckins` 的冪等這道防線只要有任何變動，
+  //   這一條就要重看**。改冪等的人請一併看這裡。
+  saveSeen(state.seen);   // 立刻落地：關窗／重整之後這個人仍算已報到
+  return true;
+}
+
+/**
+ * 開頁時把舊格式（v1，帶員編）的佇列項目挑出來隔離。
+ *
+ * 為何不自動轉換：舊項目只有員編，要轉成內部碼得查名冊，而**掃描站可能正處於離線
+ * 狀態**——那正是佇列存在的理由。
+ *
+ * 為何不直接丟掉：丟掉等於「有人報到過但紀錄不見了」，而且畫面上看不出來。
+ * 改成搬到另一把鍵存著（資料還在，可人工還原）＋在畫面上講一句，讓它被看見。
+ *
+ * 正常情況這裡永遠是 0 筆——離下一場活動還很久，佇列必然是空的。它不是 0 的時候，
+ * 代表有裝置用同一個瀏覽器留著上一場的殘留，那要有人知道。
+ */
+function quarantineLegacyQueue() {
+  var q = loadQueue();
+  var modern = q.filter(function (r) { return r && Number(r.v || 0) >= QUEUE_V; });
+  var legacy = q.filter(function (r) { return !(r && Number(r.v || 0) >= QUEUE_V); });
+  if (!legacy.length) return 0;
+  // 🔴 搬成功才可以從主佇列移除。搬不成功就原封不動留著——
+  // 留著至少還在，刪掉就永遠沒了。
+  if (!quarantineRows(QKEY + '_v1', legacy)) {
+    note('bad', '有 ' + legacy.length + ' 筆舊格式紀錄無法備份，已保留在待送佇列',
+         '請告知工務管理組，先不要清除瀏覽器資料');
+    updateQueueBadge();
+    return 0;
+  }
+  saveQueue(modern);                  // （saveQueue 自己會呼叫 updateQueueBadge）
+  return legacy.length;
+}
+
+/** 內部碼 → hash 反查索引（C2 合併 seen 用），快照替換時重建。 */
+var idToHash = {};
+function rebuildEmpIndex() {
+  idToHash = {};
+  for (var h in snapshot) idToHash[snapshot[h].internalId] = h;
+}
+
+/**
+ * 桌次一律回查快照（唯一有桌次的來源）——搜名用的 nameTable 只有 {internalId,name,unit}，
  * 所以走手動報到的人若本來就在參加者名單裡（沒綁定／相機掛掉），照樣講得出桌次；
  * 真正查不到的才是臨時出席。
  */
-function tableOf(empNo) {
-  var h = empToHash[empNo];
+function tableOf(internalId) {
+  var h = idToHash[internalId];
   return h && snapshot[h] ? (snapshot[h].table || '') : '';
 }
 function seatHtml(t) {
@@ -272,7 +587,7 @@ function seatHtml(t) {
 function personCard(cls, label, p) {
   show(cls, '<div class="eyebrow">' + esc(label) + '</div>'
     + '<div class="who">' + esc(p.name) + '</div>'
-    + seatHtml(tableOf(p.empNo))
+    + seatHtml(tableOf(p.internalId))
     + '<div class="unit">' + esc(p.unit || '') + '</div>');
 }
 
@@ -292,24 +607,61 @@ function flashFrame(kind) {
 
 // ─── 手動報到：單位 → 姓名 兩層下拉 ─────────────────────────────────────────
 // 名單＝快照參加者 ∪ 在職名冊（聯集）。只取在職名冊會漏掉「不在職但受邀」的人；
-// 只取參加者會漏掉臨時出席。以 empNo 為鍵去重，參加者的資料優先（它才有桌次）。
+// 只取參加者會漏掉臨時出席。以內部碼為鍵去重，參加者的資料優先（它才有桌次）。
+/**
+ * 人工搜名的名單。**碰撞時誰都不是**——與後端 indexByInternalId 同一條規則。
+ *
+ * 🔴 為何（外審第五輪，同一形狀第三次）：舊寫法是 first-write-wins。
+ * 名冊有兩列共用一個內部碼時（nameTable 用姓名當鍵，兩個人都在裡面），
+ * 先到的占住那個碼、後到的整個消失——**那個人在門口完全找不到**。
+ * 而替留下的那位報到，寫進去的是一個指不出人的共享碼，事後也分不出是誰。
+ *
+ * 同一個人從 snapshot 與 nameTable 各出現一次是正常的，不算碰撞：
+ * 判準是「這個碼底下是不是兩個不同的人」，不是「這個碼出現幾次」。
+ *
+ * ⚠️ 識別只能用**姓名**，不能用「姓名＋單位」：同一個人在快照裡是活動單位、
+ *    在名冊裡是名冊單位，本來就不一樣。用單位當識別的話每個人都會被判成碰撞
+ *    而整份名單清空——這是我自己第一版的寫法，被既有測試擋下來的。
+ *    姓名的正規化與後端 buildEventNameTable 的鍵一致（去掉全半形空白）。
+ *
+ * @return {{people:Array, collisions:Array}} collisions 的形狀與後端的
+ *   skippedPeople 一致（name／unit／why），好讓同一塊展開區一起顯示。
+ */
 function allPeople() {
-  var byEmp = {};
-  for (var h in snapshot) {
-    var s = snapshot[h];
-    byEmp[s.empNo] = { empNo: s.empNo, name: s.name, unit: s.unit };
-  }
-  for (var k in nameTable) {
-    var n = nameTable[k];
-    if (n && n.empNo && !byEmp[n.empNo]) byEmp[n.empNo] = { empNo: n.empNo, name: n.name, unit: n.unit };
-  }
-  return Object.keys(byEmp).map(function (e) { return byEmp[e]; });
+  var byId = {}, seen = {};
+  var put = function (p) {
+    if (!p) return;
+    var c = String(p.internalId || '').trim();
+    if (!c) return;
+    var who = String(p.name || '').replace(/[\s\u3000]+/g, '');
+    if (!seen[c]) seen[c] = [];
+    var known = false;
+    seen[c].forEach(function (x) { if (x.who === who) known = true; });
+    if (known) return;                       // 同一個人再出現一次＝正常
+    seen[c].push({ who: who, name: p.name, unit: p.unit });
+    if (!byId[c]) byId[c] = { internalId: c, name: p.name, unit: p.unit };
+  };
+  for (var h in snapshot) put(snapshot[h]);
+  for (var k in nameTable) put(nameTable[k]);
+
+  var collisions = [];
+  Object.keys(seen).forEach(function (c) {
+    if (seen[c].length < 2) return;
+    delete byId[c];                          // 挑任何一個都是猜，而猜錯會把 A 記成 B
+    seen[c].forEach(function (x) {
+      collisions.push({ name: x.name, unit: x.unit, internalId: c,
+                        why: '內部碼與他人重複（' + c + '）——請先修名冊' });
+    });
+  });
+  return { people: Object.keys(byId).map(function (e) { return byId[e]; }),
+           collisions: collisions };
 }
 
 var peopleByUnit = {};
 function buildPicker() {
   peopleByUnit = {};
-  allPeople().forEach(function (p) {
+  var ap = allPeople();
+  ap.people.forEach(function (p) {
     var u = p.unit || '（未分單位）';
     (peopleByUnit[u] = peopleByUnit[u] || []).push(p);
   });
@@ -320,11 +672,12 @@ function buildPicker() {
   // 單位分「總公司／工地」兩組 optgroup＝與報到頁共用 groups.js，分類來源不分歧
   document.getElementById('selUnit').innerHTML =
     '<option value="">── 請選擇 ──</option>' + jdcGroupedOptions(units, 'unit', '');
+  return ap.collisions;   // 被拿掉的那些人要有人講出來，不可以靜靜地少
 }
 
 /** 這個人本機已知報到過？（後端冪等仍是最終權威，這裡只影響排序與提示） */
-function isCheckedIn(empNo) {
-  var h = empToHash[empNo];
+function isCheckedIn(internalId) {
+  var h = idToHash[internalId];
   return !!(h && state.seen[h]);
 }
 
@@ -346,10 +699,10 @@ function fillNameSelect(unit) {
   // 已報到的沉到最下面，收進 optgroup——現場找的幾乎都是「還沒報到」的人，
   // 讓他們佔住上方；optgroup 的標題 iOS 會畫，<option> 的樣式不會。
   var pending = [], done = [];
-  list.forEach(function (p) { (isCheckedIn(p.empNo) ? done : pending).push(p); });
+  list.forEach(function (p) { (isCheckedIn(p.internalId) ? done : pending).push(p); });
   function opt(p) {
-    var t = tableOf(p.empNo);
-    return '<option value="' + esc(p.empNo) + '">' + esc(p.name)
+    var t = tableOf(p.internalId);
+    return '<option value="' + esc(p.internalId) + '">' + esc(p.name)
       + (t ? '・' + esc(t) + (/^\d+$/.test(t) ? ' 桌' : '') : '') + '</option>';
   }
   sel.innerHTML = '<option value="">── 請選擇（未報到 ' + pending.length + ' 人）──</option>'
@@ -367,7 +720,16 @@ function resetPicker() {
 var flushing = false;
 async function flush() {
   if (flushing) return;                 // in-flight guard：同機同時最多一個 flush
-  var q = loadQueue(); if (!q.length) return;
+  // 🔴 開頭這一讀也要分得開「沒有」與「讀不到」（外審第六輪後重取定義域時抓到）。
+  // 用 loadQueue 的話，佇列壞掉 ⇒ 回 [] ⇒ 這裡提早 return ⇒ **每 15 秒安靜地什麼都不做**，
+  // 而徽章顯示 0 筆待送。沒有人會知道有一批報到卡在這台手機裡送不出去。
+  var head = readQueue();
+  if (!head.ok) {
+    note('bad', '待送佇列讀不出來，這台手機的報到暫時送不出去',
+         '請告知工務管理組；先不要按「重設這台手機」，那會把它永久刪掉');
+    return;
+  }
+  var q = head.rows; if (!q.length) return;
   flushing = true;
   try {
     var packs = chunkByLen(q, 3000);    // D1：一律切包
@@ -382,12 +744,77 @@ async function flush() {
           return;                          // 保留剩餘佇列、等下一輪；不遞迴重試
         }
         // 逐包成功→逐包從佇列移除（部分成功不重送已寫入的）
-        var sent = {}; packs[i].forEach(function (r) { sent[r.empNo + '|' + r.ts] = true; });
-        saveQueue(loadQueue().filter(function (r) { return !sent[r.empNo + '|' + r.ts]; }));
+        // ⚠️ 這把組合鍵要跟佇列項目實際帶的欄位一致。不一致的話送出成功、卻從佇列
+        //    移不掉 ⇒ **每 15 秒重送一次，永遠不會停**，而畫面上待送筆數一直不歸零。
+        // 🔴 2026-09-02 外審 R2 #9：這裡原本自己寫了第二把組鍵函式。
+        // 上一輪的修法宣稱「移除／比對／驗證共用 `qrowKey` 一把鍵」——**而那一把還在**。
+        // 抽出共用函式之後會覺得那件事已經做完了，所以最難自己發現。
+        // 現在只准用 `qrowKey`；`tests/queue-key-single-source.test.js` 讓再長出第二把會紅。
+        // 🔴 **只移除後端說「真的寫進去了」的那幾列**（2026-09-02 外審 #5）。
+        // 原本是「這一包 ok:true ⇒ 整包移除」——而 `ok:true` 只代表**請求完成**，
+        // 不代表每一列都寫進試算表。被拒絕的列會連同被刪掉
+        // ⇒ **那個人報到了、紀錄不見了、佇列也清了**，三個地方都查不到他。
+        // 🔴 **缺少 writtenKeys 時一列都不移除**（2026-09-02 外審第六輪 ③）。
+        //
+        // 舊版寫「沒有 writtenKeys 就退回整包移除，那是相容不是預設」——
+        // **那句話讓這個分支讀起來像已經被想過了，於是沒有人再看它。**
+        // 而它正是 #5 要修掉的那個行為，原封不動留在相容分支裡。
+        //
+        // 更糟的是它最可能觸發的時機：**兩個 repo 必須同批上線**，
+        // 而部署窗口裡前端是新的、後端還是舊的 ⇒ 這個分支會走到，
+        // 而那正是最不能靜默刪資料的時候。
+        //
+        // 取捨講明：不移除 ⇒ 下一輪會重送，後端冪等擋住重複寫入；
+        // 佇列不歸零會被徽章與下面那句 note 看見。**吵，但看得見。**
+        // 舊行為是安靜地刪掉——**靜默漏資料比吵更糟。**
+        var written = {};
+        var noReceipt = !Array.isArray(res.writtenKeys);
+        // 🔴 跨 repo 的鍵格式握手（外審 R3 #2）。**處置與「沒有收據」相同**：不動佇列。
+        // 分成兩個變數只為了訊息講得出是哪一種——判斷本身共用同一條 fail-closed 路徑。
+        var keyMismatch = !noReceipt && !receiptAgrees(packs[i], res);
+        if (!noReceipt && !keyMismatch) {
+          res.writtenKeys.forEach(function (k) { written[k] = true; });
+        }
+        // 送出去了、但後端沒說有寫進去的 ⇒ 搬進隔離區，不要留在主佇列無限重送、
+        // 也不要直接刪掉。搬不成功就留在主佇列（留著至少還在）。
+        if (noReceipt || keyMismatch) {
+          // 後端沒有逐列回報、或它回的鍵跟我這邊組出來的對不起來
+          // ⇒ 這一批的去向不明，**不動佇列**。
+          note('bad',
+               (keyMismatch ? '前後端的比對鍵對不起來，這 ' : '後端沒有回報逐列結果，這 ')
+               + packs[i].length + ' 筆先留著',
+               keyMismatch
+                 ? '通常是兩個 repo 沒有同批上線。下一輪會重送，不會重複寫入。請告知工務管理組'
+                 : '下一輪會重送，不會重複寫入。若一直不歸零請告知工務管理組');
+          continue;   // 這一包不移除、不隔離；其餘包照跑
+        }
+        var notWritten = packs[i].filter(function (r) { return !written[qrowKey(r)]; });
+        var quarantined = notWritten.length ? quarantineRows(QKEY + '_rejected', notWritten) : true;
+        var removable = {};
+        packs[i].forEach(function (r) {
+          if (written[qrowKey(r)] || quarantined) removable[qrowKey(r)] = true;
+        });
+        var cur = readQueue();
+        // 讀不到就不可以拿過濾後的結果覆蓋回去——那是 A1 的同一個形狀，出口版。
+        if (cur.ok) saveQueue(cur.rows.filter(function (r) { return !removable[qrowKey(r)]; }));
+        // 🔴 後端寫進去了，但**認不出那是誰**（內部碼在兩個來源之間對不起來）。
+        // 那一列的姓名／單位／桌次是空的——現場的人要當下知道，
+        // 而不是回頭看試算表才發現。留白不講＝把「沒人知道的錯」換成「沒人知道的空」。
+        var unid = (res && res.unidentified) || [];
+        if (unid.length) {
+          note('bad', '有 ' + unid.length + ' 筆認不出是誰（已記錄，姓名欄是空的）',
+               unid.map(function (x) { return x.internalId + '：' + x.why; }).join('；')
+               + '　請告知工務管理組');
+        }
+        if (notWritten.length) {
+          note('bad', '有 ' + notWritten.length + ' 筆後端沒有寫入',
+               quarantined ? '已保留在本機，請告知工務管理組'
+                           : '仍留在待送佇列，請告知工務管理組');
+        }
         lastSyncAt = new Date().toLocaleTimeString();
         document.getElementById('lastsync').textContent = lastSyncAt;
-        // C2：後端回傳全場已報到員編 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
-        state.seen = seenMerge(state.seen, res.allChecked, empToHash);
+        // C2：後端回傳全場已報到的內部碼 → 併入 seen（聯集），跨站防重延遲 ≤ 回寫週期
+        state.seen = seenMerge(state.seen, res.allChecked, idToHash);
         saveSeen(state.seen);   // 別台掃的也要留在本機，否則重整後又會判成 ok
       } catch (err) {   // 網路中斷／逾時／JSON 解析失敗＝同一種失敗
         note('dup', '回寫未完成，' + loadQueue().length + ' 筆待送', '稍後自動重試，不必重掃');
@@ -407,18 +834,25 @@ document.addEventListener('visibilitychange', function () {
 });
 
 function manualCheckin(p) {
-  var h = empToHash[p.empNo];
+  var h = idToHash[p.internalId];
   var alreadySeen = h && state.seen[h];   // 本機已知報到過，但後端冪等仍允許再送出
   var msg = alreadySeen
     ? p.name + ' 已報到過，仍要再送出？'
     : ('手動報到：' + p.name + '（' + (p.unit || '') + '）？');
   if (!confirm(msg)) { resetPicker(); return; }
-  enqueue(p.empNo, 'manual');
-  if (h) state.seen[h] = true;
   // ⚠️ 臨時出席者不在快照裡＝沒有 hash，seen 追蹤不到他（applyScan 全程以 hash 為鍵）。
   // 後果僅止於「同一位臨時出席者再手動報到一次時，不會跳已報到過的提醒」；
-  // 資料端仍由後端冪等（活動ID＋員編）擋住，不會重複寫入。
-  saveSeen(state.seen);   // 手動報到也算已掃，否則重整後同一人會再被判成 ok
+  // 資料端仍由後端冪等（活動ID＋內部碼）擋住，不會重複寫入。
+  // 第四格是 `!alreadySeen`：手動路徑允許替先前已報到過的人再送一次
+  //（上面那句 confirm 就是在問這個），那種情況下 seen 不是這一次設的，失敗不可以收回。
+  if (!commitCheckin(p.internalId, 'manual', h, !alreadySeen)) {
+    note('bad', p.name + ' 這一筆沒有存起來，請再試一次',
+         '若連續失敗：這台手機的儲存空間可能滿了，改用別台或先用紙本記下姓名');
+    flashFrame('bad');
+    holdThenIdle(5000);
+    resetPicker();
+    return;
+  }
   personCard('ok', '已受理・手動', p);
   flashFrame('ok');
   holdThenIdle();
@@ -454,6 +888,27 @@ var ready = false;   // 快照載入 gate：未完成前掃描停用
  * （computeCheckinExpiry_＝活動日+1 天 23:59），換成 localStorage 之後
  * 它才真的派得上用場：撐過關窗、活動結束隔天自動清掉。
  */
+/**
+ * 「重設這台手機」的確認訊息。**抽成函式是為了測得到**——
+ * 原本這句話組在事件處理器裡，只能靠掃原始碼驗，而那種驗法會被下一次改寫悄悄繞過。
+ *
+ * 🔴 用 readQueue 不用 loadQueue：**讀不到時 loadQueue 回 0**，
+ * 那句話就會變成「目前 0 筆待送，不會遺失任何報到紀錄」——然後把它刪掉。
+ * A1 的同一個形狀，發生在刪除這一端（2026-09-02 重取定義域時抓到：
+ * 我上一輪只掃了「誰寫進去」的入口，漏了「誰刪掉」的出口）。
+ */
+function wipeConfirmText() {
+  var cur = readQueue();
+  var n = cur.rows.length;
+  if (!cur.ok) {
+    return '⚠️ 這台手機的待送佇列讀不出來，裡面可能還有沒回寫的報到。'
+      + '\n\n清除後那些資料會永久消失、無法復原。\n\n仍要清除？';
+  }
+  return n > 0
+    ? '⚠️ 尚有 ' + n + ' 筆報到還沒回寫到伺服器。\n\n清除後這 ' + n + ' 筆會永久消失、無法復原。\n\n仍要清除？'
+    : '清除本機快照？（目前 0 筆待送，不會遺失任何報到紀錄）';
+}
+
 function purgeIfExpired() {
   var exp = Number(localStorage.getItem(EXPIRE_KEY) || 0);
   if (exp && Date.now() > exp) {
@@ -487,14 +942,47 @@ function setTopbar(actName, station) {
   el.className = s ? '' : 'unset';
 }
 
+/**
+ * 簽不出報到碼的人：是誰、為什麼。
+ *
+ * 只有數字（unusable）的話，門口這台手機答得出「有 3 個人掃不進去」，
+ * 卻答不出是哪 3 個——現場只能請人回頭找承辦，而承辦不在門口。
+ * 理由一律取自後端（pfWhy／pfPeople 同一份），這裡不猜。
+ */
+function renderSkipped(res, extra) {
+  var box = document.getElementById('snapskip');
+  if (!box) return;
+  var people = pfPeople(res).concat(extra || []), gap = pfGap(res);
+  if (!people.length && !gap) { box.innerHTML = ''; return; }   // 常態：整塊不存在
+  var items = people.map(function (x) {
+    return '<li>' + esc(x.unit || '（未分單位）') + '　' + esc(x.name)
+      + '　—　' + esc(x.why || '後端沒有講原因') + '</li>';
+  });
+  if (gap) {
+    // 清單比數字少人。不講的話，操作者會把這份清單讀成完整的。
+    items.push('<li>另有 ' + gap + ' 人後端沒有分類出原因——這份清單比實際少人</li>');
+  }
+  box.innerHTML = '<details><summary>⚠ ' + (people.length + gap)
+    + ' 人掃不進去（點開看是誰）</summary><ul>' + items.join('') + '</ul></details>';
+}
+
 function applySnapshotPayload(res) {
   setTopbar(res.actName, res.station);
   // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
   snapshot = res.snapshot; nameTable = res.nameTable || {};
   snapMeta = { version: res.snapshotVersion, generatedAt: res.generatedAt };
-  document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt;
+  document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt
+    + (res.unusable ? '　⚠ 有 ' + res.unusable + ' 人身分資料有誤、無法掃碼' : '');
+  // 後端跳過了幾個人（身分不合格式，簽不出碼）。正常永遠是 0。
+  // 不是 0 的時候，那幾個人現場一定掃不進去——而**掃描站是唯一看得到這件事的地方**。
+  // 長駐在名單版本那一行，不用 note()：note 會被下一次判定蓋掉，而這件事要一直看得到。
+  // 🔴 光有數字不夠：現場站在門口的人要能回答「是誰、為什麼」，否則只能請人回頭問承辦。
+  //    清單收在 <details> 裡，預設收合——手機版面小，但要展得開。
   rebuildEmpIndex();
-  buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
+  var collisions = buildPicker();   // 名單換版＝下拉一起換（seen 與佇列不動，見上方 E2）
+  // 兩個來源合在同一塊：後端說簽不出碼的，加上這台自己算出「碼撞在一起」的。
+  // 分兩塊顯示的話，門口的人要看兩個地方才知道少了誰。
+  renderSkipped(res, collisions);
 }
 
 async function loadSnapshot(force) {
@@ -567,13 +1055,21 @@ async function handle(text, t0) {
   state = r.state;
   var ms = Math.round(performance.now() - t0);
   if (r.verdict.type === 'ok') {
-    // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
-    personCard('ok', '已受理', r.verdict.person);
-    flashFrame('ok');
-    holdThenIdle();
-    if (navigator.vibrate) navigator.vibrate(80);
-    saveSeen(state.seen);   // 立刻落地：關窗／重整之後這個人仍算已報到
-    enqueue(r.verdict.person.empNo, 'scan');
+    // 順序與手動路徑一致，且不是各自寫對——**兩條共用 commitCheckin**（見該函式標頭）。
+    // 第四格傳 true：verdict 是 ok 就代表 applyScan 認定他先前沒掃過
+    // （先前掃過會回 dup，走不到這裡），所以 seen 這一格必然是這一次才設的。
+    if (commitCheckin(r.verdict.person.internalId, 'scan', h, true)) {
+      // 「已受理」不寫「報到成功」：跨站判重延遲 ≤ 回寫週期，全域判重由後端冪等完成
+      personCard('ok', '已受理', r.verdict.person);
+      flashFrame('ok');
+      holdThenIdle();
+      if (navigator.vibrate) navigator.vibrate(80);
+    } else {
+      note('bad', '這一筆沒有存起來，請再掃一次',
+           '若連續失敗：這台手機的儲存空間可能滿了，改用別台或先用紙本記下姓名');
+      flashFrame('bad');
+      holdThenIdle(5000);   // 失敗要多留一會兒，操作員得有時間讀完並決定怎麼處理
+    }
   } else if (r.verdict.type === 'dup') {
     // 重複掃的人多半是忘了自己第幾桌又回頭問，所以這張也要講得出桌次
     personCard('dup', '已報到過', r.verdict.person);
@@ -631,7 +1127,8 @@ document.getElementById('theme').addEventListener('click', function () {
 try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'light'); } catch (e) { applyTheme('light'); }
 
 (async function init() {
-  updateQueueBadge();   // 佇列筆數不依賴 empToHash：開頁立刻反映上次 session 遺留的真實筆數，不等第一輪排程
+  quarantineLegacyQueue();   // 舊格式（v1，帶員編）的殘留先隔離＋講一句，不要靜靜送出去撞後端
+  updateQueueBadge();   // 佇列筆數不依賴 idToHash：開頁立刻反映上次 session 遺留的真實筆數，不等第一輪排程
   if (DEMO) {
     setTopbar('示範模式（不寫入）', '測試站');
     await buildDemoSnapshot();
@@ -639,20 +1136,20 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
     updateQueueBadge();   // demo 快照建完後保險再確認一次（buildDemoSnapshot 不動佇列）
   } else {
     await loadSnapshot();
-    flush();   // 此時 empToHash 已由 applySnapshotPayload→rebuildEmpIndex 建好，立即補打一次殘留佇列
+    flush();   // 此時 idToHash 已由 applySnapshotPayload→rebuildEmpIndex 建好，立即補打一次殘留佇列
   }
   document.getElementById('selUnit').addEventListener('change', function () {
     fillNameSelect(this.value);
   });
   document.getElementById('selName').addEventListener('change', function () {
-    var emp = this.value;
-    if (!emp) { setPickHint(''); return; }
+    var id = this.value;
+    if (!id) { setPickHint(''); return; }
     var list = peopleByUnit[document.getElementById('selUnit').value] || [];
     for (var i = 0; i < list.length; i++) {
-      if (list[i].empNo === emp) {
+      if (list[i].internalId === id) {
         // 順序要緊：manualCheckin 內部會 resetPicker()，而它會清掉提示行，
         // 所以「先前是否已報到」要先記下來，等重設完再把紅字寫回去。
-        var was = isCheckedIn(emp), nm = list[i].name;
+        var was = isCheckedIn(id), nm = list[i].name;
         manualCheckin(list[i]);
         setPickHint(was ? '⚠ ' + nm + ' 先前已報到過' : '');
         return;
@@ -667,11 +1164,7 @@ try { applyTheme(localStorage.getItem('evtchk_theme') === 'dark' ? 'dark' : 'lig
   document.getElementById('wipe').addEventListener('click', function (e) {
     e.preventDefault();
     // 待送佇列只存在這台手機上，清掉就是報到紀錄真的不見——把筆數講出來，別讓人盲按
-    var n = loadQueue().length;
-    var msg = n > 0
-      ? '⚠️ 尚有 ' + n + ' 筆報到還沒回寫到伺服器。\n\n清除後這 ' + n + ' 筆會永久消失、無法復原。\n\n仍要清除？'
-      : '清除本機快照？（目前 0 筆待送，不會遺失任何報到紀錄）';
-    if (!confirm(msg)) return;
+    if (!confirm(wipeConfirmText())) return;
     localStorage.removeItem(SNAP_KEY); localStorage.removeItem(EXPIRE_KEY);
     localStorage.removeItem(QKEY); localStorage.removeItem(SEEN_KEY);
     note('bad', '已清除', '請重新整理這一頁');

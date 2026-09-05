@@ -1,9 +1,22 @@
 /** 掃描頁純邏輯（staff.html 與 node --test 共用）。 */
+
+/**
+ * 解析報到碼 `CHK|活動|內部碼|簽章`。
+ *
+ * 🔴 2026-09-02：第三格的**值**從員編換成內部碼，所以**欄名也跟著換**。
+ * 取值邏輯（parts[2]）一個字都沒改，但欄名留著叫 empNo 的話，下一個讀這段
+ * 程式的人必然誤讀——他會以為手上拿的是員編，拿去跟名冊的員編比對。
+ * 值變了名字就要跟著變，這是跨層欄名一致的最後一道。
+ *
+ * ⚠️ 這裡回 ok 只代表「格式與活動對得上」，**不代表這張碼有效**。
+ * 授權來自簽章驗證，而簽章是在後端簽的、由快照的雜湊比對來認——
+ * 內部碼本身不是通行憑證，看到合法的內部碼不可以放行。
+ */
 function parseChkCode(text, actId) {
   var parts = String(text || '').split('|');
   if (parts.length !== 4 || parts[0] !== 'CHK') return { ok: false, reason: 'format' };
   if (parts[1] !== actId) return { ok: false, reason: 'wrongAct' };
-  return { ok: true, empNo: parts[2] };
+  return { ok: true, internalId: parts[2] };
 }
 
 /** SHA-256 → 小寫 hex（瀏覽器與 Node 19+ 都有 globalThis.crypto.subtle）。 */

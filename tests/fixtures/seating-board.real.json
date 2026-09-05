@@ -1,0 +1,14 @@
+{
+  "seat": {
+    "changed": false,
+    "empNo": "E001",
+    "id": "JDC-JKMNPQ",
+    "internalId": "JDC-JKMNPQ",
+    "kind": "emp",
+    "name": "甲",
+    "table": "5",
+    "title": "職稱E001",
+    "unit": "A部",
+    "veg": false
+  }
+}

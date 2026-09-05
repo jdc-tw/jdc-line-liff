@@ -4,9 +4,17 @@ const { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames,
         seenLoad, seenSave, seenMerge, shouldHandleCode,
         shouldScanNow, scanCanvasSize, SCAN_INTERVAL_MS, SCAN_MAX_W } = require('../assets/staff-scan.js');
 
-test('parseChkCode：格式正確回員編', () => {
-  assert.deepEqual(parseChkCode('CHK|nendkai2026|00011|abc123', 'nendkai2026'),
-    { ok: true, empNo: '00011' });
+test('parseChkCode：格式正確回內部碼', () => {
+  assert.deepEqual(parseChkCode('CHK|nendkai2026|JDC-NPQRST|abc123', 'nendkai2026'),
+    { ok: true, internalId: 'JDC-NPQRST' });
+});
+
+test('parseChkCode：回傳的欄名必須是 internalId，不可以還叫 empNo', () => {
+  // 這條擋的不是「值對不對」，是**名字騙人**：值換成內部碼了、欄名還留著叫員編，
+  // 下一個讀的人會拿它去跟名冊的員編比對，而那永遠對不上、也不會報錯。
+  const r = parseChkCode('CHK|a|JDC-NPQRST|sig', 'a');
+  assert.equal(r.internalId, 'JDC-NPQRST');
+  assert.equal(r.empNo, undefined, '舊欄名不可以還存在——留著它等於兩種名字並存');
 });
 
 test('parseChkCode：活動不符拒絕', () => {
