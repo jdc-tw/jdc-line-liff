@@ -59,7 +59,7 @@ function ctxWith(names, opt) {
   const els = {};
   const el = (id) => (els[id] = els[id] || {
     value: '', textContent: '', innerHTML: '', hidden: false, disabled: false,
-    className: '', listeners: {},
+    className: '', listeners: {}, style: {},
     addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); },
     appendChild() {}, focus() {},
     fire(t, ev) { (this.listeners[t] || []).forEach((f) => f(ev)); },
@@ -68,6 +68,9 @@ function ctxWith(names, opt) {
     console, Promise, JSON, Math, Date, Object, Array, String, Number,
     document: { getElementById: el, createElement: (t) => el('__made_' + t) },
     GAS_URL: '', TOKEN: 'T',
+    // ⚠️ 從 welfare.html 抽真正的宣告跑進來，**不在這裡抄一份值**——
+    //    抄的話這裡就變成拿自己的答案驗自己。
+    LIFF_ID: (SRC.match(/^var LIFF_ID = '([^']+)';/m) || [])[1],
     ROWS: opt.ROWS || [], TEMPLATES: opt.TEMPLATES || {}, TPL_ORDER: opt.TPL_ORDER || [],
     CURRENT_TPL: opt.CURRENT_TPL || '', AUDIENCE_REV: '',
     SAVED_TPL_TEXT: opt.SAVED_TPL_TEXT === undefined ? '' : opt.SAVED_TPL_TEXT,
@@ -116,7 +119,12 @@ function ctxWith(names, opt) {
   ctx.onAddTemplate = ctx.onDisableTemplate = ctx.onRestoreTemplate = () => {};
   ctx.setAllChecked = () => {};
   ctx.SAVE_IN_FLIGHT = false; ctx.OTP_IN_FLIGHT = false; ctx.SEND_IN_FLIGHT = false;
+  // 2026-09-02：九個呼叫點改走 wfCall（憑證只掛在那一支）。
+  // ⚠️ **載入真的 wfCall，不另做替身**——替身會把「憑證有沒有掛上去」整個跳過，
+  //    而那正是這一輪加的東西。底下的 gasCall 仍是替身。
+  ctx.freshIdToken = () => (opt.idToken === undefined ? 'stub-id-token' : opt.idToken);
   vm.createContext(ctx);
+  vm.runInContext(fnSrc('wfCall'), ctx, { filename: 'wfCall' });
   // ⚠️ 後載入的定義會覆寫上面的替身——這正是要的：受測的那幾支用真的，其餘用替身
   names.forEach((n) => vm.runInContext(fnSrc(n), ctx, { filename: n }));
   return { ctx, calls, els, el };
@@ -582,7 +590,12 @@ test('🔴 打錯驗證碼要留著讓她再試；碼死了才 disarm', () => {
 
 /* ── 啟動順序 ── */
 test('🔴 init 先接線再載資料（invalidator 要早於任何重繪）', () => {
-  const { ctx } = ctxWith(['init'], {});
+  // ⚠️ **改寫不刪**（2026-09-02 Task 1 前半）：原本斷言「init 的第五步就是 load」，
+  //    而載資料已經移到身分確認之後 ⇒ 那個斷言在斷言舊前提。
+  //    **它防的風險沒變**：第一次重繪時 invalidator 必須已經存在。
+  //    改成一路驅動到真的 load，順序仍然要成立。
+  const { ctx } = ctxWith(['init', 'startLiff', 'liffGate', 'liffOpen', 'liffBlock',
+    'freshIdToken'], {});
   const order = [];
   ctx.registerPhSet = () => order.push('ph');
   ctx.enableEmoji = () => {}; ctx.renderPhs = () => {}; ctx.renderEmojiPalette = () => {};
@@ -592,10 +605,141 @@ test('🔴 init 先接線再載資料（invalidator 要早於任何重繪）', (
   ctx.wireButtons = () => order.push('wire-btn');
   ctx.loadAudience = () => { order.push('load'); return Promise.resolve(); };
   ctx.loadTemplates = () => order.push('tpl');
+  ctx.location = { href: 'https://x/welfare.html?t=T', reload() {} };
+  ctx.window = ctx;
+  ctx.liff = { init: () => Promise.resolve(), isLoggedIn: () => true,
+               getIDToken: () => 'tok', login() {} };
   vm.runInContext('init()', ctx);
-  assert.ok(order.indexOf('wire-inval') < order.indexOf('load'),
-    '先載資料才接線——第一次重繪時 invalidator 還不存在');
-  assert.deepStrictEqual(order.slice(0, 5), ['ph', 'wire-inval', 'wire-sel', 'wire-btn', 'load']);
+  return Promise.resolve().then(() => Promise.resolve()).then(() => {
+    assert.ok(order.indexOf('wire-inval') >= 0 && order.indexOf('load') >= 0,
+      '沒走到載資料 ⇒ 這一輪什麼都沒測到：' + JSON.stringify(order));
+    assert.ok(order.indexOf('wire-inval') < order.indexOf('load'),
+      '先載資料才接線——第一次重繪時 invalidator 還不存在');
+    assert.deepStrictEqual(order.slice(0, 4), ['ph', 'wire-inval', 'wire-sel', 'wire-btn']);
+  });
+});
+
+/* ── LIFF 身分閘（2026-09-02 Task 1 前半）─────────────────────────────
+ *
+ * 這一段守的是「**該擋的有沒有擋住**」。它的失敗長相全部是安靜的：
+ * 放行 ⇒ 一個不知道是誰的人看到全公司名單；擋錯 ⇒ 她開不了頁而看不出為什麼。
+ */
+
+function liffCtx(liffStub, extra) {
+  const { ctx, calls, els } = ctxWith(['startLiff', 'liffGate', 'liffOpen', 'liffBlock',
+    'freshIdToken'], {});
+  const loaded = [];
+  ctx.loadAudience = () => { loaded.push('audience'); return Promise.resolve(); };
+  ctx.loadTemplates = () => loaded.push('templates');
+  ctx.location = { href: 'https://x/welfare.html?t=T', reload() {} };
+  ctx.window = ctx;
+  if (liffStub) ctx.liff = liffStub;
+  Object.assign(ctx, extra || {});
+  return { ctx, loaded, els, calls };
+}
+const gateText = (els) => els['liff-gate-msg'].textContent;
+const gateShut = (els) => els['liff-gate'].style.display !== 'none';
+
+test('🔴 SDK 沒載進來：擋住並講原因，不可以放行', () => {
+  const { ctx, loaded, els } = liffCtx(null);
+  vm.runInContext('startLiff()', ctx);
+  assert.deepStrictEqual(loaded, [], '拿不到 LINE 元件還是把名單載出來了');
+  assert.ok(gateShut(els), '閘開了 ⇒ 她可以操作一個不知道她是誰的頁面');
+  assert.match(gateText(els), /沒有載入成功|資訊人員/, '沒講出原因：' + gateText(els));
+});
+
+test('🔴 未登入（電腦瀏覽器那條路）：轉去 LINE 登入，而且不可以先載名單', () => {
+  const logins = [];
+  const { ctx, loaded, els } = liffCtx({
+    init: () => Promise.resolve(), isLoggedIn: () => false,
+    getIDToken: () => 'tok', login: (o) => logins.push(o),
+  });
+  return vm.runInContext('startLiff()', ctx).then(() => {
+    assert.equal(logins.length, 1, '沒有轉去登入 ⇒ 她在電腦上永遠停在確認身分');
+    assert.equal(logins[0].redirectUri, 'https://x/welfare.html?t=T',
+      'redirectUri 沒帶回原網址 ⇒ 登入完回不到這一頁，或 ?t= 掉了');
+    assert.deepStrictEqual(loaded, [], '還沒確認是誰就把全公司名單載出來了');
+    assert.ok(gateShut(els), '轉址期間閘開了');
+  });
+});
+
+test('🔴 已登入但拿不到 ID token：擋住並說「重新整理不會好」', () => {
+  // openid scope 沒開就是這個長相。**訊息不可以叫她重試**——重試永遠不會好。
+  const { ctx, loaded, els } = liffCtx({
+    init: () => Promise.resolve(), isLoggedIn: () => true,
+    getIDToken: () => null, login() {},
+  });
+  return vm.runInContext('startLiff()', ctx).then(() => {
+    assert.deepStrictEqual(loaded, [], '拿不到憑證還是載了名單');
+    assert.ok(gateShut(els), '閘開了');
+    assert.match(gateText(els), /重新整理不會好/,
+      '沒講明重試沒用 ⇒ 她會一直重整一個永遠不會好的東西：' + gateText(els));
+    assert.ok(gateText(els).indexOf('請先登入') < 0,
+      '說「請先登入」——而她已經登入了 ⇒ 失敗偽裝成使用者的錯');
+  });
+});
+
+test('🔴 已登入且拿得到憑證：開閘並載資料', () => {
+  const { ctx, loaded, els } = liffCtx({
+    init: () => Promise.resolve(), isLoggedIn: () => true,
+    getIDToken: () => 'tok', login() {},
+  });
+  return vm.runInContext('startLiff()', ctx).then(() => {
+    assert.deepStrictEqual(loaded, ['audience', 'templates'], '沒載資料：' + JSON.stringify(loaded));
+    assert.ok(!gateShut(els), '閘沒開 ⇒ 她看得到畫面卻按不到任何東西');
+  });
+});
+
+test('🔴 liff.init 失敗：把原因寫進畫面，不可以靜默停在「確認身分中」', () => {
+  const { ctx, loaded, els } = liffCtx({
+    init: () => Promise.reject(new Error('boom-原因')), isLoggedIn: () => true,
+    getIDToken: () => 'tok', login() {},
+  });
+  return vm.runInContext('startLiff()', ctx).then(() => {
+    assert.deepStrictEqual(loaded, []);
+    assert.match(gateText(els), /boom-原因/,
+      '吞掉原因 ⇒ 查不出是哪一段壞了，畫面只會一直是「確認身分」：' + gateText(els));
+  });
+});
+
+test('🔴 身分閘在 markup 裡就是可見的（fail-closed，不是靠 JS 打開）', () => {
+  // 🔴 這一條驗的東西**行為測試驗不到**：假元素的 style 起手就是空的，
+  //    所以「閘預設關著」在替身環境裡恆真。要看的是 markup 本身。
+  //    預設可見的理由：JS 掛掉、SDK 載不到、init 卡住時，
+  //    她看到的要是「正在確認身分」，不是一個能按下去發 137 則的送出鈕。
+  const m = SRC.match(/<div id="liff-gate"([^>]*)>/);
+  assert.ok(m, '找不到身分閘 ⇒ 這一頁沒有東西擋在身分確認之前');
+  assert.ok(!/\bhidden\b/.test(m[1]),
+    '閘在 markup 裡就是隱藏的 ⇒ JS 一有閃失，她面對的是一個可以按的送出鈕：' + m[1]);
+  assert.ok(/display:\s*flex/.test(m[1]), '閘沒有實際遮住畫面：' + m[1]);
+  assert.ok(/position:\s*fixed/.test(m[1]) && /inset:\s*0/.test(m[1]),
+    '閘沒有蓋滿整頁 ⇒ 底下的鈕還是按得到：' + m[1]);
+});
+
+test('🔴 不可以多開一條 LIFF：welfare.html 要跟 index.html 用同一個 LIFF ID', () => {
+  // 規則來源：tools.md「同一條 LIFF ＋ 參數，不多開 LIFF ID」。
+  // 多開一條的代價不是浪費，是**兩條各自要在 Console 設 scope 與 endpoint**，
+  // 而「其中一條設錯」的長相是「某一頁的人拿不到憑證」——只有那一頁壞，很難反推。
+  const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const a = (SRC.match(/^var LIFF_ID = '([^']+)';/m) || [])[1];
+  const b = (idx.match(/^\s*var LIFF_ID = '([^']+)';/m) || [])[1];
+  assert.ok(a, 'welfare.html 找不到 LIFF_ID 宣告');
+  assert.ok(b, 'index.html 找不到 LIFF_ID 宣告——抓法壞了，這條會恆綠');
+  assert.equal(a, b, 'welfare.html 與 index.html 用了不同的 LIFF ID');
+});
+
+test('🔴 ID token 每次都重新取，不可以存起來重複用', () => {
+  // ID token 只有效一小時，而這一頁開著超過一小時很正常。
+  // 存起來的失敗長相：她按送出 → 驗簽失敗 → 畫面說「請重新登入」，而她根本沒登出過。
+  let n = 0;
+  const { ctx } = liffCtx({
+    init: () => Promise.resolve(), isLoggedIn: () => true,
+    getIDToken: () => { n += 1; return 'tok-' + n; }, login() {},
+  });
+  const a = vm.runInContext('freshIdToken()', ctx);
+  const b = vm.runInContext('freshIdToken()', ctx);
+  assert.equal(n, 2, '第二次沒有真的去問 SDK ⇒ 存起來了');
+  assert.notEqual(a, b, '兩次拿到同一份 ⇒ 存起來了');
 });
 
 /* ── codex G3 高③：showState 必須用「送出當下」的範本 ────────────────── */
@@ -714,4 +858,83 @@ test('🔴 畫面上不可以有「刪除」入口（刪除已經改成停用，
   ].join('\n'));
   // 對照組：這個掃法真的找得到東西
   assert.ok(/停用/.test(page), '掃法壞了：連確定存在的「停用」都找不到');
+});
+
+/* ══ 憑證只掛在一個地方（2026-09-02 Task 1 後半的前端這一半）══════════════
+ *
+ * 🔴 讓九個呼叫點各自帶憑證，就是「同一個判斷散在多處」——
+ *    漏掉其中一支的症狀是**那一支永遠驗不過，而其他八支都好好的**
+ *    ⇒ 看起來像那支 action 壞了，不像漏帶憑證。
+ */
+
+test('🔴 每一支 welfare 呼叫都要走 wfCall，不可以有人直接呼叫 gasCall', () => {
+  // ⚠️ 判準要排除 wfCall 自己那一行——**它是唯一該直接呼叫 gasCall 的地方**。
+  //    不排除的話這條會永遠是紅的，而永遠響的紅燈比沒有判準更糟。
+  // ⚠️ **要剝註解**：第 858 行有一句註解提到 gasCall（在講 nonce 的產生時機）。
+  //    不剝的話這條永遠是紅的——而永遠響的紅燈比沒有判準更糟。
+  const WF_OWN = 'return gasCall(GAS_URL, action, p, timeoutMs);';
+  const 直呼 = [];
+  stripComments(SRC).split('\n').forEach((ln, i) => {
+    if (/gasCall\(/.test(ln) && ln.indexOf(WF_OWN) < 0) {
+      直呼.push('第 ' + (i + 1) + ' 行：' + ln.trim());
+    }
+  });
+  // 對照組先算（不要放在斷言之後——前面那條先擋住的話，它永遠輪不到）
+  const 找得到自己 = stripComments(SRC).indexOf(WF_OWN) >= 0;
+  assert.ok(找得到自己, '掃法壞了：連 wfCall 自己那一行都找不到，這條會恆綠');
+  assert.deepStrictEqual(直呼, [], [
+    '這幾處繞過 wfCall 直接呼叫 gasCall：', 直呼.join('\n'),
+    '⇒ 它們不會帶到 LINE 憑證，而症狀是「只有那一支永遠驗不過」。',
+  ].join('\n'));
+});
+
+test('🔴 wfCall 會帶上 token 與當下取的 idToken', () => {
+  const { ctx } = ctxWith(['wfCall'], {});
+  const seen = [];
+  ctx.gasCall = (url, action, params) => { seen.push({ action, params }); return Promise.resolve({}); };
+  let n = 0;
+  ctx.freshIdToken = () => { n += 1; return 'tok-' + n; };
+  vm.runInContext('wfCall("getWelfareAudience", {}, 1000)', ctx);
+  vm.runInContext('wfCall("getWelfareTemplates", {}, 1000)', ctx);
+  assert.equal(seen.length, 2);
+  seen.forEach((c) => {
+    assert.equal(c.params.token, 'T', c.action + ' 沒帶連結 token');
+    assert.ok(c.params.idToken, c.action + ' 沒帶 LINE 憑證');
+  });
+  assert.notEqual(seen[0].params.idToken, seen[1].params.idToken,
+    '兩次拿到同一份憑證 ⇒ 它被存起來了。ID token 只有效一小時，'
+    + '存起來的失敗長相是「請重新登入」而她根本沒登出過');
+});
+
+test('🔴 呼叫端自己的參數不可以被憑證蓋掉，也不可以蓋掉憑證', () => {
+  const { ctx } = ctxWith(['wfCall'], {});
+  let got = null;
+  ctx.gasCall = (url, action, params) => { got = params; return Promise.resolve({}); };
+  vm.runInContext('wfCall("x", { templateId: "t1", token: "冒充的" }, 1000)', ctx);
+  assert.equal(got.templateId, 't1', '呼叫端的參數不見了');
+  // 呼叫端傳同名參數時後蓋前——這裡把它釘成「呼叫端贏」，並寫明為何可以接受：
+  // token 本來就是呼叫端可見的值（在網址上），蓋掉它不會拿到更多權限。
+  // 🔴 但 idToken 不同：它是 wfCall 現場跟 SDK 要的，呼叫端沒有理由自己帶。
+  assert.ok(got.idToken, 'idToken 被呼叫端的參數蓋掉了');
+});
+
+/**
+ * 🔴 上面那條證明的是「`wfCall` 會帶憑證」，**不是「每一支 action 都走 wfCall」**。
+ *    後端換守門之後，繞過 `wfCall` 的呼叫點會**永遠驗不過**，而其他八支都好好的
+ *    ⇒ 看起來像那支 action 壞了，不像漏帶憑證。
+ *
+ * ⚠️ 這一條是讀原始碼的，鑑別力比行為測試弱——但「有沒有人新增了第二個呼叫點」
+ *    這個問題只有在原始碼上問得到（新的那支還沒有測試，所以行為層看不見它）。
+ */
+test('🔴 全頁只能有一個地方直接叫 gasCall，而且它在 wfCall 裡（繞過去＝那支永遠驗不過）', () => {
+  const 呼叫點 = (SRC.match(/gasCall\s*\(\s*GAS_URL/g) || []);
+  assert.equal(呼叫點.length, 1,
+    '直接叫 gasCall 的地方有 ' + 呼叫點.length + ' 個。多出來的那個不會帶 idToken，'
+    + '後端換守門之後它會永遠被擋，而症狀讀起來像「那支 action 壞了」');
+
+  const wf = SRC.match(/function wfCall\([\s\S]*?\n}/);
+  assert.ok(wf, '找不到 wfCall');
+  assert.match(wf[0], /gasCall\s*\(\s*GAS_URL/, '唯一那個呼叫點不在 wfCall 裡面');
+  assert.match(wf[0], /idToken:\s*freshIdToken\(\)/,
+    'wfCall 沒有現場取 idToken ⇒ 全部九支都不會帶憑證');
 });

@@ -53,11 +53,19 @@ async function open(page, opts) {
                   requestWelfareOtp: 0, sendWelfareBroadcast: 0, saveWelfareTemplate: 0 };
   const seen = [];
   await page.route(/script\.google\.com/, async (route) => {
-    const u = new URL(route.request().url());
-    const a = u.searchParams.get('action');
-    if (a in calls) calls[a]++;
+    // 🔴 **2026-09-02：參數改走 POST body，不在網址上了。**
+    //    這一段原本讀 `url.searchParams` ⇒ 改成 POST 之後 `action` 是 null，
+    //    每一個 mock 都對不上、頁面永遠等不到回應 ⇒ **症狀是「整批逾時」，
+    //    看起來像產品壞了，其實是量具還在看舊的地方。**
+    const req = route.request();
     const params = {};
-    u.searchParams.forEach((v, k) => { params[k] = v; });
+    if (req.method() === 'POST') {
+      new URLSearchParams(req.postData() || '').forEach((v, k) => { params[k] = v; });
+    } else {
+      new URL(req.url()).searchParams.forEach((v, k) => { params[k] = v; });
+    }
+    const a = params.action;
+    if (a in calls) calls[a]++;
     seen.push({ action: a, params: params });
     let spec = (opts.responses || {})[a];
     if (typeof spec === 'function') spec = spec(params, calls[a]);
@@ -70,11 +78,51 @@ async function open(page, opts) {
     await route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8',
       body: 'cb(' + JSON.stringify(payload) + ')' });
   });
+  // ── LIFF（2026-09-02 Task 1 前半：這一頁變成 LIFF 頁）────────────────
+  //
+  // 🔴 **CDN 一律擋掉，改注入替身。** 兩個理由，缺一都不行：
+  //   ① **不可以真的去打 LINE。** e2e 是常態執行的東西，讓它連外＝
+  //      每跑一次測試就對 LINE 發一次請求，而且測試會因為網路而紅。
+  //   ② 真 SDK 在 `localhost` 上 `liff.init` 一定失敗（endpoint 註冊的是
+  //      正式網域）⇒ 拿到的會是一個**跟受測物無關的**失敗。
+  //
+  // ⚠️ **所以這一層驗不到「LINE 真的收下這次轉址」**。那一段只有在正式網域上、
+  //    由本人登入一次才驗得到，**不在自動測試涵蓋範圍內**。
+  await page.route(/static\.line-scdn\.net/, (route) => route.abort('failed'));
+  const liffOpt = opts.liff || {};
+  // ⚠️ 記在**頁面裡**，不用 exposeFunction——同一個 page 開兩次的測試會撞
+  //    「Function has been already registered」，而那是量具壞掉、不是受測物壞掉。
+  await page.addInitScript(({ loggedIn, idToken, initFails, noSdk }) => {
+    window.__liffLogins = [];
+    // 🔴 **`noSdk` ＝ CDN 掛掉那條路：連 `window.liff` 都不存在。**
+    //    上面已經把 static.line-scdn.net 一律 abort ⇒ 真實情況下就是這個樣子。
+    //    不是「init 失敗」——那是 SDK 載到了才走得到的分支，兩條路的程式碼不同。
+    if (noSdk) { try { delete window.liff; } catch (e) { window.liff = undefined; } return; }
+    window.liff = {
+      init: () => (initFails ? Promise.reject(new Error(initFails)) : Promise.resolve()),
+      isLoggedIn: () => loggedIn,
+      getIDToken: () => idToken,
+      login: (o) => { window.__liffLogins.push(o); },
+    };
+  }, {
+    loggedIn: liffOpt.loggedIn === undefined ? true : liffOpt.loggedIn,
+    // ⚠️ **長度要像真的。** 真的 LINE ID token 是 JWT，實務上約 1KB；
+    //    用 'stub-id-token'（13 字）去量網址長度，量到的數字沒有意義
+    //    ——那就是「拿假測資量出真數字」。
+    idToken: liffOpt.idToken === undefined
+      ? ('eyJhbGciOiJIUzI1NiJ9.' + 'A'.repeat(900) + '.c2lnbmF0dXJl')
+      : liffOpt.idToken,
+    initFails: liffOpt.initFails || '',
+    noSdk: !!liffOpt.noSdk,
+  });
+
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto('/welfare.html?t=TESTTOKEN');
+  const liffLogins = () => page.evaluate(() => window.__liffLogins || []);
+  if (opts.stopAtGate) return { calls, seen, errors, liffLogins };
   await page.waitForSelector('#audience-list details.grp');
-  return { calls, seen, errors };
+  return { calls, seen, errors, liffLogins };
 }
 
 /** 勾第 i 個人（用真實的滑鼠點擊，走真實的事件路徑）。 */
@@ -983,3 +1031,167 @@ test('⬛ 對照組：沒按停用時，兩則都留在下拉、已停用區是�
     '沒按鈕卻送出了停用').toBe(false);
   expect(ctx.errors, 'console 有未捕捉的錯誤').toEqual([]);
 });
+
+/* ══ 身分閘：在真的瀏覽器裡，這三條路各自看到什麼 ═══════════════════════
+ *
+ * 前兩層（純函式、wiring）用的是假元素。這一層看的是**畫面實際變成什麼樣**、
+ * **底下的鈕是不是真的按不到**、**console 有沒有東西**。
+ *
+ * ⚠️ **涵蓋範圍**：LIFF SDK 是替身（見 open() 的說明）。
+ *    驗得到「頁面走到哪一步、顯示什麼、有沒有讓她按到不該按的東西」；
+ *    **驗不到「LINE 真的收下這次轉址並帶她回來」**——那要正式網域＋本人登入。
+ */
+
+test('未登入（電腦瀏覽器那條路）：畫面停在身分閘，送出鈕按不到，且轉去 LINE 登入', async ({ page }) => {
+  const r = await open(page, { liff: { loggedIn: false }, stopAtGate: true });
+  await expect(page.locator('#liff-gate')).toBeVisible();
+  await expect(page.locator('#liff-gate-msg')).toContainText('LINE 登入');
+
+  // 🔴 底下的鈕不是「看不到」而已，要真的**按不到**。
+  //    只驗 toBeVisible 的話，一個 z-index 沒蓋住的閘會通過，而她照樣按得到送出。
+  const blocked = await page.evaluate(() => {
+    const b = document.getElementById('btn-send');
+    const rect = b.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return { covered: top !== b, gate: !!(top && top.closest && top.closest('#liff-gate')) };
+  });
+  expect(blocked.covered, '身分閘沒有蓋住送出鈕').toBe(true);
+  expect(blocked.gate, '蓋住送出鈕的不是身分閘').toBe(true);
+
+  const logins = await r.liffLogins();
+  expect(logins.length, '沒有轉去 LINE 登入 ⇒ 她在電腦上永遠停在確認身分').toBe(1);
+  expect(logins[0].redirectUri).toContain('/welfare.html?t=TESTTOKEN');
+  expect(r.calls.getWelfareAudience, '還沒確認是誰就把全公司名單載出來了').toBe(0);
+  expect(r.errors, 'console 有錯').toEqual([]);
+});
+
+test('🔴 SDK 完全沒載到（LINE 的 CDN 掛掉）：要看到具名訊息，而且她真的看得到——不是白屏',
+  async ({ page }) => {
+  // 🔴 **這是本頁唯一的第三方相依失效時走的那條路**，而它與 `liff.init` 失敗
+  //    是**不同的兩段程式碼**：init 失敗是 SDK 載到了才走得到的 `.catch`；
+  //    這一條死在 `startLiff()` 第一個 `if`，連 Promise 都沒建立。
+  // ⚠️ 這一頁改成 LIFF 頁之前**沒有任何第三方相依**，所以這是新增的失效模式。
+  const r = await open(page, { liff: { noSdk: true }, stopAtGate: true });
+
+  await expect(page.locator('#liff-gate')).toBeVisible();
+  await expect(page.locator('#liff-gate-msg')).toContainText('沒有載入成功');
+  const t = await page.locator('#liff-gate-msg').textContent();
+  expect(t, '沒告訴她該找誰 ⇒ 她只能一直重整').toContain('資訊人員');
+
+  // 🔴 **「訊息在 DOM 裡」與「她看得到」是兩件事。** 被別的東西蓋住時，
+  //    只斷言文字存在照樣會綠，而她眼前仍然是一片白。
+  //    ⇒ 問畫面正中央**實際畫出來的是什麼**，不是問 DOM 裡有什麼。
+  const 畫面 = await page.evaluate(() => {
+    const top = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    const gate = document.getElementById('liff-gate');
+    const msg = document.getElementById('liff-gate-msg');
+    const r2 = gate.getBoundingClientRect();
+    return {
+      正中央在閘裡: !!(top && gate.contains(top)),
+      看得見的字數: (msg.textContent || '').trim().length,
+      閘佔畫面高度比: r2.height / innerHeight,
+      閘的背景: getComputedStyle(gate).backgroundColor,
+    };
+  });
+  expect(畫面.正中央在閘裡, '畫面正中央畫的不是身分閘 ⇒ 訊息在 DOM 裡但被蓋住了').toBe(true);
+  expect(畫面.看得見的字數, '閘上一個字都沒有 ⇒ 她看到的就是白屏').toBeGreaterThan(10);
+  expect(畫面.閘佔畫面高度比, '閘沒有蓋滿畫面 ⇒ 底下的半成品會露出來').toBeGreaterThan(0.9);
+
+  // 底下的鈕要真的按不到（沿用未登入那條的量法）
+  const blocked = await page.evaluate(() => {
+    const b = document.getElementById('btn-send');
+    const rect = b.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return { covered: top !== b, gate: !!(top && top.closest && top.closest('#liff-gate')) };
+  });
+  expect(blocked.covered, '身分閘沒有蓋住送出鈕').toBe(true);
+  expect(blocked.gate, '蓋住送出鈕的不是身分閘').toBe(true);
+
+  // 沒有身分就不該去要任何資料
+  expect(r.calls.getWelfareAudience, '還沒確認是誰就把全公司名單載出來了').toBe(0);
+  expect(r.calls.getWelfareTemplates, '沒過閘卻去載了範本').toBe(0);
+  // 🔴 **不可以有未捕捉的錯誤**：`liff is not defined` 那種會讓畫面停在
+  //    「正在確認身分…」不動，而那句話讀起來像「還在跑」，不像「壞了」。
+  expect(r.errors, 'console 有未捕捉的錯誤 ⇒ 她會看到一句永遠不會變的「正在確認身分…」').toEqual([]);
+});
+
+test('已登入但拿不到 ID token：擋住並講明重試沒用，不可以說「請先登入」', async ({ page }) => {
+  const r = await open(page, { liff: { loggedIn: true, idToken: null }, stopAtGate: true });
+  await expect(page.locator('#liff-gate')).toBeVisible();
+  const t = await page.locator('#liff-gate-msg').textContent();
+  expect(t, '沒講明重試沒用 ⇒ 她會一直重整一個永遠不會好的東西').toContain('重新整理不會好');
+  expect(t, '說「請先登入」——而她已經登入了').not.toContain('請先登入');
+  expect(r.calls.getWelfareAudience).toBe(0);
+  expect(r.errors).toEqual([]);
+});
+
+test('已登入且拿得到憑證：閘讓開，名單照常載出來', async ({ page }) => {
+  const r = await open(page, {});                 // 預設就是已登入＋有 token
+  await expect(page.locator('#liff-gate')).toBeHidden();
+  await expect(page.locator('#audience-list details.grp').first()).toBeVisible();
+  expect(r.calls.getWelfareAudience).toBe(1);
+  expect(r.errors).toEqual([]);
+});
+
+test('liff.init 失敗：畫面要說出原因，不可以靜默停在「確認身分中」', async ({ page }) => {
+  await open(page, { liff: { initFails: 'boom-原因' }, stopAtGate: true });
+  await expect(page.locator('#liff-gate-msg')).toContainText('boom-原因');
+});
+
+/* ══ 憑證真的上了網址，而且沒有把網址撐爆 ═══════════════════════════════
+ *
+ * 前兩層看的是「參數物件裡有沒有那一格」。這一層看的是**瀏覽器實際送出的網址**。
+ * 🔴 而 URL 長度是這個 codebase 已知的真實限制（stats.html:559 為此寫了自適應切包：
+ *    「中文編碼後膨脹 9 倍，固定筆數會爆 URL 長度」）——ID token 大約 1KB，
+ *    每一次呼叫都多背它，值得量一次而不是用猜的。
+ */
+
+test('LINE 憑證真的出現在每一次請求的網址上', async ({ page }) => {
+  const r = await open(page, {});
+  const withCred = r.seen.filter((c) => c.params.idToken);
+  expect(r.seen.length, '一次請求都沒有 ⇒ 這條什麼都沒測到').toBeGreaterThan(0);
+  expect(withCred.length, '有請求沒帶憑證：'
+    + JSON.stringify(r.seen.filter((c) => !c.params.idToken).map((c) => c.action)))
+    .toBe(r.seen.length);
+  expect(r.errors).toEqual([]);
+});
+
+test('🔴 參數走 POST body，網址上一個都不留（她寫的公告不進存取紀錄）', async ({ page }) => {
+  const reqs = [];
+  page.on('request', (q) => {
+    if (/script\.google\.com/.test(q.url())) {
+      reqs.push({ method: q.method(), url: q.url(), body: q.postData() || '' });
+    }
+  });
+  await open(page, {});
+  await page.locator('#wf-tpl').fill('中'.repeat(1500));
+  await page.locator('#btn-save').click();
+  await expect.poll(() => reqs.length).toBeGreaterThan(0);
+
+  const 壞的 = [];
+  reqs.forEach((r) => {
+    if (r.method !== 'POST') 壞的.push('還在用 ' + r.method + '：' + r.url.slice(0, 80));
+    if (r.url.indexOf('?') >= 0) 壞的.push('網址上還有參數：' + r.url.slice(0, 120));
+  });
+  assert2(壞的);
+
+  const longest = reqs.reduce((a, b) => (a.url.length >= b.url.length ? a : b), reqs[0]);
+  const biggestBody = reqs.reduce((a, b) => (a.body.length >= b.body.length ? a : b), reqs[0]);
+  console.log('[POST 之後] 最長網址 ' + longest.url.length + ' 字元；最大 body '
+    + biggestBody.body.length + ' 字元');
+  // ⚠️ **這一條取代了改 POST 之前的兩條長度測試**（「最長的網址有多長」與
+  //    「量最壞的那一支」）。它們量的是 GET 時代的曝險，改成 POST 之後
+  //    兩條都只會量到固定長度的 /exec ⇒ **名字還在，但已經量不到它們要防的東西。**
+  //    留著會變成「看起來有守，其實沒有」。這裡的 <300 比它們的 <8000／<16000 都緊。
+  //
+  // 改之前實測（真 Chrome，同一個場景）：**網址 14,702 字元**。
+  // 改之後：網址 114、body 14,587 ⇒ **整篇公告從網址搬進了 body。**
+  expect(longest.url.length,
+    '網址還是很長 ⇒ 參數沒有真的搬到 body 裡').toBeLessThan(300);
+  expect(biggestBody.body.length,
+    'body 是空的 ⇒ 參數不見了，後端會說每一支都缺參數').toBeGreaterThan(1000);
+});
+
+function assert2(arr) {
+  expect(arr, arr.join('\n')).toEqual([]);
+}
