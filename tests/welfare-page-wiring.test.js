@@ -917,3 +917,24 @@ test('🔴 呼叫端自己的參數不可以被憑證蓋掉，也不可以蓋掉
   // 🔴 但 idToken 不同：它是 wfCall 現場跟 SDK 要的，呼叫端沒有理由自己帶。
   assert.ok(got.idToken, 'idToken 被呼叫端的參數蓋掉了');
 });
+
+/**
+ * 🔴 上面那條證明的是「`wfCall` 會帶憑證」，**不是「每一支 action 都走 wfCall」**。
+ *    後端換守門之後，繞過 `wfCall` 的呼叫點會**永遠驗不過**，而其他八支都好好的
+ *    ⇒ 看起來像那支 action 壞了，不像漏帶憑證。
+ *
+ * ⚠️ 這一條是讀原始碼的，鑑別力比行為測試弱——但「有沒有人新增了第二個呼叫點」
+ *    這個問題只有在原始碼上問得到（新的那支還沒有測試，所以行為層看不見它）。
+ */
+test('🔴 全頁只能有一個地方直接叫 gasCall，而且它在 wfCall 裡（繞過去＝那支永遠驗不過）', () => {
+  const 呼叫點 = (SRC.match(/gasCall\s*\(\s*GAS_URL/g) || []);
+  assert.equal(呼叫點.length, 1,
+    '直接叫 gasCall 的地方有 ' + 呼叫點.length + ' 個。多出來的那個不會帶 idToken，'
+    + '後端換守門之後它會永遠被擋，而症狀讀起來像「那支 action 壞了」');
+
+  const wf = SRC.match(/function wfCall\([\s\S]*?\n}/);
+  assert.ok(wf, '找不到 wfCall');
+  assert.match(wf[0], /gasCall\s*\(\s*GAS_URL/, '唯一那個呼叫點不在 wfCall 裡面');
+  assert.match(wf[0], /idToken:\s*freshIdToken\(\)/,
+    'wfCall 沒有現場取 idToken ⇒ 全部九支都不會帶憑證');
+});
