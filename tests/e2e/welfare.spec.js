@@ -895,3 +895,91 @@ test('送出中儲存鈕也要鎖（後端重讀範本可能送出她沒確認�
   await expect(page.locator('#send-note')).toContainText('已送出');
   await expect(page.locator('#btn-save'), '送出完要恢復').toBeEnabled();
 });
+
+
+/* ══════════════ 範本生命週期：那四步死路的逐步證明（2026-09-05）══════════════
+ *
+ * **為何在 e2e 這一層，而不是 wiring 層。**
+ * wiring 測試已經證明「三顆鈕接上了、後端真的收到呼叫」——**它證明不了畫面結果**。
+ * 而 2026-09-05 11:05 後端先上線、前端還沒上的那段窗口，症狀正是畫面結果：
+ *   按停用 → 範本**沒有**離開下拉 → 選它又被擋 → 訊息叫她按一顆畫面上不存在的「恢復」。
+ * ⇒ **那個洞在 wiring 層完全看不見**（鈕接上了、後端也真的收到了 removeWelfareTemplate）。
+ *   看得見它的唯一位置，是「按下去之後畫面變成什麼樣」。
+ *
+ * ⚠️ **這一節的 mock 用真實後端的形狀**：`status` 是 `'啟用'`／`'停用'`
+ *    （一手讀 jdc-line-gas `Code.js` 的 WELFARE_TPL_ACTIVE／WELFARE_TPL_DISABLED）。
+ *    本檔上方的 DEFAULTS.getWelfareTemplates **一個 status 欄都沒有**，而真實後端
+ *    每一則都會回 —— 沿用它等於在測一個後端不會回的形狀（本檔開頭那條 `id`／
+ *    `templateId` 的教訓就是同一族）。所以這一節刻意自己給。
+ */
+
+/** 可變的狀態欄，模擬後端那一格。 */
+function tplItems(state) {
+  return { ok: true, items: [
+    { templateId: 't1', title: '端午節禮金發放', text: TPL_A,
+      status: state.t1, active: state.t1 === '啟用' },
+    { templateId: 't2', title: '中秋節祝福', text: TPL_B,
+      status: state.t2, active: state.t2 === '啟用' },
+  ] };
+}
+
+/** 掛好會改狀態的後端替身。回傳那份狀態，讓斷言看得到後端那一側。 */
+async function openLifecycle(page) {
+  const state = { t1: '啟用', t2: '啟用' };
+  const ctx = await open(page, { responses: {
+    getWelfareTemplates: () => tplItems(state),
+    removeWelfareTemplate: (params) => { state[params.templateId] = '停用'; return { ok: true }; },
+    restoreWelfareTemplate: (params) => { state[params.templateId] = '啟用'; return { ok: true }; },
+  } });
+  return { ctx, state };
+}
+
+test('🔴 四步走完：按停用 → 離開下拉 → 進「已停用」→ 按恢復 → 回到下拉', async ({ page }) => {
+  const { ctx } = await openLifecycle(page);
+  page.on('dialog', (d) => d.accept());          // 停用的確認框
+
+  // ⬛ 第 0 步（對照組，不可省）：先證明它**在**下拉裡。
+  //    少了這一步，「它消失了」同時相容於「它從來就沒出現過」——那樣什麼都沒測到。
+  await expect(page.locator('#wf-tpl-list option')).toHaveCount(2);
+  await expect(page.locator('#wf-tpl-list option[value="t1"]')).toHaveCount(1);
+  await expect(page.locator('#tpl-disabled-list')).toContainText('目前沒有停用的範本');
+
+  // 第 1 步：按「停用這一則」（停的是目前選中的 t1）
+  await page.locator('#btn-tpl-disable').click();
+
+  // 第 2 步：它離開下拉——這一條就是那段窗口裡**做不到**的事
+  await expect(page.locator('#wf-tpl-list option[value="t1"]')).toHaveCount(0);
+  await expect(page.locator('#wf-tpl-list option')).toHaveCount(1);
+  await expect(page.locator('#wf-tpl-list option[value="t2"]')).toHaveCount(1);
+
+  // 第 3 步：它出現在「已停用的範本」區，而且**那顆恢復鈕真的在**
+  //   （後端的錯誤訊息叫她按的就是這顆；那段窗口裡它不存在）
+  await expect(page.locator('#tpl-disabled-list')).toContainText('端午節禮金發放');
+  await expect(page.locator('#tpl-disabled-list [data-restore="t1"]')).toHaveText('恢復');
+
+  // 第 4 步：按恢復 → 回到下拉，而且離開已停用區
+  await page.locator('#tpl-disabled-list [data-restore="t1"]').click();
+  await expect(page.locator('#wf-tpl-list option[value="t1"]')).toHaveCount(1);
+  await expect(page.locator('#wf-tpl-list option')).toHaveCount(2);
+  await expect(page.locator('#tpl-disabled-list')).toContainText('目前沒有停用的範本');
+
+  // 後端那一側也要對得上：兩個 action 各收到一次，帶的是同一個 templateId
+  const life = ctx.seen.filter((c) => c.action === 'removeWelfareTemplate'
+                                   || c.action === 'restoreWelfareTemplate');
+  expect(life.map((c) => c.action)).toEqual(['removeWelfareTemplate', 'restoreWelfareTemplate']);
+  expect(life.every((c) => c.params.templateId === 't1'),
+    '送出去的 templateId 不是 t1').toBe(true);
+
+  expect(ctx.errors, 'console 有未捕捉的錯誤').toEqual([]);
+});
+
+test('⬛ 對照組：沒按停用時，兩則都留在下拉、已停用區是空的', async ({ page }) => {
+  // 沒有這一條的話，上面那些 toHaveCount 只要「下拉永遠只有 t2」就會通過，
+  // 而那正是壞掉的樣子之一。
+  const { ctx } = await openLifecycle(page);
+  await expect(page.locator('#wf-tpl-list option')).toHaveCount(2);
+  await expect(page.locator('#tpl-disabled-list [data-restore]')).toHaveCount(0);
+  expect(ctx.seen.some((c) => c.action === 'removeWelfareTemplate'),
+    '沒按鈕卻送出了停用').toBe(false);
+  expect(ctx.errors, 'console 有未捕捉的錯誤').toEqual([]);
+});
