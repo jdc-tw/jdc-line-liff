@@ -92,8 +92,12 @@ async function open(page, opts) {
   const liffOpt = opts.liff || {};
   // ⚠️ 記在**頁面裡**，不用 exposeFunction——同一個 page 開兩次的測試會撞
   //    「Function has been already registered」，而那是量具壞掉、不是受測物壞掉。
-  await page.addInitScript(({ loggedIn, idToken, initFails }) => {
+  await page.addInitScript(({ loggedIn, idToken, initFails, noSdk }) => {
     window.__liffLogins = [];
+    // 🔴 **`noSdk` ＝ CDN 掛掉那條路：連 `window.liff` 都不存在。**
+    //    上面已經把 static.line-scdn.net 一律 abort ⇒ 真實情況下就是這個樣子。
+    //    不是「init 失敗」——那是 SDK 載到了才走得到的分支，兩條路的程式碼不同。
+    if (noSdk) { try { delete window.liff; } catch (e) { window.liff = undefined; } return; }
     window.liff = {
       init: () => (initFails ? Promise.reject(new Error(initFails)) : Promise.resolve()),
       isLoggedIn: () => loggedIn,
@@ -109,6 +113,7 @@ async function open(page, opts) {
       ? ('eyJhbGciOiJIUzI1NiJ9.' + 'A'.repeat(900) + '.c2lnbmF0dXJl')
       : liffOpt.idToken,
     initFails: liffOpt.initFails || '',
+    noSdk: !!liffOpt.noSdk,
   });
 
   const errors = [];
@@ -1058,6 +1063,56 @@ test('未登入（電腦瀏覽器那條路）：畫面停在身分閘，送出�
   expect(logins[0].redirectUri).toContain('/welfare.html?t=TESTTOKEN');
   expect(r.calls.getWelfareAudience, '還沒確認是誰就把全公司名單載出來了').toBe(0);
   expect(r.errors, 'console 有錯').toEqual([]);
+});
+
+test('🔴 SDK 完全沒載到（LINE 的 CDN 掛掉）：要看到具名訊息，而且她真的看得到——不是白屏',
+  async ({ page }) => {
+  // 🔴 **這是本頁唯一的第三方相依失效時走的那條路**，而它與 `liff.init` 失敗
+  //    是**不同的兩段程式碼**：init 失敗是 SDK 載到了才走得到的 `.catch`；
+  //    這一條死在 `startLiff()` 第一個 `if`，連 Promise 都沒建立。
+  // ⚠️ 這一頁改成 LIFF 頁之前**沒有任何第三方相依**，所以這是新增的失效模式。
+  const r = await open(page, { liff: { noSdk: true }, stopAtGate: true });
+
+  await expect(page.locator('#liff-gate')).toBeVisible();
+  await expect(page.locator('#liff-gate-msg')).toContainText('沒有載入成功');
+  const t = await page.locator('#liff-gate-msg').textContent();
+  expect(t, '沒告訴她該找誰 ⇒ 她只能一直重整').toContain('資訊人員');
+
+  // 🔴 **「訊息在 DOM 裡」與「她看得到」是兩件事。** 被別的東西蓋住時，
+  //    只斷言文字存在照樣會綠，而她眼前仍然是一片白。
+  //    ⇒ 問畫面正中央**實際畫出來的是什麼**，不是問 DOM 裡有什麼。
+  const 畫面 = await page.evaluate(() => {
+    const top = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    const gate = document.getElementById('liff-gate');
+    const msg = document.getElementById('liff-gate-msg');
+    const r2 = gate.getBoundingClientRect();
+    return {
+      正中央在閘裡: !!(top && gate.contains(top)),
+      看得見的字數: (msg.textContent || '').trim().length,
+      閘佔畫面高度比: r2.height / innerHeight,
+      閘的背景: getComputedStyle(gate).backgroundColor,
+    };
+  });
+  expect(畫面.正中央在閘裡, '畫面正中央畫的不是身分閘 ⇒ 訊息在 DOM 裡但被蓋住了').toBe(true);
+  expect(畫面.看得見的字數, '閘上一個字都沒有 ⇒ 她看到的就是白屏').toBeGreaterThan(10);
+  expect(畫面.閘佔畫面高度比, '閘沒有蓋滿畫面 ⇒ 底下的半成品會露出來').toBeGreaterThan(0.9);
+
+  // 底下的鈕要真的按不到（沿用未登入那條的量法）
+  const blocked = await page.evaluate(() => {
+    const b = document.getElementById('btn-send');
+    const rect = b.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return { covered: top !== b, gate: !!(top && top.closest && top.closest('#liff-gate')) };
+  });
+  expect(blocked.covered, '身分閘沒有蓋住送出鈕').toBe(true);
+  expect(blocked.gate, '蓋住送出鈕的不是身分閘').toBe(true);
+
+  // 沒有身分就不該去要任何資料
+  expect(r.calls.getWelfareAudience, '還沒確認是誰就把全公司名單載出來了').toBe(0);
+  expect(r.calls.getWelfareTemplates, '沒過閘卻去載了範本').toBe(0);
+  // 🔴 **不可以有未捕捉的錯誤**：`liff is not defined` 那種會讓畫面停在
+  //    「正在確認身分…」不動，而那句話讀起來像「還在跑」，不像「壞了」。
+  expect(r.errors, 'console 有未捕捉的錯誤 ⇒ 她會看到一句永遠不會變的「正在確認身分…」').toEqual([]);
 });
 
 test('已登入但拿不到 ID token：擋住並講明重試沒用，不可以說「請先登入」', async ({ page }) => {
