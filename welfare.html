@@ -5,7 +5,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>福委會 LINE 發送</title>
+<title>日本國土開發官方 LINE 傳送平台</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
   /* 設計語彙逐項沿用 stats.html（2026-08-16 改版）：低調、簡約、扁平。
@@ -159,7 +159,7 @@
          全白配一行字讀起來像「網站壞了」。轉址那條只閃一下，但共用同一個閘。 -->
     <img src="assets/logo-full.svg" alt="日本國土開發" style="height:28px;margin-bottom:18px"
          onerror="this.style.display='none'">
-    <div style="font-size:17px;font-weight:600;margin-bottom:10px">福委會 LINE 發送</div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:10px">日本國土開發官方 LINE 傳送平台</div>
     <div id="liff-gate-msg" style="font-size:15px;line-height:1.7">正在確認身分…</div>
     <div id="liff-gate-act" style="margin-top:16px"></div>
   </div>
@@ -168,7 +168,7 @@
 <div class="brand"><img src="assets/logo-full.svg" alt="日本國土開發" onerror="this.style.display='none'"></div>
 <div class="toplinks"><span id="msglog-entry"></span></div>
 
-<h1>福委會 LINE 發送</h1>
+<h1>日本國土開發官方 LINE 傳送平台</h1>
 <div class="meta">選人 → 選範本 → 寄驗證碼到你的信箱 → 輸入驗證碼送出。</div>
 
 <div class="card">
@@ -256,7 +256,16 @@
 <script src="assets/tpl-editor.js"></script>
 <script>
 /* ════════════════════════════════════════════════════════════════════════
-   福委會 LINE 發送頁。
+   日本國土開發官方 LINE 傳送平台（原名「福委會 LINE 發送」，2026-09-08 使用者拍板改名）。
+
+   ⚠️ **改的是名字，不是授權範圍。** 後端 `jdc-line-gas` 仍然只讓福委會身分進得來
+      （`isWelfareIdentity_`，Code.js:5957，它是「誰算福委會」的唯一判準）。
+      畫面現在說「官方傳送平台」、系統只認一種身分——**這就是本頁反覆在防的
+      「畫面說 A、系統送 B」**，只是這次的落差在授權，不在訊息內容。
+      要真的開放給別人用，是動後端那一支的事，不是改這裡的字。
+
+   ⚠️ 網址 `welfare.html` **刻意不改**：它有一批連結活在 repo 之外
+      （LINE 圖文選單、書籤），窮舉不了，改掉就是不可逆地弄丟它們。
 
    本頁反覆在防同一個形狀的缺陷：**畫面說 A、系統送 B**。
    它在本案出現過七次（後端冷卻分支、OTP_STATE、未存草稿、存檔競態、
@@ -1197,7 +1206,7 @@ function freshIdToken() {
 }
 
 /**
- * 福委會的呼叫層。**每一支 action 都走這裡，憑證只掛在這一個地方。**
+ * 本頁的呼叫層。**每一支 action 都走這裡，憑證只掛在這一個地方。**
  *
  * 🔴 **為何不讓九個呼叫點各自帶**：那是「同一個判斷散在多處」——
  *    漏掉其中一支的症狀是**那一支永遠驗不過**，而其他八支都好好的
