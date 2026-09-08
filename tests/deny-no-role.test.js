@@ -71,17 +71,49 @@ test('附屬功能被擋、主功能有回來 ⇒ 不蓋整頁（2026-07-30 那�
     '先成功再被擋也一樣——順序不該改變結論');
 });
 
-test('🔴 別的 reason 不蓋整頁（後端正要新增三種，只有 role_mismatch 這一種該蓋）', () => {
+test('🔴 role_unresolved 不蓋整頁——這是本次改動唯一刻意改掉的行為', () => {
+  // 後端 roles.js 的 scoped 分支：身分認出來了，但**算不出**他的角色（接線漏了／這把 token
+  // 沒有內部碼／內部碼在授權名單上沒有生效的列）。它送的 msg 與 role_mismatch
+  // 是同一句（`GATE_MSG_OUT_OF_SCOPE`）⇒ **舊的文案比對會把這一種一起蓋掉**。
+  //
+  // 🔴 這一條釘的是「不蓋」。行為變化如果沒有斷言，下一個人看到「這一種不蓋」
+  //    會當成 bug 修回去，而他修回去之後**全套照樣綠**。
+  //    理由是兩種的處置相反（見後端 GATE_REJECT 檔頭）：role_mismatch 該叫他
+  //    換連結，role_unresolved 換了也不會好，多半是設定沒同步。拿「請改用您自己
+  //    的看板連結」蓋住後者，等於叫他去做一件不會有用的事。
+  //
+  // ⚠️ 期望值 'role_unresolved' 逐字寫死，不從受測物或後端取——從受測物取的話，
+  //    代號被改掉時這一條會跟著改，等於沒有在釘任何東西。
+  const 算不出角色 = { ok: false, reason: 'role_unresolved', msg: '此連結非您的權限範圍。' };
+  assert.equal(overlayShown(算不出角色).shown, false,
+    'role_unresolved 被蓋了整頁——判準若寫成「有 reason 就蓋」，兩種相反的處置'
+    + '會退化成一種，而後端把它們分開的整件事就是為了讓人分得出原因');
+});
+
+test('🔴 別的 reason 不蓋整頁（只有 role_mismatch 這一種該蓋）', () => {
+  // ⚠️ 這裡的值全部取自後端真的送得出來的東西，**不編**。
+  //    線上有**兩套** reason 字彙，這裡各取一個：
+  //    · 第一套＝角色守門（`gateAction`）：只有 `role_mismatch`／`role_unresolved`。
+  //    · 第二套＝福委會第二道守門（`welfareStrictGate_`），與第一套共用同一個 JSONP
+  //      信封 `{ok:false, msg, reason}`。字面值有 `token`／`unbound`／`bad_binding`，
+  //      另外 `verify_*` 與 `identity_*` 是**動態拼出來的**（`'verify_' + v.reason`）。
+  //    🔴 動態拼的那兩支**列不完** ⇒ 判準只能是白名單（「只有 role_mismatch 蓋」），
+  //       不能是黑名單。這一條測的就是白名單這個形狀。
+  //    ⚠️ 第二套今天走不到這三頁：`welfare.html` 沒有載入本檔（2026-09-08 實測，
+  //       `grep -ln deny-no-role *.html` 只有 board／stats／hr-stats／messages）。
+  //       列在這裡是防判準日後被放寬成「有 reason 就蓋」，不是宣稱這三頁會收到它。
+  //    「沒有 reason 欄位」則是今天最常見的一種：`gateAction` 8 處拒絕裡有 5 處
+  //    不帶 reason，全部落在這一格。
   const 別種 = [
-    ['連結已停用', { ok: false, reason: 'link_disabled', msg: '這把連結已停用，請找資訊人員重發。' }],
-    ['身分未綁定', { ok: false, reason: 'identity_unbound', msg: '這把連結還沒綁定身分。' }],
+    ['福委會身分未綁定（unbound）', { ok: false, reason: 'unbound', msg: '這把連結還沒綁定身分。' }],
+    ['第二套字彙的動態值（verify_no_token）',
+      { ok: false, reason: 'verify_no_token', msg: '無權限或連結已失效' }],
     ['沒有 reason 欄位', { ok: false, msg: '無權限或連結已失效。' }],
   ];
   const 誤蓋的 = 別種.filter(([, r]) => overlayShown(r).shown).map(([name]) => name);
   assert.deepEqual(誤蓋的, [],
     `這幾種情況被誤蓋了整頁：${誤蓋的.join('、')}`
-    + '——判準若寫成「有 reason 就蓋」，三種處置會退化成一種，'
-    + '而這一頁分流訊息的整件事就是為了讓人分得出原因。');
+    + '——判準若寫成「有 reason 就蓋」，各自不同的處置會退化成一種。');
 });
 
 test('多支同時被擋只排一次計時器（用數的，不是看有沒有）', () => {
