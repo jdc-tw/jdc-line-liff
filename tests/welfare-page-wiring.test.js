@@ -938,3 +938,47 @@ test('🔴 全頁只能有一個地方直接叫 gasCall，而且它在 wfCall �
   assert.match(wf[0], /idToken:\s*freshIdToken\(\)/,
     'wfCall 沒有現場取 idToken ⇒ 全部九支都不會帶憑證');
 });
+
+/* ══ 改名的回頭鎖（2026-09-08）══════════════════════════════════════════════
+ *
+ * 使用者拍板：這頁不再只服務福委會，正式名稱是「日本國土開發官方 LINE 傳送平台」。
+ * **沒有斷言的文案改動，下一次有人從舊版複製貼上就回去了，而且複製回去不報錯。**
+ *
+ * 這條同時擋兩個方向。只斷言「新名稱在」擋不住「舊名稱也還在」——那正是改一半的樣子。
+ *
+ * 🔴 判準不是「舊名稱在 welfare.html 裡出現 0 次」。第一版就是那樣寫的，而它**當場
+ *    自我違反**：註解裡「原名「福委會 LINE 發送」」那句歷史紀錄本身含有舊名。
+ *    「刻意沒有 X」這句話本身含有 X ⇒ 判準永遠紅，而永遠紅的判準會被人學會無視。
+ *    改成：舊名只能出現在標註「原名」的那一行，其餘任何一行都算回頭。
+ *
+ * ⚠️ 本檔自己也寫著舊名（下面的 OLD_NAME）。它讀的是 welfare.html，不是自己，
+ *    所以不衝突——但要改判準的人請先確認你改的是哪一份的定義域。
+ *
+ * ⚠️ 這個 repo 另有工作樹持著 welfare.html 的舊副本（feat/welfare-tpl-lifecycle、
+ *    feat/welfare-broadcast-g1 等）。它們合併回來會把舊標題帶回來 ⇒ 這條會紅。
+ *    **那是它在做事，不是它壞了。**
+ */
+const NEW_NAME = '日本國土開發官方 LINE 傳送平台';
+const OLD_NAME = '福委會 LINE 發送';
+
+test('頁面名稱是新的：分頁標題、身分閘標題、主標題三處都要', () => {
+  const 位置 = [
+    ['分頁標題 <title>', '<title>' + NEW_NAME + '</title>'],
+    ['主標題 <h1>', '<h1>' + NEW_NAME + '</h1>'],
+    ['身分閘的標題', '>' + NEW_NAME + '</div>'],
+  ];
+  const 少的 = 位置.filter(([, needle]) => !SRC.includes(needle)).map(([name]) => name);
+  assert.deepEqual(少的, [],
+    `welfare.html 這幾處不是新名稱：${少的.join('、')}`
+    + `——改名要三處一起改，只改 <title> 的話使用者在畫面上看到的還是舊的。`);
+});
+
+test('舊名稱沒有回頭：只准出現在註解裡標「原名」的那一行', () => {
+  const strays = SRC.split('\n')
+    .map((l, i) => [l, i + 1])
+    .filter(([l]) => l.includes(OLD_NAME) && !l.includes('原名'));
+  assert.deepEqual(strays.map(([, n]) => n), [],
+    `舊名稱「${OLD_NAME}」出現在 welfare.html 這幾行：`
+    + strays.map(([l, n]) => `\n     第 ${n} 行：${l.trim()}`).join('')
+    + `\n   ⇒ 這是改名被複製回去了。要保留歷史請寫成「原名「${OLD_NAME}」」那個形狀。`);
+});

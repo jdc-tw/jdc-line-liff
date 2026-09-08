@@ -5,7 +5,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>福委會 LINE 發送</title>
+<title>日本國土開發官方 LINE 傳送平台</title>
 <link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg">
 <style>
   /* 設計語彙逐項沿用 stats.html（2026-08-16 改版）：低調、簡約、扁平。
@@ -159,7 +159,7 @@
          全白配一行字讀起來像「網站壞了」。轉址那條只閃一下，但共用同一個閘。 -->
     <img src="assets/logo-full.svg" alt="日本國土開發" style="height:28px;margin-bottom:18px"
          onerror="this.style.display='none'">
-    <div style="font-size:17px;font-weight:600;margin-bottom:10px">福委會 LINE 發送</div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:10px">日本國土開發官方 LINE 傳送平台</div>
     <div id="liff-gate-msg" style="font-size:15px;line-height:1.7">正在確認身分…</div>
     <div id="liff-gate-act" style="margin-top:16px"></div>
   </div>
@@ -168,7 +168,7 @@
 <div class="brand"><img src="assets/logo-full.svg" alt="日本國土開發" onerror="this.style.display='none'"></div>
 <div class="toplinks"><span id="msglog-entry"></span></div>
 
-<h1>福委會 LINE 發送</h1>
+<h1>日本國土開發官方 LINE 傳送平台</h1>
 <div class="meta">選人 → 選範本 → 寄驗證碼到你的信箱 → 輸入驗證碼送出。</div>
 
 <div class="card">
@@ -256,7 +256,30 @@
 <script src="assets/tpl-editor.js"></script>
 <script>
 /* ════════════════════════════════════════════════════════════════════════
-   福委會 LINE 發送頁。
+   日本國土開發官方 LINE 傳送平台（原名「福委會 LINE 發送」，2026-09-08 使用者拍板改名）。
+
+   ✅ **授權範圍後來真的跟上了**（2026-09-08 當天稍晚，後端 `5593e3d` 已上線）。
+      本段原本寫著「改的是名字，不是授權範圍……系統只認一種身分」，並把它列為本頁
+      反覆在防的「畫面說 A、系統送 B」。**那句話寫的當下是真的，現在過期了**——
+      改名與開放授權是同一天的兩件事，先後差幾個小時。
+
+      實測後端 `5593e3d` 的 `isWelfareIdentity_`（第二道守門「誰進得來」的唯一判準）：
+        · 原本第一格是 `identity.source !== 'scoped'` ⇒ **只有受限身分進得來**。
+          那一格已被 `2416484` 拿掉，board 身分現在照過。
+        · 現在的判準是「`source` 欄位存在（fail-closed，擋接線漏掉的殘缺身分）
+          **且** `hasWelfareRole(identity.roles)`」，而 `WELFARE_ROLES` 是
+          `['welfare', 'broadcast']`。
+      ⇒ 授權名單上掛 `welfare` 或 `broadcast` 的人都進得來，不再限於福委會那一份白名單。
+        畫面上這個名字與系統實際認的範圍**現在是一致的**。
+
+      ⚠️ **這一段不要照抄成新的永久宣稱**——它跟上一版一樣會過期。要重新確認就去量：
+        `grep -n "function isWelfareIdentity_" line-platform/Code.js` 讀它的本體，
+        再 `grep -n "var WELFARE_ROLES" line-platform/roles.js` 看角色清單。
+        **刻意不寫行號**：上一版寫了 `Code.js:5957`，五個小時後它是 6011。
+      ⚠️ 仍然成立的那一半：**要再擴大範圍是動後端那一支的事，不是改這裡的字。**
+
+   ⚠️ 網址 `welfare.html` **刻意不改**：它有一批連結活在 repo 之外
+      （LINE 圖文選單、書籤），窮舉不了，改掉就是不可逆地弄丟它們。
 
    本頁反覆在防同一個形狀的缺陷：**畫面說 A、系統送 B**。
    它在本案出現過七次（後端冷卻分支、OTP_STATE、未存草稿、存檔競態、
@@ -1197,7 +1220,7 @@ function freshIdToken() {
 }
 
 /**
- * 福委會的呼叫層。**每一支 action 都走這裡，憑證只掛在這一個地方。**
+ * 本頁的呼叫層。**每一支 action 都走這裡，憑證只掛在這一個地方。**
  *
  * 🔴 **為何不讓九個呼叫點各自帶**：那是「同一個判斷散在多處」——
  *    漏掉其中一支的症狀是**那一支永遠驗不過**，而其他八支都好好的
