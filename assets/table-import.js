@@ -10,7 +10,7 @@ function parseTablePaste(text) {
   String(text || '').split(/\r?\n/).forEach(function (line) {
     var t = line.trim();
     if (!t) return;
-    // Excel 貼上是 tab 分隔→只切 tab（保留名內空白如「王 瑩」）；手打才退回空白切
+    // Excel 貼上是 tab 分隔→只切 tab（保留名內空白如「嚴 孝」）；手打才退回空白切
     var m = t.indexOf('\t') >= 0 ? t.split(/\t+/) : t.split(/[　\s]+/);
     var name = (m[0] || '').trim();
     var table = (m.slice(1).join('') || '').trim();
@@ -21,7 +21,7 @@ function parseTablePaste(text) {
   return out;
 }
 
-/** 姓名正規化：去掉所有空白（半形/全形），比對鍵一致（名冊有「王 瑩」）。 */
+/** 姓名正規化：去掉所有空白（半形/全形），比對鍵一致（名冊有「嚴 孝」）。 */
 function normName_(s) { return String(s || '').replace(/[\s　]+/g, ''); }
 
 /**

@@ -3,13 +3,13 @@ const assert = require('node:assert');
 const { parseTablePaste, matchByName, diffWrites } = require('../assets/table-import.js');
 
 test('parseTablePaste：tab 分隔（Excel 複製）', () => {
-  assert.deepEqual(parseTablePaste('王小明\t1\n李美麗\t主桌\n'), [
-    { name: '王小明', table: '1' }, { name: '李美麗', table: '主桌' }]);
+  assert.deepEqual(parseTablePaste('王小明\t1\n呂小英\t主桌\n'), [
+    { name: '王小明', table: '1' }, { name: '呂小英', table: '主桌' }]);
 });
 
 test('parseTablePaste：空白分隔、跳過空行與表頭', () => {
-  assert.deepEqual(parseTablePaste('姓名 桌次\n王小明  3\n\n張三　5'), [
-    { name: '王小明', table: '3' }, { name: '張三', table: '5' }]);
+  assert.deepEqual(parseTablePaste('姓名 桌次\n王小明  3\n\n卞美　5'), [
+    { name: '王小明', table: '3' }, { name: '卞美', table: '5' }]);
 });
 
 test('parseTablePaste：tab 分隔時名內空白保留（呂 乙）', () => {
@@ -17,16 +17,16 @@ test('parseTablePaste：tab 分隔時名內空白保留（呂 乙）', () => {
 });
 
 test('parseTablePaste：只有一欄的行列入 unparsed', () => {
-  const rows = parseTablePaste('王小明\n李美麗\t2');
-  assert.deepEqual(rows, [{ name: '王小明', table: '' }, { name: '李美麗', table: '2' }]);
+  const rows = parseTablePaste('王小明\n呂小英\t2');
+  assert.deepEqual(rows, [{ name: '王小明', table: '' }, { name: '呂小英', table: '2' }]);
 });
 
 const PEOPLE = [
   { userId: 'u1', name: '王小明', unit: '管理部', table: '' },
-  { userId: 'u2', name: '李美麗', unit: '施工部', table: '2' },
+  { userId: 'u2', name: '呂小英', unit: '施工部', table: '2' },
   { userId: 'u3', name: '呂 乙', unit: '管理部', table: '' },
-  { userId: 'u4', name: '陳大同', unit: '南港玉成', table: '' },
-  { userId: 'u5', name: '陳大同', unit: '富貴莊園', table: '' },
+  { userId: 'u4', name: '安小昌', unit: '南港玉成', table: '' },
+  { userId: 'u5', name: '安小昌', unit: '富貴莊園', table: '' },
 ];
 
 test('matchByName：正常比對＋姓名空白正規化', () => {
@@ -37,12 +37,12 @@ test('matchByName：正常比對＋姓名空白正規化', () => {
 });
 
 test('matchByName：查無→unmatched；同名多人→ambiguous', () => {
-  const r = matchByName([{ name: '不存在', table: '1' }, { name: '陳大同', table: '4' }], PEOPLE);
+  const r = matchByName([{ name: '不存在', table: '1' }, { name: '安小昌', table: '4' }], PEOPLE);
   assert.deepEqual(r.writes, []);
   assert.deepEqual(r.unmatched, [{ name: '不存在', table: '1' }]);
-  assert.deepEqual(r.ambiguous, [{ name: '陳大同', table: '4', candidates: [
-    { userId: 'u4', name: '陳大同', unit: '南港玉成', table: '' },
-    { userId: 'u5', name: '陳大同', unit: '富貴莊園', table: '' }] }]);
+  assert.deepEqual(r.ambiguous, [{ name: '安小昌', table: '4', candidates: [
+    { userId: 'u4', name: '安小昌', unit: '南港玉成', table: '' },
+    { userId: 'u5', name: '安小昌', unit: '富貴莊園', table: '' }] }]);
 });
 
 test('diffWrites：與現值相同的不寫', () => {

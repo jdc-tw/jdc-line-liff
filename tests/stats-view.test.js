@@ -7,9 +7,9 @@ const OK = {
   activity: { id: 'A003', name: '2026 尾牙', status: '關閉', eventDate: '2026/01/20', deadlineText: '2026/01/05' },
   counts: { attend: 70, absent: 10, boundNoReply: 5, notBound: 15, total: 100, replied: 80, meat: 50, veg: 20 },
   opinions: [{ unit: '工務部', name: '王小明', attend: '參加', opinion: '希望早點結束' }],
-  absentList: [{ unit: '工務部', name: '李小華' }],
-  boundNoReply: [{ unit: '管理部', name: '陳小美' }],
-  notBound: [{ unit: '管理部', name: '林小強' }],
+  absentList: [{ unit: '工務部', name: '呂小文' }],
+  boundNoReply: [{ unit: '管理部', name: '安小隆' }],
+  notBound: [{ unit: '管理部', name: '周小志' }],
 };
 
 test('esc 逸出角括號', () => {

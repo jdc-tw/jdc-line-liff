@@ -10,7 +10,7 @@ const H = ['發送時間', '平台', '來源', '對象UserID', '對象姓名', '
 function row(o) {
   const d = {
     發送時間: '2026-08-21 09:12:00', 平台: 'line-platform', 來源: 'senior_notice',
-    對象UserID: 'U1', 對象姓名: '陳志明', 對象單位: '管理部',
+    對象UserID: 'U1', 對象姓名: '安幼美', 對象單位: '管理部',
     訊息型別: 'text', 訊息內容: '恭喜服務滿 10 年', 附件: '',
     結果: '成功', 錯誤: '', 批次: 'line-platform-20260821091200',
   };
@@ -69,7 +69,7 @@ test('總燈：有失敗就紅；只有略過是灰；全成功才綠', () => {
 /* ── gistOf（卡面摘要）─────────────────────────────── */
 
 test('gistOf：跳過稱呼行，取第一行真正有內容的字', () => {
-  assert.equal(V.gistOf('林俊宏 您好：\n\n您 8/18 的補登申請已核准。', 'text'),
+  assert.equal(V.gistOf('周小傑 您好：\n\n您 8/18 的補登申請已核准。', 'text'),
     '您 8/18 的補登申請已核准。');
 });
 
@@ -80,19 +80,19 @@ test('gistOf：沒有稱呼行時就取第一行（不做多餘的判讀）', ()
 test('gistOf：整段都是稱呼行時保留最後一行，不留白', () => {
   // 留白會讓人以為這批沒有內容——寧可顯示「您好」
   assert.equal(V.gistOf('您好', 'text'), '您好');
-  assert.equal(V.gistOf('林俊宏 您好：\n您好，', 'text'), '您好，');
+  assert.equal(V.gistOf('周小傑 您好：\n您好，', 'text'), '您好，');
 });
 
 test('gistOf：「含有您好」的正文不可以被當成稱呼行吃掉', () => {
   const body = '如有問題請洽工務管理組，我們會盡快回覆您好嗎';
   assert.ok(body.length <= 40, '前提：這句沒到 40 字上限，不會被截斷');
-  assert.equal(V.gistOf('林俊宏 您好：\n' + body, 'text'), body);
+  assert.equal(V.gistOf('周小傑 您好：\n' + body, 'text'), body);
 });
 
 test('gistOf：稱呼行的認定只看「開頭很短又以您好收尾」', () => {
   assert.equal(V.gistOf('您好\n真正的內容', 'text'), '真正的內容');
   assert.equal(V.gistOf('您好，\n真正的內容', 'text'), '真正的內容');
-  assert.equal(V.gistOf('黃淑芬 您好\n真正的內容', 'text'), '真正的內容');
+  assert.equal(V.gistOf('尤小豪 您好\n真正的內容', 'text'), '真正的內容');
   // 開頭超過 12 字就不是稱呼，照原樣留著
   const long = '這一行很長而且結尾剛好也是您好';
   assert.equal(V.gistOf(long + '\n第二行', 'text'), long);
@@ -100,7 +100,7 @@ test('gistOf：稱呼行的認定只看「開頭很短又以您好收尾」', ()
 
 test('gistOf：多則訊息存成 JSON 時，把裡面的文字挖出來（不顯示型別也不顯示 JSON）', () => {
   const payload = JSON.stringify([
-    { type: 'text', text: '林俊宏 您好：\n您今年服務屆滿 15 年。' },
+    { type: 'text', text: '周小傑 您好：\n您今年服務屆滿 15 年。' },
     { type: 'image', originalContentUrl: 'https://x/a.jpg' },
   ]);
   assert.equal(V.gistOf(payload, 'text+image'), '您今年服務屆滿 15 年。');
@@ -186,12 +186,12 @@ test('groupBatches：依欄名對位，欄序調動不會靜默錯位', () => {
                     '訊息型別', '對象單位', '對象UserID', '平台', '附件', '錯誤'];
   const r = shuffled.map((k) => ({
     批次: 'bx', 結果: '成功', 發送時間: '2026-08-21 09:12:00', 來源: 'bind_success',
-    對象姓名: '林淑芬', 訊息內容: '綁定成功', 訊息型別: 'text', 對象單位: '工務組',
+    對象姓名: '周小豪', 訊息內容: '綁定成功', 訊息型別: 'text', 對象單位: '工務組',
     對象UserID: 'U9', 平台: 'line-platform', 附件: '', 錯誤: '',
   }[k]));
   const b = V.groupBatches(shuffled, [r])[0];
   assert.equal(b.categoryLabel, '綁定成功');
-  assert.equal(b.rows[0].name, '林淑芬');
+  assert.equal(b.rows[0].name, '周小豪');
   assert.equal(b.gist, '綁定成功');
 });
 
@@ -370,8 +370,8 @@ test('emoji 信封：多則訊息的陣列不受影響，仍走 textInPayload', 
 test('cardHtml：內容與名單合併成同一個下拉（2026-08-23）', () => {
   const long = '第一行\n第二行是全文才看得到的';
   const b = V.groupBatches(H, [
-    row({ 訊息內容: long, 對象姓名: '林淑芬' }),
-    row({ 訊息內容: long, 對象姓名: '陳建宏' }),
+    row({ 訊息內容: long, 對象姓名: '周小豪' }),
+    row({ 訊息內容: long, 對象姓名: '安幼華' }),
   ]);
   const html = V.cardHtml(b[0], []);
   // 只有一個 <details>——兩個代表主旨那顆沒拆乾淨
@@ -380,7 +380,7 @@ test('cardHtml：內容與名單合併成同一個下拉（2026-08-23）', () =>
   const inner = html.slice(html.indexOf('<details'));
   assert.ok(inner.indexOf('class="fullmsg"') >= 0);
   assert.ok(inner.indexOf('第二行是全文才看得到的') >= 0);
-  assert.ok(inner.indexOf('林淑芬') >= 0 && inner.indexOf('陳建宏') >= 0);
+  assert.ok(inner.indexOf('周小豪') >= 0 && inner.indexOf('安幼華') >= 0);
 });
 
 test('cardHtml：卡面第三列是摘要，不是「○○您好」那一行', () => {
@@ -397,7 +397,7 @@ test('cardHtml：卡面第三列是摘要，不是「○○您好」那一行', 
 });
 
 test('cardHtml：只印人數，不再印則數（使用者 2026-08-23：「改成 1 人就好」）', () => {
-  const b = V.groupBatches(H, [row({ 對象姓名: '林淑芬' })])[0];
+  const b = V.groupBatches(H, [row({ 對象姓名: '周小豪' })])[0];
   const html = V.cardHtml(b, []);
   assert.ok(html.indexOf('1<u>人</u>') >= 0);
   assert.equal(html.indexOf('<u>則</u>'), -1, '則數那一格已撤除');
@@ -405,12 +405,12 @@ test('cardHtml：只印人數，不再印則數（使用者 2026-08-23：「改�
 
 test('cardHtml：人數旁邊列出名字，不列單位', () => {
   const b = V.groupBatches(H, [
-    row({ 對象姓名: '林俊宏', 對象單位: '工務管理組' }),
-    row({ 對象姓名: '黃淑芬', 對象單位: '業務部' }),
+    row({ 對象姓名: '周小傑', 對象單位: '工務管理組' }),
+    row({ 對象姓名: '尤小豪', 對象單位: '業務部' }),
   ])[0];
   const m = V.cardHtml(b, []).match(/<span class="names">([\s\S]*?)<\/span>/);
   assert.ok(m, '卡面要有名字那一格');
-  assert.equal(m[1], '林俊宏、黃淑芬');
+  assert.equal(m[1], '周小傑、尤小豪');
   assert.equal(m[1].indexOf('工務管理組'), -1, '單位不進卡面');
 });
 
@@ -512,8 +512,8 @@ test('kindLabel：空值回空字串（呼叫端據此決定不畫那一格）',
 
 test('cardHtml：型別出現在第一列，不在名單的人名旁邊', () => {
   const b = V.groupBatches(H, [
-    row({ 對象姓名: '林俊宏', 訊息型別: 'text+image' }),
-    row({ 對象姓名: '黃淑芬', 訊息型別: 'text+image' }),
+    row({ 對象姓名: '周小傑', 訊息型別: 'text+image' }),
+    row({ 對象姓名: '尤小豪', 訊息型別: 'text+image' }),
   ])[0];
   const html = V.cardHtml(b, []);
   assert.ok(html.indexOf('<span class="kind">文字＋圖片</span>') >= 0);
@@ -525,8 +525,8 @@ test('cardHtml：型別出現在第一列，不在名單的人名旁邊', () => 
 
 test('foldHtml：名單用燈點表示狀態，不用「成功」二字', () => {
   const b = V.groupBatches(H, [
-    row({ 對象姓名: '林俊宏' }),
-    row({ 對象姓名: '黃淑芬', 結果: '失敗', 錯誤: 'not a friend' }),
+    row({ 對象姓名: '周小傑' }),
+    row({ 對象姓名: '尤小豪', 結果: '失敗', 錯誤: 'not a friend' }),
   ])[0];
   const fold = V.foldHtml(b, []);
   assert.ok(fold.indexOf('<i class="lamp ok"') >= 0);
@@ -536,7 +536,7 @@ test('foldHtml：名單用燈點表示狀態，不用「成功」二字', () => 
 });
 
 test('foldHtml：單位留在名單裡（只有卡面不列單位）', () => {
-  const b = V.groupBatches(H, [row({ 對象姓名: '林俊宏', 對象單位: '工務管理組' })])[0];
+  const b = V.groupBatches(H, [row({ 對象姓名: '周小傑', 對象單位: '工務管理組' })])[0];
   assert.ok(V.foldHtml(b, []).indexOf('工務管理組') >= 0);
 });
 

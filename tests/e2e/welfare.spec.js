@@ -13,12 +13,12 @@
 const { test, expect } = require('@playwright/test');
 
 const ROWS = [
-  { empNo: 'A001', name: '甲同仁', unit: '工務部', email: 'a@x.tw', userId: 'U1', status: 'ok' },
-  { empNo: 'A002', name: '乙同仁', unit: '工務部', email: 'b@x.tw', userId: 'U2', status: 'ok' },
-  { empNo: 'A003', name: '丙同仁', unit: '工務部', email: '', userId: '', status: 'no_email' },
-  { empNo: 'B001', name: '丁同仁', unit: '管理部', email: 'd@x.tw', userId: 'U4', status: 'ok' },
-  { empNo: 'B002', name: '戊同仁', unit: '管理部', email: 'e@x.tw', userId: '', status: 'unbound' },
-  { empNo: 'C001', name: '己同仁', unit: '企劃部', email: 'f@x.tw', userId: '', status: 'ambiguous' },
+  { empNo: 'A001', name: '塗小明', unit: '工務部', email: 'a@x.tw', userId: 'U1', status: 'ok' },
+  { empNo: 'A002', name: '倪小明', unit: '工務部', email: 'b@x.tw', userId: 'U2', status: 'ok' },
+  { empNo: 'A003', name: '侯小明', unit: '工務部', email: '', userId: '', status: 'no_email' },
+  { empNo: 'B001', name: '余小明', unit: '管理部', email: 'd@x.tw', userId: 'U4', status: 'ok' },
+  { empNo: 'B002', name: '史小明', unit: '管理部', email: 'e@x.tw', userId: '', status: 'unbound' },
+  { empNo: 'C001', name: '卜小明', unit: '企劃部', email: 'f@x.tw', userId: '', status: 'ambiguous' },
 ];
 
 const TPL_A = '[[e:5ac21a18040ab15980c9b43e:028]]{姓名}您好，端午禮金發放囉';
