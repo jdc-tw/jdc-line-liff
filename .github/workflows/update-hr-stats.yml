@@ -1,9 +1,24 @@
 name: 更新 hr-stats-pub.json
 
-# 每日把「人事看板公開聚合版」（getHrStatsPublic·無姓名·無 token）灌進 hr-stats-pub.json。
-# 讓 hr-stats.html 首次載入直讀此靜態檔（~0.4s·Pages CDN）而非等 getHrStats 的 ~2s /exec 往返；
-# 退休預警名單仍只由 gated getHrStats 即時載入（本靜態檔不含姓名）。
-# 零密鑰：getHrStatsPublic 公開無 token、推送用 Actions 內建 GITHUB_TOKEN。
+# 每日把「人事看板公開聚合版」灌進 hr-stats-pub.json，
+# 讓 hr-stats.html 首次載入直讀此靜態檔（~0.4s·Pages CDN）而非等 /exec 往返。
+# 退休預警名單的**姓名**仍只由 gated getHrStats 即時載入，本靜態檔不含姓名。
+#
+# 🔴 資料來源在 2026-09-10（C1 階段一）從 GAS 改成中央名冊入口層：
+#      舊：curl GAS?action=getHrStatsPublic（JSONP，要剝 __cb(...) 外殼）
+#      新：curl 入口層 /v1/workforce/composition（純 JSON，不要再剝殼）
+#
+# ⚠️ **檔頭原本寫著「零密鑰」，那句話從這一版起不成立**——不是有人忘了改，是前提變了：
+#    舊來源 `getHrStatsPublic` 是公開無 token 的 GAS 端點，所以整支 workflow 真的
+#    一把鑰匙都不需要（推送用 Actions 內建的 GITHUB_TOKEN）。
+#    新來源是 Cloud Run 上的入口層，它 `--no-allow-unauthenticated`，需要兩把：
+#      ① Google 簽的 ID token（走 WIF，證明「進得來」）
+#      ② consumer token（證明「你是誰、能打哪幾條」）
+#    ⇒ 看到這段不要以為「本來就該有密鑰」，也不要以為「零密鑰」還算數。
+#
+# 🔴 內容檢查已搬進 `tools/hr-stats-guard.js` 並有測試（`tests/hr-stats-guard.test.js`）。
+#    原本那段寫在下面的一行 `node -e` 裡——它擋的是「姓名進 PUBLIC repo」，
+#    是這條鏈上唯一的機械關卡，而**寫在 YAML 裡的東西只能被審查、不能被測試**。
 
 on:
   schedule:
@@ -12,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write           # WIF 換 Google ID token 用（沒有這一格，下面 auth 那步會失敗）
 
 concurrency:
   group: update-hr-stats
@@ -23,28 +39,79 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: 從 GAS 取公開聚合版
+      # ⚠️ 這一步依賴 WIF binding（線 A 那一格）。binding 沒做好時這裡會失敗，
+      #    而失敗是對的——不要讓它在沒有身分的情況下往下走。
+      # ⚠️ 變數名以 repo 上**已經設好的那三個**為準（`gh variable list -R jdc-tw/jdc-line-liff`）。
+      #    2026-09-10 這裡曾經寫成 GCP_WIF_PROVIDER／GCP_WIF_SERVICE_ACCOUNT／IDENTITY_BASE，
+      #    三個全部對不上——兩邊各自命名同一組東西，而沒有任何東西要求它們相等。
+      #    失敗方向：`vars.X` 讀到**空字串**，auth 那步失敗，而那個紅讀起來像「WIF 設錯了」，
+      #    但 WIF 完全正確。⇒ 改名字前先跑一次 `gh variable list`。
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.IDENTITY_SA }}
+          token_format: id_token
+          # ⚠️ `IDENTITY_URL` 存的是 **base**（`https://…run.app`，不含路徑），名字沒講清楚。
+          #    要接路徑的地方自己接（見下一步的 `${BASE}/v1/...`），不要以為它已經帶了。
+          id_token_audience: ${{ vars.IDENTITY_URL }}
+          id_token_include_email: true
+
+      - name: 從入口層取聚合版
+        env:
+          BASE: ${{ vars.IDENTITY_URL }}   # ⚠️ 是 base，不含路徑
+          CONSUMER_TOKEN: ${{ secrets.IDENTITY_CONSUMER_TOKEN }}
+          ID_TOKEN: ${{ steps.auth.outputs.id_token }}
         run: |
-          GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
-          curl -fsSL "$GAS?action=getHrStatsPublic&callback=__cb" \
-            | sed -E 's/^__cb\((.*)\)$/\1/' > hr-stats-pub.json.new
-          node -e "const fs=require('fs'); const r=JSON.parse(fs.readFileSync('hr-stats-pub.json.new','utf8')); if(!r.ok||!r.stats||!r.stats.total) throw new Error('hr-stats 內容異常，放棄更新'); if(!r.stats.pub) throw new Error('缺 pub 旗標，疑似含姓名的 gated 版，放棄'); const nm=[]; Object.keys(r.stats.units).forEach(function(n){const R=r.stats.units[n].retire; ['now','y1','y3','y5','y10'].forEach(function(k){(R[k]||[]).forEach(function(v){if(v)nm.push(v);});});}); if(nm.length) throw new Error('偵測到姓名外洩('+nm.length+')，放棄更新'); console.log('✓ 在職',r.stats.total,'| 單位',r.stats.unitOrder.length,'| 退休名單已剝名')"
+          set -euo pipefail
+          # 🔴 兩個標頭是兩件事，不是二選一：
+          #    X-Serverless-Authorization → Cloud Run 檢查「你進不進得來」
+          #    Authorization              → 本服務檢查「你是誰、能打哪幾條」
+          #    兩個都給時 Cloud Run 只吃前者，後者原封不動進容器。
+          # ⚠️ 不加 `-f`：被擋掉時我們要看到回應內容（HTML 錯誤頁），
+          #    交給 guard 去判斷並印出來。`-f` 會讓 curl 直接失敗、把證據丟掉。
+          curl -sSL \
+            -H "Authorization: Bearer ${CONSUMER_TOKEN}" \
+            -H "X-Serverless-Authorization: Bearer ${ID_TOKEN}" \
+            "${BASE}/v1/workforce/composition" > hr-stats-pub.json.raw
+          node tools/hr-stats-guard.js hr-stats-pub.json.raw hr-stats-pub.json.new
           mv hr-stats-pub.json.new hr-stats-pub.json
+          rm -f hr-stats-pub.json.raw
 
       # 月快照（2026-08-23，同日改月）：KPI「較上月」增減用。只在每月 1 日（台北）寫一筆，同日覆寫，最多留 120 筆。
       - name: 每月 1 日追加快照到 hr-stats-history.json
         run: |
           node -e "const fs=require('fs'); const s=JSON.parse(fs.readFileSync('hr-stats-pub.json','utf8')).stats; const d=new Date(Date.now()+8*3600e3).toISOString().slice(0,10); if(d.slice(8)!=='01'){console.log('非月初，略過快照');process.exit(0);} let h=[]; try{h=JSON.parse(fs.readFileSync('hr-stats-history.json','utf8'));}catch(e){} h=h.filter(function(x){return x.d!==d;}); h.push({d:d,total:s.total,avgTenure:s.avgTenure,avgAge:s.avgAge}); h.sort(function(a,b){return a.d<b.d?-1:1;}); if(h.length>120)h=h.slice(-120); fs.writeFileSync('hr-stats-history.json',JSON.stringify(h)); console.log('✓ 快照',d,'共',h.length,'筆')"
 
-      - name: 有變動才 commit & push
+      # 🔴 2026-09-10：拿掉了原本的「有變動才 commit」。
+      #    理由只有一條，但夠：**「今天沒有 commit」同時相容於「數字沒變」與「排程根本沒跑」，
+      #    而兩者處置相反**——從 git 歷史上分不出來。每天一筆 commit 就是這條管線的心跳。
+      #    代價：公開 repo 每年多約 365 筆 commit。這是刻意付的。
+      #
+      # ⚠️ 不要把理由寫成「不推的話 generatedAt 會停在舊值」——那個機制**不成立**：
+      #    `generatedAt` 是入口層給的快照時間，上游算出新快照時它本來就會變、
+      #    內容也就跟著變，閘門本來就會放行。真正擋不住的是上游快取命中那種
+      #    「內容一個位元組都沒變」的日子，而那正是分不出「有跑」與「沒跑」的時候。
+      - name: commit & push
         run: |
-          if git diff --quiet hr-stats-pub.json hr-stats-history.json; then
-            echo "人事聚合無變動，不需更新。"
-            exit 0
-          fi
+          set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add hr-stats-pub.json hr-stats-history.json
           git commit -m "chore: 自動更新 hr-stats-pub.json（排程）"
           git push
           echo "✓ 已更新並推上 GitHub Pages"
+
+      # 🔴 只在失敗時發，不用 always()。判準是「失敗時誰會被迫看到」，不是「訊息多不多」：
+      #    每天一則成功訊息 ⇒ 收訊的人學會無視那一格 ⇒ 失敗那則混在裡面，等於沒發。
+      #    （已踩過：告警連五天送達、內容正確、還附了指令，前四則仍然沒有任何事發生。）
+      # ⚠️ 這一則擋不住的那一半：**workflow 整支沒跑**（排程停掉、repo 長期沒動被 GitHub
+      #    自動停用排程）時它不會響。那一半由前端的「資料為 X 月 X 日」接——
+      #    兩者合起來才蓋得住，任一個單獨都有洞。
+      - name: 失敗時通知
+        if: failure()
+        env:
+          SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: C0BBWQTTXLY   # ⚠️ 測試期間固定發 #測試平台。正式頻道等使用者定。
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node tools/slack-notify.js

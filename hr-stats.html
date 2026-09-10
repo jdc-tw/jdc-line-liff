@@ -856,8 +856,16 @@ function renderHr(r){
     else {                                                              // 首訪：靜態聚合先畫圖表
       fetch('hr-stats-pub.json?v=' + Date.now(), { cache: 'no-store' })
         .then(function (r) { return r.json(); })
-        .then(function (p) { if (p && p.ok && !painted) { renderHr(p); painted = true; } })
-        .catch(function () { });
+        .then(function (p) {
+          if (p && p.ok && !painted) { renderHr(p); painted = true; markPub(p.generatedAt); }
+        })
+        // 🔴 2026-09-10：原本這裡是 `.catch(function () { });`——空的。
+        //    公開檔讀不到時畫面一個字都不會說，而後面 gated 那條若也斷了，
+        //    使用者只看到「載入失敗」，分不出是兩條路都斷還是只有一條。
+        .catch(function (e) {
+          console.warn('[hr-stats] 公開聚合檔讀不到：', e);
+          if (!painted) markPub('unreachable');
+        });
     }
     return queueRead(function () {
       return jsonp('getHrStats', { token: TOKEN }).then(function (r) {
@@ -865,7 +873,7 @@ function renderHr(r){
           if (v === 'revoked') return;                       // 覆蓋層已蓋上
           if (v === 'offline') { if (c) markOffline(c.savedAt); else if (!painted) renderHr(r); return; }
           return cacheSave(TOKEN, N.hrStats, r).then(function () {
-            if (r && r.ok) { renderHr(r); markOffline(null); }
+            if (r && r.ok) { renderHr(r); markOffline(null); markPub(null); }
             else if (!painted) renderHr(r);
           });
         });
@@ -877,6 +885,46 @@ function renderHr(r){
 /** 離線標示：有 savedAt 就掛上去，傳 null 代表連上了、拿掉標示。
  *  掛在 #sub（頁面標題下的 meta 列）——本頁沒有 id="meta"，#sub 是同一個角色：
  *  attend.html/checkin.html/stats.html 都用 id="meta" 放這行「載入中…→資料來源說明」的字。 */
+/**
+ * 公開聚合檔的「這份資料是哪天的」標記。
+ *
+ * 🔴 為何需要它：公開檔由排程每日更新，而**上游斷掉時畫面不會有任何異狀**——
+ *    靜態檔停在舊資料，圖表照畫、數字照顯示、零錯誤訊息。
+ *    排程那端的失敗通知擋不住「排程整支沒跑」（被停用、cron 沒觸發）那一半，
+ *    這一條擋的就是那一半。兩者合起來才蓋得住。
+ *
+ * ⚠️ 刻意用自己的 tag（不併進 `offline-tag`）：「你的裝置離線」與「上游的檔舊了」
+ *    是兩件事，可以同時為真，合成一個標籤就會有一種狀態被另一種蓋掉。
+ *
+ * @param {string|null} generatedAt ISO 時間字串／`'unreachable'`／null（清掉標記）
+ */
+var PUB_STALE_HOURS = 30;   // 排程每日 06:10 ⇒ 健康時最舊 24h。30 留 6h 給跑得慢的那天，
+                            // 而整整漏跑一天（會到 48h）在隔天中午前就會被標出來。
+function markPub(generatedAt) {
+  var el = document.getElementById('sub');
+  if (!el) return;
+  var tag = document.getElementById('pub-tag');
+  var txt = pubLabel(generatedAt);
+  if (txt == null) { if (tag) tag.parentNode.removeChild(tag); return; }
+  if (!tag) { tag = document.createElement('span'); tag.id = 'pub-tag';
+    tag.setAttribute('style', 'margin-left:8px;color:#8a6a2f;font-size:13px'); el.appendChild(tag); }
+  tag.textContent = txt;
+}
+
+/** 標記文案。純函式，測得到——三種狀態很容易寫反，而寫反在畫面上不會報錯。 */
+function pubLabel(generatedAt) {
+  if (generatedAt == null) return null;                       // 已被即時資料取代
+  if (generatedAt === 'unreachable') return '公開聚合檔讀不到，正在等即時資料';
+  var t = Date.parse(generatedAt);
+  // 🔴 沒有時間戳＝分不出新舊，那本身就是要說出來的狀態，不是「沒事」。
+  //    （首次部署後、排程還沒跑過的那一份就是這樣，跑過一次就自動消失。）
+  if (!t) return '資料日期不明';
+  var hrs = (Date.now() - t) / 3600000;
+  if (hrs < PUB_STALE_HOURS) return null;                     // 新鮮，不佔畫面
+  var d = new Date(t);
+  return '資料為 ' + (d.getMonth() + 1) + '/' + d.getDate() + '，可能未更新';
+}
+
 function markOffline(savedAt) {
   var el = document.getElementById('sub');
   if (!el) return;
