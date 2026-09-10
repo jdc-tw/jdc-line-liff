@@ -41,18 +41,25 @@ jobs:
 
       # ⚠️ 這一步依賴 WIF binding（線 A 那一格）。binding 沒做好時這裡會失敗，
       #    而失敗是對的——不要讓它在沒有身分的情況下往下走。
+      # ⚠️ 變數名以 repo 上**已經設好的那三個**為準（`gh variable list -R jdc-tw/jdc-line-liff`）。
+      #    2026-09-10 這裡曾經寫成 GCP_WIF_PROVIDER／GCP_WIF_SERVICE_ACCOUNT／IDENTITY_BASE，
+      #    三個全部對不上——兩邊各自命名同一組東西，而沒有任何東西要求它們相等。
+      #    失敗方向：`vars.X` 讀到**空字串**，auth 那步失敗，而那個紅讀起來像「WIF 設錯了」，
+      #    但 WIF 完全正確。⇒ 改名字前先跑一次 `gh variable list`。
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_WIF_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.IDENTITY_SA }}
           token_format: id_token
-          id_token_audience: ${{ vars.IDENTITY_BASE }}
+          # ⚠️ `IDENTITY_URL` 存的是 **base**（`https://…run.app`，不含路徑），名字沒講清楚。
+          #    要接路徑的地方自己接（見下一步的 `${BASE}/v1/...`），不要以為它已經帶了。
+          id_token_audience: ${{ vars.IDENTITY_URL }}
           id_token_include_email: true
 
       - name: 從入口層取聚合版
         env:
-          BASE: ${{ vars.IDENTITY_BASE }}
+          BASE: ${{ vars.IDENTITY_URL }}   # ⚠️ 是 base，不含路徑
           CONSUMER_TOKEN: ${{ secrets.IDENTITY_CONSUMER_TOKEN }}
           ID_TOKEN: ${{ steps.auth.outputs.id_token }}
         run: |
