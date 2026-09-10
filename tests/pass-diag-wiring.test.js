@@ -24,7 +24,7 @@ function extractFn(name) {
 
 const { passCacheKey, passCacheUsable, passCacheMissReason, passToday } = require('../assets/pass-cache.js');
 
-const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name: '洪炫佑', table: '21',
+const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name: '喻小宇', table: '21',
               actId: 'midyear2026', activity: { name: '2026 年中聚餐' } };
 
 /** @param {{cache?:object, urlV?:string, gas?:object}} opt */

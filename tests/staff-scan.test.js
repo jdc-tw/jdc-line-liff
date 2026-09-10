@@ -50,7 +50,7 @@ test('applyScan：命中→ok＋入佇列；重複→dup 不重複入列；查�
 
 test('applyScan：快照標已報到（別台機器掃過）→dup', async () => {
   const h = await sha256Hex('CHK|act|002|sig');
-  const snap = {}; snap[h] = { empNo: '002', name: '李四', unit: '施工部', table: '1', checked: true };
+  const snap = {}; snap[h] = { empNo: '002', name: '呂華', unit: '施工部', table: '1', checked: true };
   const r = applyScan({ seen: {}, queue: [] }, h, snap, 1000);
   assert.equal(r.verdict.type, 'dup');
   assert.equal(r.state.queue.length, 0);
@@ -71,7 +71,7 @@ test('chunkByLen：中文編碼膨脹也不超限（編碼後 ~9 倍）', () => 
 });
 
 test('searchNames：姓名子字串命中（name 表）', () => {
-  const t = { '王大明':{empNo:'1',name:'王大明',unit:'A'}, '李小華':{empNo:'2',name:'李小華',unit:'B'} };
+  const t = { '王大明':{empNo:'1',name:'王大明',unit:'A'}, '呂小文':{empNo:'2',name:'呂小文',unit:'B'} };
   const r = searchNames(t, '王');
   assert.equal(r.length, 1);
   assert.equal(r[0].empNo, '1');

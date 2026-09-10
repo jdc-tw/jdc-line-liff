@@ -34,7 +34,7 @@ function ctxWith(opt) {
     esc: (s) => String(s),
     __rdlXlsx: () => Promise.resolve(),
     seatCategories_: () => Promise.resolve(opt.groups || {
-      unitOrder: ['管理部'], owners: ['王小明'], guestsByOwner: { 王小明: ['千容營造'] },
+      unitOrder: ['管理部'], owners: ['王小明'], guestsByOwner: { 王小明: ['于小明明'] },
       byUnit: { 管理部: ['甲'] }, empCount: 1, guestSeats: 1,
     }),
     guestOwnerOrder: (owners) => owners.slice(),
@@ -55,7 +55,7 @@ function ctxWith(opt) {
 // ── dlAttendees：餵給 buildAttendeeAoa 的四個參數 ──────────────────────
 const SEATS = [
   { kind: 'emp', name: '甲', unit: '管理部', title: '主任', table: '1' },
-  { kind: 'guest', name: '千容營造', unit: '王小明', table: '' },
+  { kind: 'guest', name: '于小明明', unit: '王小明', table: '' },
 ];
 const SB_OK = { actName: '2026年中聚餐', seats: SEATS, ranks: { 主任: 4 } };
 

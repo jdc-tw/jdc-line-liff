@@ -25,7 +25,7 @@ function extractFn(name) {
   return m[0];
 }
 
-const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name: '王瑩', table: '8',
+const RES = { ok: true, published: true, code: 'CHK|midyear2026|A001|sig', name: '嚴孝', table: '8',
               actId: 'midyear2026', activity: { name: '2026 年中聚餐' } };
 
 /* ═══════════ startPass 的三條出口（②③ ＋ 保險絲）═══════════ */

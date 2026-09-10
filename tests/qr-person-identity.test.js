@@ -21,11 +21,11 @@ function fnSrc(name) {
   return m[0];
 }
 
-// 同名不同人：兩個「李明」，內部碼不同、單位不同。
+// 同名不同人：兩個「呂仁」，內部碼不同、單位不同。
 const ROWS = [
-  { internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部', code: 'CHK|act|JDC-HJKMNP|SIG1' },
-  { internalId: 'JDC-BBBBBB', name: '李明', unit: 'B部', code: 'CHK|act|JDC-BBBBBB|SIG2' },
-  { internalId: 'JDC-CCCCCC', name: '陳大同', unit: 'A部', code: 'CHK|act|JDC-CCCCCC|SIG3' },
+  { internalId: 'JDC-HJKMNP', name: '呂仁', unit: 'A部', code: 'CHK|act|JDC-HJKMNP|SIG1' },
+  { internalId: 'JDC-BBBBBB', name: '呂仁', unit: 'B部', code: 'CHK|act|JDC-BBBBBB|SIG2' },
+  { internalId: 'JDC-CCCCCC', name: '安小昌', unit: 'A部', code: 'CHK|act|JDC-CCCCCC|SIG3' },
 ];
 
 function loadFindQr() {
@@ -58,7 +58,7 @@ test('★findQr：有內部碼卻找不到 → 回 null，不可以退回姓名�
    ⇒ 那個 fallback 沒有「正確」的情況，所以不是收緊，是拿掉。 */
 
 test('🔴★findQr：沒有內部碼時一律回 null——即使 rows 裡有同名的人', () => {
-  // 這一條是 D 的最小重現。舊版在這裡會回傳李明那一筆，而呼叫端的卡片上寫著的是
+  // 這一條是 D 的最小重現。舊版在這裡會回傳呂仁那一筆，而呼叫端的卡片上寫著的是
   // 另一個人的名字 ⇒ 印出來發下去，報到時記成別人。
   //
   // ⚠️ **姓名一定要傳進去**，即使現行簽名只吃兩個參數。第一版我只傳兩個，
@@ -66,7 +66,7 @@ test('🔴★findQr：沒有內部碼時一律回 null——即使 rows 裡有�
   // 誰都比不中，照樣回 null。測試沒有重現那個缺陷，而它看起來像測到了。
   // 要重現就得用**生產呼叫端的姿勢**：那裡手上一直有姓名。
   const findQr = loadFindQr();
-  ['李明', '陳大同'].forEach((nm) => {
+  ['呂仁', '安小昌'].forEach((nm) => {
     assert.equal(findQr(ROWS, '', nm), null, `空字串的 id 竟然靠「${nm}」比中了`);
     assert.equal(findQr(ROWS, null, nm), null);
     assert.equal(findQr(ROWS, undefined, nm), null);
@@ -76,7 +76,7 @@ test('🔴★findQr：沒有內部碼時一律回 null——即使 rows 裡有�
 
 test('對照組：同一批 rows 給對的內部碼就找得到——證明回 null 不是全部都找不到', () => {
   const findQr = loadFindQr();
-  assert.equal(findQr(ROWS, 'JDC-CCCCCC').name, '陳大同');
+  assert.equal(findQr(ROWS, 'JDC-CCCCCC').name, '安小昌');
 });
 
 /* ── 接線：座位表要真的把內部碼傳進去 ─────────────────────────────────────── */
@@ -137,9 +137,9 @@ test('★接線：座位表點名字時，帶進去的是內部碼不是只有�
   // 而它一旦開始依賴 id，這條就會紅。
   // 另一半在後端（seating-identity.test.js：getSeatingBoard 必須吐 internalId 且等於 id）。
   const html = renderSeats([
-    { kind: 'emp', internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部', table: '1' },
+    { kind: 'emp', internalId: 'JDC-HJKMNP', name: '呂仁', unit: 'A部', table: '1' },
   ]);
-  assert.ok(html.indexOf("showPerson('JDC-HJKMNP','李明')") >= 0,
+  assert.ok(html.indexOf("showPerson('JDC-HJKMNP','呂仁')") >= 0,
     '座位表沒有把內部碼傳給 showPerson，findQr 會收到 undefined 然後安靜地退回姓名比對。實際產出：' + html);
 });
 
@@ -147,9 +147,9 @@ test('🔴對照組：只把內部碼拿掉，`id` 給一個**不同的**誘餌�
   // 🔴 這條原本把 `id` 與 `internalId` **都設成空字串** ⇒ 一樣分不出 renderer 讀哪一格。
   //    與上面那條是同一個形狀，而它出現了兩次——**這種形狀不會只出現一次。**
   const html = renderSeats([
-    { kind: 'emp', id: 'JDC-DECOYX', internalId: '', name: '李明', unit: 'A部', table: '1' },
+    { kind: 'emp', id: 'JDC-DECOYX', internalId: '', name: '呂仁', unit: 'A部', table: '1' },
   ]);
-  assert.ok(html.indexOf("showPerson('','李明')") >= 0, '實際產出：' + html);
+  assert.ok(html.indexOf("showPerson('','呂仁')") >= 0, '實際產出：' + html);
   assert.ok(html.indexOf("showPerson('JDC-DECOYX'") < 0,
     'internalId 是空的時候改去讀 `id`＝那個人會被當成別人叫出 QR。實際產出：' + html);
 });
@@ -169,7 +169,7 @@ test('🔴★員工卡的兩個動作必須用同一個身分（分歧＝叫出 
   // （產品碼已改成員工一律用 internalId）。後端 seating-identity 的
   // 「getSeatingBoard 吐的 id === internalId」是第二道，兩道各自獨立。
   const html = renderSeats([
-    { kind: 'emp', id: 'JDC-AAAA11', internalId: 'JDC-BBBB22', name: '李明', unit: 'A部', table: '1' },
+    { kind: 'emp', id: 'JDC-AAAA11', internalId: 'JDC-BBBB22', name: '呂仁', unit: 'A部', table: '1' },
   ]);
   const person = /showPerson\('([^']*)'/.exec(html);
   const move = /moveSeat\('emp','([^']*)'/.exec(html);
@@ -201,13 +201,13 @@ test('★批次 zip：同名同單位的兩個人不會共用同一個檔名（�
   const used = {};
   const nameOf = (p) => ctx.qrFileName(p, used);
   const same = [
-    { internalId: 'JDC-HJKMNP', name: '李明', unit: 'A部' },
-    { internalId: 'JDC-BBBBBB', name: '李明', unit: 'A部' },
+    { internalId: 'JDC-HJKMNP', name: '呂仁', unit: 'A部' },
+    { internalId: 'JDC-BBBBBB', name: '呂仁', unit: 'A部' },
   ];
   const files = same.map(nameOf);
   assert.notEqual(files[0], files[1], '兩個檔名一樣＝後面那張把前面那張蓋掉，zip 裡就少一張');
-  assert.equal(files[0], 'A部_李明.png', '沒撞名的那一張要維持原本乾淨的檔名');
-  assert.equal(files[1], 'A部_李明_JDC-BBBBBB.png');
+  assert.equal(files[0], 'A部_呂仁.png', '沒撞名的那一張要維持原本乾淨的檔名');
+  assert.equal(files[1], 'A部_呂仁_JDC-BBBBBB.png');
 });
 
 /* ═══ 後端算出來的「誰沒拿到碼」不可以在前端接縫被裁掉（外審第三輪 #3／#4）═══

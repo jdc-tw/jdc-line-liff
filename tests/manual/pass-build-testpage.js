@@ -24,10 +24,10 @@ const ACT = { name: '2026 年中聚餐', eventDate: '2026/08/28' };
 const CASES = {
   // 數字桌號：大字 64px ＋ 後面接「桌」
   numeric:  { ok: true, code: 'CHK|demoAct|00011|sigX', actId: 'demoAct',
-              name: '洪炫佑', table: '21', published: true, activity: ACT },
+              name: '喻小宇', table: '21', published: true, activity: ACT },
   // 非數字桌號：「主桌」後面不可以再接一個「桌」字
   word:     { ok: true, code: 'CHK|demoAct|00012|sigY', actId: 'demoAct',
-              name: '中西豊', table: '主桌', published: true, activity: ACT },
+              name: '俞小美', table: '主桌', published: true, activity: ACT },
   // 桌次未發布：整區不出現，不留「未定」佔位
   notable:  { ok: true, code: 'CHK|demoAct|00013|sigZ', actId: 'demoAct',
               name: '柯佳岑', table: null, published: false, activity: ACT },

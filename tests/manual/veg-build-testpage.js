@@ -1,5 +1,5 @@
 /**
- * 產生 UI 驗收用的測試頁 /tmp/veg-test.html。
+ * 產生 UI 宋幼安的測試頁 /tmp/veg-test.html。
  *
  * 手法：把 stats.html 原封複製，只在最前面插一段 script 覆寫 window.fetch，
  * 讓所有 GAS 請求回 veg-fixture。**只換網路層，不碰 DOM**——
@@ -22,27 +22,27 @@ const fs = require('fs');
 const path = require('path');
 const FIXTURE = require('./veg-fixture.js');
 
-const ACTS = { ok: true, rows: [{ id: 'actTEST', name: '驗收用活動', status: '開放', open: true, replies: 5 }] };
+const ACTS = { ok: true, rows: [{ id: 'actTEST', name: '宋幼安活動', status: '開放', open: true, replies: 5 }] };
 
 // 報到碼通知（2026-08-16）：預覽必須回真實形狀，否則驗不到「未發布時發送鈕不解鎖」。
 // 兩種情境由網址 ?bc=nopub 切換——published:false 是最該驗的那條（送出去收不回來）。
 const BC_TPL = '【{活動名}】　{日期}\n您的桌次：{桌次}\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\n{連結}';
 const BC_OK = {
-  ok: true, actName: '驗收用活動', eventDate: '2026/08/28', published: true,
-  participants: 137, willSend: 135, unbound: ['甲同仁', '乙同仁'],
-  sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
+  ok: true, actName: '宋幼安活動', eventDate: '2026/08/28', published: true,
+  participants: 137, willSend: 135, unbound: ['塗小明', '倪小明'],
+  sample: '【宋幼安活動】　2026/08/28\n您的桌次：21 桌\n\n報到碼請由下方連結開啟，現場出示給工作人員掃描：\nhttps://liff.line.me/2010451233-a781rqsm?mode=pass&act=actTEST',
   template: BC_TPL, defaultTemplate: BC_TPL, tplHasUrl: true,
   schedule: null, defaultDate: '2026-08-27', hasDate: true,
   // 補發下拉用的名單（依單位分組）
   people: [
-    { userId: 'U_a', name: '洪炫佑', unit: '工務管理組' },
+    { userId: 'U_a', name: '喻小宇', unit: '工務管理組' },
     { userId: 'U_b', name: '柯佳岑', unit: '工務管理組' },
-    { userId: 'U_c', name: '中西豊', unit: '支店主管' }] };
+    { userId: 'U_c', name: '俞小美', unit: '支店主管' }] };
 const BC_NOPUB = Object.assign({}, BC_OK, { published: false });
 // ?bc=nourl → 範本被刪掉 {連結}，驗「發送鈕不解鎖＋紅字提醒」
 const BC_NOURL = Object.assign({}, BC_OK, {
   template: '【{活動名}】　{日期}\n您的桌次：{桌次}', tplHasUrl: false,
-  sample: '【驗收用活動】　2026/08/28\n您的桌次：21 桌' });
+  sample: '【宋幼安活動】　2026/08/28\n您的桌次：21 桌' });
 
 // 2026-08-16：掃描站改由 getSeatingBoard 一併帶回（省一趟 /exec），
 // fixture 要跟著補 stations，否則驗不到併車那條路、只會驗到「站別是空的」。
@@ -56,7 +56,7 @@ const RESPONSES = {
   getSeatingBoard: Object.assign({}, FIXTURE, { stations: STATIONS }),
   listActivities: ACTS,
   getAnniversaries: { ok: true, year: 2026, rows: [
-    { name: '林玉娟', unit: '宸實永寧', years: 20, date: '2006-08-08' },
+    { name: '周小雅', unit: '宸實永寧', years: 20, date: '2006-08-08' },
     { name: '賴雅慧', unit: '管理部', years: 15, date: '2011-04-21' }] },
   previewPassBroadcast: BC_OK,
   // 掃描站管理：一站已存在，用來驗列表／複製／換發／刪除的畫面
@@ -67,19 +67,19 @@ const RESPONSES = {
     titles: ['忘年會表揚提醒', '社內報問卷邀請', '問卷截止提醒'],
     templates: ['第一則內容（忘年會）', '第二則內容（問卷邀請）', '第三則內容（截止提醒）'],
     audience: [
-      { name: '林玉娟', unit: '宸實永寧', years: 20, date: '2006-08-08', userId: 'U_lin', status: 'ok' },
+      { name: '周小雅', unit: '宸實永寧', years: 20, date: '2006-08-08', userId: 'U_lin', status: 'ok' },
       { name: '賴雅慧', unit: '管理部', years: 15, date: '2011-04-21', userId: 'U_lai', status: 'ok' },
       { name: '未綁定者', unit: '施工部', years: 10, date: '2016-01-01', userId: '', status: 'unbound' },
       { name: '同名者', unit: '施工圖組', years: 5, date: '2021-01-01', userId: '', status: 'ambiguous' }],
-    sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['林玉娟', '賴雅慧'] } } },
+    sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['周小雅', '賴雅慧'] } } },
   saveSeniorTemplate: { ok: true },
   savePassTemplate: { ok: true },
   // 回覆明細：同一單位要有參加也有不參加，才驗得到「不參加 N」那顆標籤
   getActivityReplies: { ok: true, rows: [
-    { unit: '工務管理組', name: '洪炫佑', attend: '參加',   diet: '葷', time: '07/01 10:00', opinion: '' },
+    { unit: '工務管理組', name: '喻小宇', attend: '參加',   diet: '葷', time: '07/01 10:00', opinion: '' },
     { unit: '工務管理組', name: '柯佳岑', attend: '不參加', diet: '',   time: '07/01 11:00', opinion: '當天出差' },
-    { unit: '工務管理組', name: '甲三',   attend: '不參加', diet: '',   time: '07/02 09:00', opinion: '' },
-    { unit: '支店主管',   name: '中西豊', attend: '參加',   diet: '素', time: '07/01 09:00', opinion: '' }] },
+    { unit: '工務管理組', name: '塗美',   attend: '不參加', diet: '',   time: '07/02 09:00', opinion: '' },
+    { unit: '支店主管',   name: '俞小美', attend: '參加',   diet: '素', time: '07/01 09:00', opinion: '' }] },
   schedulePassBroadcast: { ok: true },
   cancelPassSchedule: { ok: true },
   addSeniorTemplate: { ok: true, idx: 3 },
@@ -92,7 +92,7 @@ const RESPONSES = {
       listActivities: ACTS,
       getActivityStats: { ok: false, msg: '（驗收頁不驗統計分頁）' },
       getAnniversaries: { ok: true, year: 2026, rows: [
-        { name: '林玉娟', unit: '宸實永寧', years: 20, date: '2006-08-08' }] },
+        { name: '周小雅', unit: '宸實永寧', years: 20, date: '2006-08-08' }] },
     },
   },
 };
@@ -109,10 +109,10 @@ const stub = `<script>
   // 驗 surfaceErr() 有沒有把原因撈出來——這是唯一能證明它有效的情境。
   var _sc = new URLSearchParams(location.search).get('sched');
   if (_sc === 'on') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
-    { schedule: { date: '2026-08-27', time: '16:00', status: 'scheduled', by: '洪炫佑' } });
+    { schedule: { date: '2026-08-27', time: '16:00', status: 'scheduled', by: '喻小宇' } });
   // ?sched=old → 加時間功能（2026-08-24）之前存的預約：沒有 time 欄位，畫面該顯示 09:00（當年每日掃描時刻）
   if (_sc === 'old') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
-    { schedule: { date: '2026-08-27', status: 'scheduled', by: '洪炫佑' } });
+    { schedule: { date: '2026-08-27', status: 'scheduled', by: '喻小宇' } });
   if (_sc === 'nodate') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,
     { hasDate: false, eventDate: '' });
   if (_sc === 'sent') R.previewPassBroadcast = Object.assign({}, R.previewPassBroadcast,

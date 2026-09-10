@@ -1,5 +1,5 @@
 /**
- * 產生進場牆（wall.html）UI 驗收用的測試頁。
+ * 產生進場牆（wall.html）UI 宋幼安的測試頁。
  *
  * 手法沿用 veg-build-testpage.js：把 wall.html 原封複製，只在 <head> 最前面插一段 script
  * 覆寫 window.fetch，讓 GAS 請求依序回一連串「越來越多人報到」的假回應。
@@ -51,8 +51,8 @@ const UNITS = BIG
 /* 姓名要像真的姓名。第一版把測試用的人名取成「工務1」「業務7」，
    結果牆上顯示出來像是單位名——使用者以為程式顯示錯了，其實是測資取名的問題。 */
 const 姓 = '陳林黃張李王吳劉蔡楊許鄭謝洪郭邱曾廖賴徐周葉蘇莊呂江何蕭羅高'.split('');
-const 名 = ['彥廷', '宗翰', '雅婷', '怡君', '家豪', '育誠', '佩珊', '俊宏', '詩涵', '冠宇',
-  '思穎', '建良', '美玲', '志偉', '淑芬', '孟儒', '品妤', '柏翰', '昱安', '欣怡'];
+const 名 = ['幼善', '幼義', '小義', '幼武', '幼和', '幼雅', '幼勇', '小傑', '幼婷', '幼忠',
+  '幼文', '幼真', '幼豪', '幼德', '小豪', '幼信', '幼孝', '幼傑', '幼英', '幼志'];
 const PARTS = [];
 let seq = 0;
 UNITS.forEach(function (u, ui) {
@@ -79,7 +79,7 @@ const STEPS = [0, 1, 2, 3, 4, 5].map(function (s) {
 
 const SEQ = STEPS.map(function (arrived, i) {
   const w = buildArrivalWall(PARTS, arrived, 30);
-  w.ok = true; w.actName = '驗收用活動'; w.eventDate = '2026/08/28';
+  w.ok = true; w.actName = '宋幼安活動'; w.eventDate = '2026/08/28';
   w.at = '18:' + String(i * 7).padStart(2, '0');
   return w;
 });

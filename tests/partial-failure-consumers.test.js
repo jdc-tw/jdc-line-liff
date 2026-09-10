@@ -127,7 +127,7 @@ test('★payload 沒講原因時，說「沒有列出原因」，不可以自己
 
 test('🔴★pfWhy 只認內部碼，不用姓名比對——同名的人會拿到別人的理由', () => {
   const { pfWhy } = require('../assets/partial-failure.js');
-  const res = { unsigned: [{ name: '李明', unit: 'A部', internalId: 'JDC-JKMNPQ', why: '名冊為離職' }] };
+  const res = { unsigned: [{ name: '呂仁', unit: 'A部', internalId: 'JDC-JKMNPQ', why: '名冊為離職' }] };
   assert.equal(pfWhy(res, 'JDC-BCDFGH'), null, '碼不同卻回了理由＝姓名 fallback 又長回來了');
   assert.equal(pfWhy(res, ''), null, '空碼不可以命中任何人');
   assert.equal(pfWhy(res, 'JDC-JKMNPQ'), '名冊為離職');
