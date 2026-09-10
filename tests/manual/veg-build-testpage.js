@@ -36,7 +36,7 @@ const BC_OK = {
   // 補發下拉用的名單（依單位分組）
   people: [
     { userId: 'U_a', name: '喻小宇', unit: '工務管理組' },
-    { userId: 'U_b', name: '柯佳岑', unit: '工務管理組' },
+    { userId: 'U_b', name: '丁小瑞', unit: '工務管理組' },
     { userId: 'U_c', name: '俞小美', unit: '支店主管' }] };
 const BC_NOPUB = Object.assign({}, BC_OK, { published: false });
 // ?bc=nourl → 範本被刪掉 {連結}，驗「發送鈕不解鎖＋紅字提醒」
@@ -57,7 +57,7 @@ const RESPONSES = {
   listActivities: ACTS,
   getAnniversaries: { ok: true, year: 2026, rows: [
     { name: '周小雅', unit: '宸實永寧', years: 20, date: '2006-08-08' },
-    { name: '賴雅慧', unit: '管理部', years: 15, date: '2011-04-21' }] },
+    { name: '丁小恆', unit: '管理部', years: 15, date: '2011-04-21' }] },
   previewPassBroadcast: BC_OK,
   // 掃描站管理：一站已存在，用來驗列表／複製／換發／刪除的畫面
   listStaffStations: { ok: true, actId: 'actTEST', rows: STATIONS },
@@ -68,16 +68,16 @@ const RESPONSES = {
     templates: ['第一則內容（忘年會）', '第二則內容（問卷邀請）', '第三則內容（截止提醒）'],
     audience: [
       { name: '周小雅', unit: '宸實永寧', years: 20, date: '2006-08-08', userId: 'U_lin', status: 'ok' },
-      { name: '賴雅慧', unit: '管理部', years: 15, date: '2011-04-21', userId: 'U_lai', status: 'ok' },
+      { name: '丁小恆', unit: '管理部', years: 15, date: '2011-04-21', userId: 'U_lai', status: 'ok' },
       { name: '未綁定者', unit: '施工部', years: 10, date: '2016-01-01', userId: '', status: 'unbound' },
       { name: '同名者', unit: '施工圖組', years: 5, date: '2021-01-01', userId: '', status: 'ambiguous' }],
-    sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['周小雅', '賴雅慧'] } } },
+    sent: { '2026|0': { at: '2026-01-14 09:30', count: 9, names: ['周小雅', '丁小恆'] } } },
   saveSeniorTemplate: { ok: true },
   savePassTemplate: { ok: true },
   // 回覆明細：同一單位要有參加也有不參加，才驗得到「不參加 N」那顆標籤
   getActivityReplies: { ok: true, rows: [
     { unit: '工務管理組', name: '喻小宇', attend: '參加',   diet: '葷', time: '07/01 10:00', opinion: '' },
-    { unit: '工務管理組', name: '柯佳岑', attend: '不參加', diet: '',   time: '07/01 11:00', opinion: '當天出差' },
+    { unit: '工務管理組', name: '丁小瑞', attend: '不參加', diet: '',   time: '07/01 11:00', opinion: '當天出差' },
     { unit: '工務管理組', name: '塗美',   attend: '不參加', diet: '',   time: '07/02 09:00', opinion: '' },
     { unit: '支店主管',   name: '俞小美', attend: '參加',   diet: '素', time: '07/01 09:00', opinion: '' }] },
   schedulePassBroadcast: { ok: true },

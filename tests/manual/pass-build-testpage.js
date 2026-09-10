@@ -30,7 +30,7 @@ const CASES = {
               name: '俞小美', table: '主桌', published: true, activity: ACT },
   // 桌次未發布：整區不出現，不留「未定」佔位
   notable:  { ok: true, code: 'CHK|demoAct|00013|sigZ', actId: 'demoAct',
-              name: '柯佳岑', table: null, published: false, activity: ACT },
+              name: '丁小瑞', table: null, published: false, activity: ACT },
   // 伺服器挑不到場次
   noact:    { ok: false, msg: '目前沒有可報到的活動。' },
 };
