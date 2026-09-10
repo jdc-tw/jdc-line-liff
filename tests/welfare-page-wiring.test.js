@@ -41,6 +41,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+const S = require('./helpers/source-scan.js');
+
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'welfare.html'), 'utf8');
 
 function extract(re, what) {
@@ -48,8 +50,14 @@ function extract(re, what) {
   assert.ok(m, `welfare.html 裡找不到 ${what}——改名了就要同步改這支測試`);
   return m[0];
 }
-const fnSrc = (name) =>
-  extract(new RegExp('^function ' + name + '\\([\\s\\S]*?^}', 'm'), `function ${name}`);
+/**
+ * 🔴 2026-09-10（F5）：這裡原本是近似變體 A（`^function N(` 到行首 `}`）。
+ * 實測它在**這一頁**就對 5 支一行寫法的函式取錯（`q` 多吞 1,919 字元），
+ * 而下面 `ctxWith` 會把取到的東西 `runInContext` **執行掉**
+ * ⇒ 多吞的那一段會把隔壁的定義一起灌進 context，而測試照樣綠。
+ * 改走引擎剖析（規格保證逐字）。盲區與反例在 `source-scan-tripwire.test.js`。
+ */
+const fnSrc = (name) => S.fnSrc(name);
 
 /** 裝好 stub 的 context，把指定的幾支原始碼跑進去。 */
 function ctxWith(names, opt) {
@@ -129,6 +137,41 @@ function ctxWith(names, opt) {
   names.forEach((n) => vm.runInContext(fnSrc(n), ctx, { filename: n }));
   return { ctx, calls, els, el };
 }
+
+/* ══ 🔴 這個檔用的是哪一種取法——不釘的話，換回近似沒有任何訊號 ══════════
+ *
+ * 2026-09-10（F5）實測：把上面的 `fnSrc` 改回近似變體 A，**全套 805 條一條都沒紅**。
+ * ⇒ 那次替換當時是**預防性**的（今天沒有一支一行寫法的函式被 `ctxWith` 用到），
+ *   而預防性改動如果沒有守門，下一個人改回去是零訊號的。
+ *
+ * ⚠️ 這兩條釘的不是「原始碼長什麼樣」，是**行為**：拿這一頁真的有的一行寫法函式
+ *    去問取法本身。改回近似 ⇒ 取到的東西會吃進隔壁 ⇒ 這裡會紅。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+test('🔴 取函式本體用的是引擎剖析，不是近似（近似會吃進隔壁）', () => {
+  // 這一頁 2026-09-10 有 5 支一行寫法的函式（q／bumpUiGen／showOtpInput／
+  // hideOtpInput／otpValue）。近似變體 A 找不到行首 `}`，會一路吞到下一支。
+  // ⚠️ 不寫死是哪一支——改成多行寫法是合法的，寫死會讓這條在無關的改動上紅。
+  const 一行的 = ['q', 'bumpUiGen', 'showOtpInput', 'hideOtpInput', 'otpValue']
+    .filter((n) => { try { return fnSrc(n).indexOf('\n') < 0; } catch (e) { return false; } });
+  assert.ok(一行的.length > 0,
+    '這一頁已經沒有一行寫法的函式了 ⇒ 這條失去對象。'
+    + '先確認不是 fnSrc 壞掉（它會丟例外，被上面的 try 吃掉），再決定要不要刪。');
+  一行的.forEach((n) => {
+    const b = fnSrc(n);
+    assert.ok(b.startsWith('function ' + n + '('), n + ' 取到的開頭不對：' + b.slice(0, 60));
+    assert.ok(b.indexOf('\nfunction ') < 0,
+      n + ' 的本體裡出現了下一支函式 ⇒ 取法退回近似了，而 ctxWith 會把它一起執行進 context，'
+      + '蓋掉刻意放的替身——測試會照樣綠。取到的：' + b.slice(0, 300));
+  });
+});
+
+test('🔴 剝註解守住行數（下面「第 N 行」那條的 N 靠它才是真的）', () => {
+  const 樣本 = 'a\n<!-- 一\n   二 -->\nb\n/* 三\n 四 */\nc';
+  assert.equal(stripComments(樣本).split('\n').length, 樣本.split('\n').length,
+    '剝完行數變了 ⇒「不可以有人直接呼叫 gasCall」報的行號會整個偏掉，'
+    + '而偏掉的行號讀起來完全正常');
+});
 
 /* ── 對照組：抽取真的有抽到東西（否則下面測的是「空字串 vs 空字串」，恆綠）── */
 test('對照組：受測函式都抽得到，而且不是空的', () => {
@@ -799,15 +842,13 @@ test('🔴 送出結果一到，所有在途的狀態查詢都要失效', () => 
  *    ⇒ 不剝的話「頁面上不可以有刪除入口」那條會**永遠是紅的**，
  *    而永遠響的紅燈會讓人學會無視它——比沒有判準更糟。
  */
-function stripComments(src) {
-  return src
-    .replace(/<!--[\s\S]*?-->/g, '')      // HTML 註解
-    .replace(/\/\*[\s\S]*?\*\//g, '')     // JS 區塊註解
-    .split('\n').map((ln) => {
-      const i = ln.indexOf('//');
-      return i < 0 || /https?:$/.test(ln.slice(0, i)) ? ln : ln.slice(0, i);
-    }).join('\n');
-}
+/**
+ * 🔴 2026-09-10（F5）：改走共用的那一支。行為差一格且那一格是**修正**——
+ * 共用版把註解換成等量的換行，**行數守住**。原本這裡是整段刪掉，
+ * 於是下面「不可以有人直接呼叫 gasCall」報的「第 N 行」**一直是錯的行號**
+ * （剝掉的行越多，偏移越大）。
+ */
+const stripComments = S.stripComments;
 
 test('🔴 對照組：剝註解真的有效', () => {
   const fake = '<!-- 註解裡的刪除 -->\n真的內容\n/* 也是註解的刪除 */\nvar a = 1; // 尾巴的刪除';
@@ -932,10 +973,17 @@ test('🔴 全頁只能有一個地方直接叫 gasCall，而且它在 wfCall �
     '直接叫 gasCall 的地方有 ' + 呼叫點.length + ' 個。多出來的那個不會帶 idToken，'
     + '後端換守門之後它會永遠被擋，而症狀讀起來像「那支 action 壞了」');
 
-  const wf = SRC.match(/function wfCall\([\s\S]*?\n}/);
-  assert.ok(wf, '找不到 wfCall');
-  assert.match(wf[0], /gasCall\s*\(\s*GAS_URL/, '唯一那個呼叫點不在 wfCall 裡面');
-  assert.match(wf[0], /idToken:\s*freshIdToken\(\)/,
+  // 🔴 2026-09-10（F5）：這裡原本是 `SRC.match(/function wfCall\([\s\S]*?\n}/)`
+  //    ——近似變體 C，本體裡第一個出現在行首的 `}` 就收手。今天對 `wfCall` 剛好取對，
+  //    但它一旦加一段 if 區塊就會提早截斷，而截斷之後這兩條 `assert.match` 是 fail-open
+  //    ⇒ **靜默變綠**。改走引擎剖析（規格保證逐字）。
+  //    ⚠️ **這一格的突變今天是存活的**（2026-09-10 實測：改回近似 C，全套一條都沒紅）——
+  //    因為近似 C 對現在的 `wfCall` **剛好取對**（兩邊都是 221 字元，逐字相同）。
+  //    ⇒ 這是**預防性**替換，不是修一個正在咬的缺陷。它防的那件事構造得出來，
+  //      但只構造得在夾具上（`source-scan-tripwire.test.js` 的「反例 C」，那條是紅的）。
+  const wf = S.fnSrc('wfCall');
+  assert.match(wf, /gasCall\s*\(\s*GAS_URL/, '唯一那個呼叫點不在 wfCall 裡面');
+  assert.match(wf, /idToken:\s*freshIdToken\(\)/,
     'wfCall 沒有現場取 idToken ⇒ 全部九支都不會帶憑證');
 });
 
