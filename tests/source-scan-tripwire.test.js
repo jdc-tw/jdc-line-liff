@@ -254,8 +254,56 @@ test('絆線⑦b 計數式沒有剝註解：註解裡寫出那個樣式就會多
 const fs = require('node:fs');
 const path = require('node:path');
 
-/** 判準：原始碼裡出現「被引號或正規式包起來的 `function `」——拼函式宣告樣式必經之路。 */
-const 抽取式樣式 = /['"/][^'"/\n]*function\s/;
+/**
+ * 判準：原始碼裡**真的有**一段字串或正規式字面量，內容含 `function ` ——拼函式宣告樣式必經之路。
+ *
+ * 🔴 **2026-09-10 換過一次判準，這裡記為何換**（原本是一條正規式
+ *    `/['"\/][^'"\/\n]*function\s/`，讀作「引號或斜線 → 一段字 → function」）：
+ *    那條**不追引號有沒有關掉**，於是這兩種形狀會假陽性——
+ *      ① `['now','y1','y10'].forEach(function (k) {`
+ *         ← 它把 `'y10'` 的**收尾引號**當成開頭，後面接到 `].forEach(function `
+ *      ② `// 手寫的是近似取法：從 \u0060function 名(\u0060 數到括號閉合`
+ *         ← 註解裡提到這件事，就被當成在做這件事（**寫這段註解的當下就踩到了**）
+ *    ⚠️ 假陽性不是「吵一點而已」：它逼一個沒手寫抽取式的檔進「尚未遷移」清單，
+ *       而那份清單一旦收了不該收的名字，下面那條「只能縮短」就永遠不會為它響。
+ *       **清單會變成一份說謊的名冊——那正是這一節要防的東西。**
+ *
+ * ⬛ **換判準時量過的對照組**（新尺 vs 舊尺，同一個 tests/ 目錄）：
+ *      舊尺 22 個 → 新尺 20 個，**差集恰好是上面那兩支**，新尺沒有多抓任何一個。
+ *      三個已知手寫的仍被抓到：`old-code-behavior`（換行寫）、
+ *      `deny-no-role`／`pass-cache`（用**正規式字面量** `/^function 名\(/` 取本體）。
+ *      ⇒ 是修正，不是放寬。後兩支正是「只掃引號」會漏掉的方向，所以新尺也掃正規式字面量。
+ */
+function 抽取式樣式判定(src) {
+  let i = 0; const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') { while (i < n && src[i] !== '\n') i++; continue; }
+    if (c === '/' && src[i + 1] === '*') { const e = src.indexOf('*/', i + 2); if (e < 0) return false; i = e + 2; continue; }
+    if (c === "'" || c === '"' || c === '`') {          // 字串字面量
+      let j = i + 1, buf = '';
+      while (j < n && src[j] !== c) {
+        if (src[j] === '\\') { buf += src[j] + (src[j + 1] || ''); j += 2; continue; }
+        if (src[j] === '\n' && c !== '`') break;        // 單引號字串不跨行 ⇒ 沒關掉就是它自己壞了
+        buf += src[j]; j++;
+      }
+      if (/function\s/.test(buf)) return true;
+      i = j + 1; continue;
+    }
+    if (c === '/') {                                    // 正規式字面量（除法的話 buf 裡不會有 function）
+      let j = i + 1, buf = '';
+      while (j < n && src[j] !== '/' && src[j] !== '\n') {
+        if (src[j] === '\\') { buf += src[j] + (src[j + 1] || ''); j += 2; continue; }
+        buf += src[j]; j++;
+      }
+      if (src[j] === '/' && /function\s/.test(buf)) return true;
+      i = (src[j] === '/') ? j + 1 : j; continue;
+    }
+    i++;
+  }
+  return false;
+}
+const 抽取式樣式 = { test: 抽取式樣式判定 };
 
 /**
  * 🔴 這兩個檔**必然**含那個樣式，因為它們就是在講這件事。
@@ -302,6 +350,27 @@ test('🔴 清單只能縮短：已經遷移完的檔不可以還留在清單裡
   assert.deepStrictEqual(已經沒有了, [],
     '這幾個檔已經不手寫了，把它們從「尚未遷移」刪掉：\n  ' + 已經沒有了.join('\n  ')
     + '\n⇒ 留著的話這份清單會慢慢變成一份說謊的名冊。');
+});
+
+// 🔴 拆成兩條，不寫成一條。一條的話「假陽性不中」與「真陽性要中」共用一個紅燈，
+//    而它們防的是**相反方向**的失效（尺太鬆／尺太緊）——合在一起就分不出是哪一邊壞了。
+test('🔴 這把尺：兩種已知假陽性不可以中（尺太鬆 ⇒ 清單會收進不該收的名字）', () => {
+  // 換判準當天實際踩到的兩種形狀，逐字放在這裡當回歸。
+  assert.equal(抽取式樣式判定("['now', 'y1', 'y10'].forEach(function (k) { return k; });"), false,
+    '收尾引號被當成開頭 ⇒ 任何「字串陣列後面接 forEach(function」的檔都會被誤抓');
+  assert.equal(抽取式樣式判定('// 近似取法：從 `function 名(` 數到括號閉合'), false,
+    '註解裡**提到**這件事被當成在**做**這件事');
+
+});
+
+test('🔴 這把尺：三種已知真陽性一定要中（尺太緊 ⇒ 手寫的檔從中間走過去）', () => {
+  // 三種手寫抽取式實際用過的寫法，一種都不能漏。
+  assert.equal(抽取式樣式判定("const i = HTML.indexOf('function ' + name + '(');"), true,
+    '字串拼接式（hr-stats-pub-freshness 遷移前就是這種）');
+  assert.equal(抽取式樣式判定('const m = src.match(/^function passCacheUsable\\([\\s\\S]*?^}/m);'), true,
+    '正規式字面量式（deny-no-role／pass-cache 是這種）⇒ 只掃引號會整類漏掉');
+  assert.equal(抽取式樣式判定('const re = new RegExp(\n  "^function " + name\n);'), true,
+    '跨行寫法（old-code-behavior 是這種）⇒ 逐行比對會漏');
 });
 
 test('⬛ 零點：這道掃描真的掃得到東西（否則上面兩條在空集合上恆真）', () => {
