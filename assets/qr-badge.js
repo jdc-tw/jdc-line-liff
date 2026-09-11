@@ -6,7 +6,7 @@
  * 黑白格**——使用者一眼就看出兩者「不一致」。
  *
  * ⚠️ 兩顆 QR 掃出來的字串本來就一模一樣（實測同一人：
- * `CHK|midyear2026|10010|ZwSIpip…`，一字不差）。差的只有外觀。
+ * `CHK2|midyear2026|JDC-NPQRST|ZwSIpip…`，一字不差）。差的只有外觀。
  * 所以要修的是「畫法住在誰家」，不是重簽發碼——把它搬出來，兩邊只剩一份畫法可用。
  *
  * 用法：qrBadgeReady().then(function(){ el.appendChild(qrBadgeCanvas(code, name, actName)); });
@@ -44,7 +44,7 @@ function qrBadgeReady() {
 /**
  * QR 畫布：中央膠囊＝logo（原比例）＋活動名（與 logo 同寬）＋姓名（大一級），文字灰階。
  * 糾錯等級固定 'H'（30%）——中央蓋掉一塊還掃得到，靠的就是它，不要調低。
- * @param {string} code 報到碼（CHK|活動|員編|HMAC）
+ * @param {string} code 報到碼（CHK2|活動|內部碼|HMAC）
  * @param {string} name 姓名
  * @param {string} actName 活動名
  * @param {Image=} logo 省略則用模組內快取的那張

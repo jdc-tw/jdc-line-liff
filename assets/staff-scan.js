@@ -1,12 +1,41 @@
 /** 掃描頁純邏輯（staff.html 與 node --test 共用）。 */
 
 /**
- * 解析報到碼 `CHK|活動|內部碼|簽章`。
+ * 報到碼的**版本前綴**。必須與 `jdc-line-gas/line-platform/event-checkin.js` 的
+ * `CHECKIN_CODE_PREFIX` 逐字相同——兩端各自宣告一份，沒有共用層（兩個 repo 之間
+ * 沒有 submodule，為這一個字串開一層不划算）。分歧的症狀是「全場都掃不進去」，
+ * 吵、看得見，所以接受這份重複。
+ */
+var CHK_PREFIX = 'CHK2';
+
+/**
+ * 認得、但**已經不再簽發**的舊前綴。
+ *
+ * 🔴 這個清單存在的唯一理由：**讓「舊碼」與「查無此人」在畫面上分得開。**
+ * 2026-09-10 之前兩者長同一張臉——員編版的舊碼前綴是 `CHK`、也是四欄、活動 ID 也對，
+ * 於是它一路走到雜湊比對才失敗，落進 `unknown`，畫面說「查無此碼」，
+ * 跟「這個人根本不是公司的」一字不差。現場承辦人分不出來，只能請人到旁邊等。
+ *
+ * ⚠️ **在這裡認得舊前綴，不等於放行。** 判斷順序刻意是「先查快照，查不到才問版本」：
+ *   - 查得到 ⇒ 照常報到。部署窗口那 1–2 分鐘（前端已上、後端還在發舊碼）不會斷。
+ *   - 查不到 ⇒ 才看前綴決定要說「這是舊版的報到碼」還是「查無此人」。
+ * 這個寬容**會自己過期**，不是特例：後端一換前綴，快照就是新版建的，
+ * 任何 `CHK` 碼都不可能再雜湊命中。不需要拆除、不需要記得拆除。
+ *
+ * 下次 bump 成 `CHK3` 時，把 `'CHK2'` 加進這個陣列。
+ */
+var CHK_LEGACY_PREFIXES = ['CHK'];
+
+/**
+ * 解析報到碼 `CHK2|活動|內部碼|簽章`。
  *
  * 🔴 2026-09-02：第三格的**值**從員編換成內部碼，所以**欄名也跟著換**。
  * 取值邏輯（parts[2]）一個字都沒改，但欄名留著叫 empNo 的話，下一個讀這段
  * 程式的人必然誤讀——他會以為手上拿的是員編，拿去跟名冊的員編比對。
  * 值變了名字就要跟著變，這是跨層欄名一致的最後一道。
+ *
+ * 🔴 2026-09-11：加版本前綴。舊前綴**照樣往下走**，只是在回傳值裡標 `legacy: true`
+ * ——真正的判定留給雜湊。理由見 `CHK_LEGACY_PREFIXES`。
  *
  * ⚠️ 這裡回 ok 只代表「格式與活動對得上」，**不代表這張碼有效**。
  * 授權來自簽章驗證，而簽章是在後端簽的、由快照的雜湊比對來認——
@@ -14,10 +43,34 @@
  */
 function parseChkCode(text, actId) {
   var parts = String(text || '').split('|');
-  if (parts.length !== 4 || parts[0] !== 'CHK') return { ok: false, reason: 'format' };
+  if (parts.length !== 4) return { ok: false, reason: 'format' };
+  var legacy = CHK_LEGACY_PREFIXES.indexOf(parts[0]) !== -1;
+  if (parts[0] !== CHK_PREFIX && !legacy) return { ok: false, reason: 'format' };
   if (parts[1] !== actId) return { ok: false, reason: 'wrongAct' };
-  return { ok: true, internalId: parts[2] };
+  return { ok: true, internalId: parts[2], legacy: legacy };
 }
+
+/**
+ * 連續幾張「查無此人」之後，改口暗示**是名單有問題、不是這些人有問題**。
+ *
+ * 🔴 為何需要這個（2026-09-10 使用者拍板的第三格）：現場有三種情況畫面長得一模一樣，
+ * 而處置完全相反——①碼過期了 ②這個人根本不是公司的 ③系統壞了。
+ * ①已經由版本前綴分出去了（`CHK_LEGACY_PREFIXES`）。**③沒有任何專屬訊號**：
+ * 快照載進來了、但它是舊的或殘缺的，於是一整排真的在名單上的人被判成陌生人，
+ * 畫面與「這些人都是訪客」一字不差。
+ *
+ * **為什麼是 3。** 一個陌生人是偶發（真的有訪客走錯隊伍），兩個還可能是巧合，
+ * 連續三個沒有一個掃得進去，比較像是這台手機的名單有問題。門檻是拿「一次誤判的代價」
+ * 換「多久才講得出口」：講早了（設 2）會在真的有兩位訪客時誣賴系統，讓操作員去重載
+ * 一份其實沒問題的名單；講晚了（設 5）現場已經塞了五個人在旁邊等。
+ *
+ * ⚠️ **它只做提示，不做阻擋。** 連續三張仍然可能真的是三位訪客——所以那張卡片
+ * 要同時講得出「真的是訪客的話照樣請洽主辦」。把它變成阻擋就是拿一個猜測去擋真人。
+ *
+ * **什麼情況該調這個數字**：現場回報「還沒到三張就已經排隊了」⇒ 調小；
+ * 回報「常常誣賴系統、其實只是訪客多」⇒ 調大。判準是現場的實際回報，不是直覺。
+ */
+var UNKNOWN_STREAK_HINT = 3;
 
 /** SHA-256 → 小寫 hex（瀏覽器與 Node 19+ 都有 globalThis.crypto.subtle）。 */
 async function sha256Hex(text) {
@@ -155,5 +208,5 @@ function searchNames(nameTable, query) {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge, shouldHandleCode,
+if (typeof module !== 'undefined') module.exports = { CHK_PREFIX, CHK_LEGACY_PREFIXES, UNKNOWN_STREAK_HINT, parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames, seenLoad, seenSave, seenMerge, shouldHandleCode,
   shouldScanNow, scanCanvasSize, SCAN_INTERVAL_MS, SCAN_MAX_W };
