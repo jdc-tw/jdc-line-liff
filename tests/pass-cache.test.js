@@ -1,11 +1,11 @@
 const { test } = require('node:test'); const assert = require('node:assert');
 const { passCacheKey, passCacheUsable } = require('../assets/pass-cache.js');
 
-const OK = { v: '21', res: { published: true, code: 'CHK|a|1|s', table: '21' } };
+const OK = { v: '21', res: { published: true, code: 'CHK2|a|JDC-BCDFGH|s', table: '21' } };
 
 test('passCacheKey：以「人＋活動」分開；act 省略時歸 auto，不會跟指定場次互相污染', () => {
-  assert.equal(passCacheKey('U1', 'midyear2026'), 'jdcPass:v2:U1:midyear2026');
-  assert.equal(passCacheKey('U1', ''), 'jdcPass:v2:U1:auto');
+  assert.equal(passCacheKey('U1', 'midyear2026'), 'jdcPass:v3:U1:midyear2026');
+  assert.equal(passCacheKey('U1', ''), 'jdcPass:v3:U1:auto');
   assert.notEqual(passCacheKey('U1', 'a'), passCacheKey('U2', 'a'));
 });
 
@@ -16,16 +16,25 @@ test('passCacheKey：以「人＋活動」分開；act 省略時歸 auto，不�
  * 沒有版本段的話，圖文選單那顆常駐鈕（走 `:auto` 鍵、且「沒帶 v 就永不重抓」）會一直
  * 拿舊碼畫 QR，到現場掃不進去——而且畫面完全正常，沒有任何一層會喊。
  *
- * 加了 `v2` 之後，前端一部署，舊鍵整批讀不到 → 自動重抓一次 → 拿到內部碼版的 QR。
+ * 加了版本段之後，前端一部署，舊鍵整批讀不到 → 自動重抓一次 → 拿到新版的 QR。
  * 零使用者動作、零錯誤訊息。讀寫清三支全走 passCacheKey（index.html:516-526），所以改這裡就夠。
  *
- * ⚠️ 這裡**只驗鍵字串**。「舊鍵讀不到」要走真的 storage loader 才驗得出來（見 Task 6 Step 6）——
- * 把舊鍵存的有效 record 直接餵給 passCacheUsable，它會回 true，那是假綠。
+ * 🔴 **v2 → v3（2026-09-11，報到碼加 `CHK2` 前綴）。這一版的理由比上一版更硬。**
+ * 掃描站現在會對舊碼說「**請重新開啟通行證**」，而「重新開啟通行證」走的正是 `:auto` 鍵、
+ * 適用「沒帶 v 就永不重抓」⇒ **不 bump 的話他照做了卻拿到同一張舊碼**，再掃還是同一句話。
+ * ⇒ 這條測試守的不只是「舊快取會失效」，是「**畫面上那句指示是不是真的**」。
+ * 假的處置比沒有處置更貴。
+ *
+ * ⚠️ 這裡**只驗鍵字串**。「舊鍵讀不到」要走真的 storage loader 才驗得出來
+ * （見 old-code-behavior.test.js 的 Step 6）——把舊鍵存的有效 record 直接餵給
+ * passCacheUsable，它會回 true，那是假綠。
  */
-test('passCacheKey：帶版本段 v2，舊鍵不可能再被產生出來', () => {
-  assert.ok(passCacheKey('U1', 'a').indexOf(':v2:') !== -1, '鍵裡要有 v2 版本段');
-  assert.notEqual(passCacheKey('U1', 'a'), 'jdcPass:U1:a');       // 舊格式
-  assert.notEqual(passCacheKey('U1', ''), 'jdcPass:U1:auto');     // 舊格式（auto 鍵）
+test('🔴passCacheKey：帶版本段 v3，v2 與更早的鍵都不可能再被產生出來', () => {
+  assert.ok(passCacheKey('U1', 'a').indexOf(':v3:') !== -1, '鍵裡要有 v3 版本段');
+  assert.notEqual(passCacheKey('U1', 'a'), 'jdcPass:v2:U1:a');    // 上一版（員編→內部碼那次）
+  assert.notEqual(passCacheKey('U1', ''), 'jdcPass:v2:U1:auto');  // 上一版的 auto 鍵
+  assert.notEqual(passCacheKey('U1', 'a'), 'jdcPass:U1:a');       // 最早期（無版本段）
+  assert.notEqual(passCacheKey('U1', ''), 'jdcPass:U1:auto');
 });
 
 test('沒帶 v（圖文選單常駐鈕）→ 有快取就用，永不重抓', () => {

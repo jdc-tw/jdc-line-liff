@@ -200,10 +200,14 @@ var lastText = '', lastAt = 0;
 // 示範模式的假快照（真機測試掃桌面那五張 QR）。
 // ⚠️ 這五筆要跟正式路徑用同一種身分（2026-09-02 起是內部碼）——不然示範模式會整個
 //    壞掉，而那是承辦人唯一的練習管道，通常在活動前一晚才被打開。
+// 🔴 **前綴也要跟著正式路徑走**（2026-09-11）。這一格是一盞會永遠亮著的綠燈：
+//    假碼與假快照都在這個檔裡、雜湊當然對得上，所以**留著舊前綴，示範模式照樣會動**，
+//    只是承辦人練到的是「舊版報到碼」那條路，而畫面看起來完全正常。
+//    盯著它的是 staff-identity-wiring 的「示範碼必須用當下的前綴」那一條。
 var DEMO_CODES = [
-  'CHK|zzdemo2026|JDC-DMBCDF|sigA', 'CHK|zzdemo2026|JDC-DMGHJK|sigB',
-  'CHK|zzdemo2026|JDC-DMMNPQ|sigC', 'CHK|zzdemo2026|JDC-DMRSTV|sigD',
-  'CHK|zzdemo2026|JDC-DMWXYZ|sigE'];
+  'CHK2|zzdemo2026|JDC-DMBCDF|sigA', 'CHK2|zzdemo2026|JDC-DMGHJK|sigB',
+  'CHK2|zzdemo2026|JDC-DMMNPQ|sigC', 'CHK2|zzdemo2026|JDC-DMRSTV|sigD',
+  'CHK2|zzdemo2026|JDC-DMWXYZ|sigE'];
 var DEMO_PEOPLE = [
   { internalId:'JDC-DMBCDF', name:'測試甲', unit:'管理部',   table:'1' },
   { internalId:'JDC-DMGHJK', name:'測試乙', unit:'工務管理組', table:'2' },
@@ -970,6 +974,7 @@ function applySnapshotPayload(res) {
   setTopbar(res.actName, res.station);
   // E2 硬性規則：只替換快照兩張表；絕不動 state.seen 與回寫佇列（聯集非取代）
   snapshot = res.snapshot; nameTable = res.nameTable || {};
+  unknownStreak = 0;   // 名單換過了＝上一輪那串「查無此人」的前提沒了，不該繼續累積
   snapMeta = { version: res.snapshotVersion, generatedAt: res.generatedAt };
   document.getElementById('snapver').textContent = '名單版本：' + snapMeta.generatedAt
     + (res.unusable ? '　⚠ 有 ' + res.unusable + ' 人身分資料有誤、無法掃碼' : '');
@@ -1042,11 +1047,20 @@ function showIdle() {
   show('idle', '<div class="msg">請掃下一位</div>');
 }
 
+/**
+ * 連續幾張判成「查無此人」了。ok／dup 歸零，重新載入名單也歸零。
+ * 判準與「為什麼是 3」在 assets/staff-scan.js 的 UNKNOWN_STREAK_HINT。
+ */
+var unknownStreak = 0;
+
 async function handle(text, t0) {
   if (!ready) { note('dup', '名單載入中，請稍候再掃'); return; }   // 載入 gate
   var p = parseChkCode(text, ACT);
   if (!p.ok) {
-    note('bad', p.reason === 'wrongAct' ? '這是別場活動的碼' : '無法辨識的碼');
+    note('bad', p.reason === 'wrongAct' ? '這是別場活動的碼' : '無法辨識的碼',
+         p.reason === 'wrongAct'
+           ? '請他從 LINE 圖文選單重新開啟通行證，會換成這一場的碼'
+           : '這不是報到 QR，請確認掃的是通行證畫面上那一張');
     flashFrame('bad');
     return;
   }
@@ -1054,6 +1068,7 @@ async function handle(text, t0) {
   var r = applyScan(state, h, snapshot, Date.now());
   state = r.state;
   var ms = Math.round(performance.now() - t0);
+  if (r.verdict.type === 'ok' || r.verdict.type === 'dup') unknownStreak = 0;   // 掃得進去＝名單是好的
   if (r.verdict.type === 'ok') {
     // 順序與手動路徑一致，且不是各自寫對——**兩條共用 commitCheckin**（見該函式標頭）。
     // 第四格傳 true：verdict 是 ok 就代表 applyScan 認定他先前沒掃過
@@ -1075,8 +1090,32 @@ async function handle(text, t0) {
     personCard('dup', '已報到過', r.verdict.person);
     flashFrame('dup');
     holdThenIdle();
+  } else if (p.legacy) {
+    // 🔴 **這一格就是版本前綴買到的東西**（2026-09-10 使用者拍板）。
+    // 在這之前，員編版的舊碼與陌生人的碼都落進下面那一支，畫面一字不差，
+    // 而兩者的處置完全相反。現場承辦人分不出來，只能請人到旁邊等。
+    //
+    // ⚠️ 順序刻意是「查不到才問版本」，不是「看到舊前綴就拒」：
+    //    前端先上線、後端還在發舊碼的那 1–2 分鐘，舊碼仍然雜湊命中、仍然報到得了。
+    //    那個寬容會自己過期——後端一換前綴，就再也沒有舊碼命中得了快照。
+    // ⚠️ 這句指示只有在 assets/pass-cache.js 的 PASS_CK 同批 bump 過才成立。
+    //    沒 bump 的話他重開通行證會拿到同一張舊碼，**畫面叫他做的事做了沒有用**。
+    note('bad', '這是舊版的報到碼',
+         '請他從 LINE 圖文選單重新開啟通行證，QR 會自動換成新的，再掃一次');
+    flashFrame('bad');
+    holdThenIdle(5000);
   } else {
-    note('bad', '查無此碼', '快照裡沒有這個人，請洽主辦人工處理');
+    unknownStreak++;
+    if (unknownStreak >= UNKNOWN_STREAK_HINT) {
+      // 第三種情況：不是碼過期、也不是陌生人，是**這台的名單有問題**。
+      // 只提示不阻擋——連續三張仍然可能真的是三位訪客，所以那句話也要留在卡片上。
+      note('bad', '查無此人（連續 ' + unknownStreak + ' 張）',
+           '連續 ' + unknownStreak + ' 張都掃不進去，比較像是這台的名單有問題，'
+           + '不是這些人有問題——請點「重新載入名單」再試一次。'
+           + '真的是訪客的話，照樣請洽主辦人工處理。');
+    } else {
+      note('bad', '查無此人', '名單裡沒有這個人，請洽主辦人工處理');
+    }
     flashFrame('bad');
     holdThenIdle(5000);   // 錯誤要多留一會兒，操作員得有時間讀完並決定怎麼處理
   }

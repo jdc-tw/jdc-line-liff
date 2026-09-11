@@ -1,31 +1,77 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames,
+const { CHK_PREFIX, CHK_LEGACY_PREFIXES, UNKNOWN_STREAK_HINT,
+        parseChkCode, sha256Hex, applyScan, chunkByLen, searchNames,
         seenLoad, seenSave, seenMerge, shouldHandleCode,
         shouldScanNow, scanCanvasSize, SCAN_INTERVAL_MS, SCAN_MAX_W } = require('../assets/staff-scan.js');
 
 test('parseChkCode：格式正確回內部碼', () => {
-  assert.deepEqual(parseChkCode('CHK|nendkai2026|JDC-NPQRST|abc123', 'nendkai2026'),
-    { ok: true, internalId: 'JDC-NPQRST' });
+  assert.deepEqual(parseChkCode('CHK2|nendkai2026|JDC-NPQRST|abc123', 'nendkai2026'),
+    { ok: true, internalId: 'JDC-NPQRST', legacy: false });
+});
+
+test('🔴CHK_PREFIX 的字面值就是跨 repo 契約（另一端是 gas 的 CHECKIN_CODE_PREFIX）', () => {
+  // 兩個 repo 各自宣告一份、沒有共用層。這條釘住這一端的字面值，
+  // 另一端由 jdc-line-gas 的 event-checkin.test.js 釘住同一個字串。
+  // 分歧的症狀是「全場都掃不進去」——吵、看得見，所以接受這份重複。
+  assert.equal(CHK_PREFIX, 'CHK2');
+  assert.deepEqual(CHK_LEGACY_PREFIXES, ['CHK']);
+  assert.equal(CHK_LEGACY_PREFIXES.indexOf(CHK_PREFIX), -1,
+    '當下這一版跑進舊前綴清單＝每一張新碼都會被說成「舊版報到碼」');
+});
+
+test('🔴parseChkCode：舊前綴不判 format，要標 legacy 往下走', () => {
+  // **這條就是「舊碼」與「查無此人」分得開的第一步。**
+  // 舊寫法 `parts[0] !== 'CHK' → format` 之下，員編版舊碼是 ok（前綴一樣），
+  // 一路走到雜湊才失敗、落進 unknown，畫面與陌生人的碼一字不差。
+  //
+  // ⚠️ 這裡回 ok:true 不是放行——真正的判定仍在雜湊。刻意「先查快照、查不到才問版本」，
+  //    所以前端先上線、後端還在發舊碼的那 1–2 分鐘，舊碼仍然掃得進去，不會斷。
+  const r = parseChkCode('CHK|nendkai2026|00011|abc123', 'nendkai2026');
+  assert.equal(r.ok, true, '舊前綴被判成 format 的話，畫面會說「無法辨識的碼」而不是「舊版」');
+  assert.equal(r.legacy, true);
+  assert.equal(r.internalId, '00011', '第三格照原樣取出——不猜它是員編還是內部碼');
+});
+
+test('🔴parseChkCode：當下這一版不可以被標成 legacy', () => {
+  // 對照組。少了它，「legacy 恆為 true」也會讓上面那條通過，
+  // 而現場的每一張新碼都會被說成「這是舊版的報到碼」。
+  assert.equal(parseChkCode('CHK2|a|JDC-NPQRST|sig', 'a').legacy, false);
 });
 
 test('parseChkCode：回傳的欄名必須是 internalId，不可以還叫 empNo', () => {
   // 這條擋的不是「值對不對」，是**名字騙人**：值換成內部碼了、欄名還留著叫員編，
   // 下一個讀的人會拿它去跟名冊的員編比對，而那永遠對不上、也不會報錯。
-  const r = parseChkCode('CHK|a|JDC-NPQRST|sig', 'a');
+  const r = parseChkCode('CHK2|a|JDC-NPQRST|sig', 'a');
   assert.equal(r.internalId, 'JDC-NPQRST');
   assert.equal(r.empNo, undefined, '舊欄名不可以還存在——留著它等於兩種名字並存');
 });
 
 test('parseChkCode：活動不符拒絕', () => {
-  assert.deepEqual(parseChkCode('CHK|other2026|00011|abc123', 'nendkai2026'),
+  assert.deepEqual(parseChkCode('CHK2|other2026|JDC-NPQRST|abc123', 'nendkai2026'),
     { ok: false, reason: 'wrongAct' });
 });
 
-test('parseChkCode：非 CHK 前綴/欄數不對＝format', () => {
+test('parseChkCode：舊前綴＋別場活動，仍然先報 wrongAct（既有那條文案不被前綴吃掉）', () => {
+  // 「這是別場活動的碼」2026-08-31 就在了。版本前綴不該把它吃掉——
+  // 活動不符是比版本更具體的資訊，現場承辦人拿它才知道是「上一場的」。
+  assert.equal(parseChkCode('CHK|other2026|00011|abc', 'nendkai2026').reason, 'wrongAct');
+});
+
+test('parseChkCode：不認得的前綴/欄數不對＝format', () => {
   assert.equal(parseChkCode('WIN|x|y|z', 'a').reason, 'format');
+  assert.equal(parseChkCode('CHK3|a|b|c', 'a').reason, 'format', '還沒發明的版本也算不認得');
+  assert.equal(parseChkCode('CHK2|only', 'a').reason, 'format');
   assert.equal(parseChkCode('CHK|only', 'a').reason, 'format');
   assert.equal(parseChkCode('', 'a').reason, 'format');
+});
+
+test('UNKNOWN_STREAK_HINT：是個具名門檻，且落在講得出理由的範圍', () => {
+  // 不釘死成 3——現場回報會讓它調整（判準寫在 staff-scan.js 那支常數的標頭）。
+  // 釘的是「它存在、是數字、而且不是 1」：設成 1 等於第一個訪客就誣賴系統。
+  assert.equal(typeof UNKNOWN_STREAK_HINT, 'number');
+  assert.ok(UNKNOWN_STREAK_HINT >= 2 && UNKNOWN_STREAK_HINT <= 6,
+    '超出這個範圍就不是「偶發 vs 系統」的判斷了：實際值 ' + UNKNOWN_STREAK_HINT);
 });
 
 test('sha256Hex：已知向量', async () => {

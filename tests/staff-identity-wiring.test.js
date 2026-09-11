@@ -77,6 +77,8 @@ function harness(opt) {
     updateQueueBadge: () => {},
     saveSeen: () => {},
     seenMerge: scan.seenMerge,
+    // 連續「查無此人」的計數（2026-09-11，三種情況的第三種）。常數取真貨。
+    unknownStreak: 0, UNKNOWN_STREAK_HINT: scan.UNKNOWN_STREAK_HINT,
     sha256Hex: scan.sha256Hex,
     parseChkCode: scan.parseChkCode,
     applyScan: scan.applyScan,
@@ -138,6 +140,21 @@ test('★示範模式：五張假 QR 各自對到一個人，桌次也查得到'
   assert.equal(ctx.tableOf('JDC-NBDYZB'), '', '不在名單上的回空字串＝臨時出席');
 });
 
+test('🔴★示範模式：假 QR 必須用**當下這一版**的前綴（一盞會永遠亮著的綠燈）', async () => {
+  // 🔴 這一格不做的話，DEMO **照樣會動**：假碼與假快照都在 staff.html 裡、雜湊當然對得上。
+  // 壞掉的是承辦人練到的東西——他練的是「舊版報到碼」那條路，而畫面看起來完全正常。
+  // 綠燈沒有人會回頭質疑，所以這條必須明著斷言前綴，不能靠「DEMO 跑得起來」代替。
+  //
+  // DEMO 是承辦人唯一的練習管道，通常在活動前一晚才被打開——那時沒有人有空修。
+  const ctx = harness({ DEMO: true });
+  ctx.DEMO_CODES.forEach((code) => {
+    assert.equal(code.split('|')[0], scan.CHK_PREFIX,
+      '示範碼用的前綴不是當下這一版：' + code);
+    assert.equal(scan.parseChkCode(code, 'zzdemo2026').legacy, false,
+      '示範碼被判成舊版＝承辦人練習時看到的是「這是舊版的報到碼」：' + code);
+  });
+});
+
 test('★示範模式：假 QR 的第三格與假名單的內部碼一致（不一致就掃不進去）', async () => {
   const ctx = harness({ DEMO: true });
   await ctx.buildDemoSnapshot();
@@ -149,6 +166,40 @@ test('★示範模式：假 QR 的第三格與假名單的內部碼一致（不�
     assert.equal(ctx.snapshot[h].internalId, p.internalId,
       '碼裡的身分與快照裡的身分對不起來：' + code);
   }
+});
+
+/* ── ①b 部署窗口：舊前綴的碼只要雜湊命中，就照常報到 ──────────────────── */
+
+test('🔴★舊前綴的碼，雜湊命中時必須照常報到（部署窗口不可以斷）', async () => {
+  // **判斷順序是「先查快照，查不到才問版本」，這條盯的就是那個順序。**
+  // 改成「看到舊前綴就拒」的話：前端先上線、後端還在發舊碼的那 1–2 分鐘，
+  // 全場沒有人掃得進去，而且畫面叫他「重新開啟通行證」——重開拿到的還是舊碼。
+  // 那是死迴圈，而且它看起來像系統在幫忙。
+  //
+  // ⚠️ 這個寬容**會自己過期**，不需要記得拆除：後端一換前綴，快照就是新版建的，
+  //    任何舊前綴的碼都不可能再雜湊命中，自動全部掉進「這是舊版的報到碼」。
+  const ctx = harness({ jgetRes: { ok: true, writtenKeys: [] } });
+  const qr = 'CHK|zzdemo2026|JDC-HJKMNP|sig';        // 舊前綴，但這批快照就是用它建的
+  const h = await scan.sha256Hex(qr);
+  ctx.snapshot[h] = { internalId: 'JDC-HJKMNP', name: '甲', unit: 'A部', table: '7' };
+  ctx.rebuildEmpIndex();
+  ctx.ready = true;
+  await ctx.handle(qr, 0);
+
+  assert.equal(ctx.calls.cards.filter((c) => c.cls === 'ok').length, 1,
+    '雜湊明明命中卻不放行＝部署窗口那幾分鐘全場掃不進去');
+  assert.equal(ctx.calls.notes.filter((n) => n.text === '這是舊版的報到碼').length, 0,
+    '人查得到卻說「這是舊版」＝把一個成功的報到說成失敗');
+});
+
+test('★對照組：同一張舊前綴的碼，快照裡沒有它就要說「這是舊版的報到碼」', async () => {
+  // 沒有這條，上面那條也相容於「legacy 這個標記根本沒接上」。
+  const ctx = harness({ jgetRes: { ok: true, writtenKeys: [] } });
+  ctx.snapshot = {};
+  ctx.ready = true;
+  await ctx.handle('CHK|zzdemo2026|JDC-HJKMNP|sig', 0);
+  assert.equal(ctx.calls.notes.filter((n) => n.text === '這是舊版的報到碼').length, 1,
+    '實際說的是：' + JSON.stringify(ctx.calls.notes.map((n) => n.text)));
 });
 
 /* ── ② 掃碼報到 ───────────────────────────────────────────────────────────── */
