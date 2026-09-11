@@ -248,6 +248,11 @@ test('②新路不顯示跨看板連結（stats.html 還沒改，點了必定失
   try {
     let appended = 0;
     ctx.document.body.appendChild = () => { appended++; };
+    // 🔴 **這一行是這條測試的全部鑑別力所在。** 沒有它，`showAdminSwitch` 會在
+    //    第一格 `document.getElementById('adm-switch')`（假 DOM 回的是**真值**）
+    //    就 return，`appended` 恆為 0 ⇒ 這條測試不管程式怎麼改都會過。
+    //    2026-09-12 實測：拿掉 `if(!TOKEN)return;` 這一發突變**全綠**，就是這個原因。
+    ctx.document.getElementById = () => null;
     ctx.showAdminSwitch(true);
     assert.equal(appended, 0, '顯示了一個點下去必定失敗的連結');
   } finally { cleanup(); }
