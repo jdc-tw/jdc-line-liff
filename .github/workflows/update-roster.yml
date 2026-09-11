@@ -31,15 +31,30 @@ jobs:
           GAS='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec'
           curl -fsSL "$GAS?action=getUnitsAndNames&callback=__cb" \
             | sed -E 's/^__cb\((.*)\)$/\1/' > roster.json.new
+          # 🔴 這一步的 log 在 PUBLIC repo 上任何人都看得到、而且是永久的。
+          #    下面每一則錯誤訊息都**刻意不印上游回的內容**（2026-09-11，T419）：
+          #    上游回什麼由上游決定，我們控制不了，而這道檢查要擋的正是「上游夾帶了個資」
+          #    ——把它印出來就等於替上游把個資發布了。可以印的只有我們自己算出來的東西
+          #    （長度、欄位「幾個」）。要看到底回了什麼，去 GAS 編輯器跑 getUnitsAndNames。
           node -e '
             const fs = require("fs");
-            const r = JSON.parse(fs.readFileSync("roster.json.new", "utf8"));
+            const txt = fs.readFileSync("roster.json.new", "utf8");
+            let r;
+            // 🔴 這裡一定要自己接住。裸的 JSON.parse 拋出時，**Node 自己的訊息內建夾帶輸入**
+            //    （實測 v20～v26：Unexpected token 後面會接一段輸入內容），而且堆疊還會把
+            //    出錯的那一整行原樣印出來。也就是說：這一段沒有任何一行程式碼在「印回應」，
+            //    回應照樣會整段落進公開 log。GAS 在 HTTP 200 回登入頁／錯誤頁是常態，
+            //    -f 擋不住，所以這條路真的會走到。
+            try { r = JSON.parse(txt); }
+            catch (e) { throw new Error("回應不是 JSON（GAS 常在 HTTP 200 回登入頁或錯誤頁）：長度 " + txt.length + " 字元 ⇒ 放棄更新（刻意不印內容：這則訊息會進 PUBLIC repo 的 Actions log）"); }
             if (!r.units || !r.units.length || !r.titles || !r.titles.length) throw new Error("roster 內容異常，放棄更新");
             if (r.namesByUnit) throw new Error("偵測到 namesByUnit（同仁姓名清單），這是公開檔，放棄更新");
             // 白名單：上游哪天多回一個欄位（不論叫什麼名字）就中止，避免個資被夾帶進公開檔。
             const ALLOW = { units: 1, titles: 1, unitGroups: 1, titleGroups: 1 };
             const extra = Object.keys(r).filter(function (k) { return !ALLOW[k]; });
-            if (extra.length) throw new Error("出現未預期欄位，恐夾帶個資：" + extra.join(","));
+            // 🔴 只講「幾個」，不講鍵名。鍵名是上游寫的字串，而這一條的觸發條件就是
+            //    「上游多回了我們沒預期的東西」——最不該把它轉貼到公開場所的時刻。
+            if (extra.length) throw new Error("出現 " + extra.length + " 個未預期欄位，恐夾帶個資 ⇒ 放棄更新（刻意不印鍵名：這則訊息會進 PUBLIC repo 的 Actions log。請到 GAS 編輯器跑 getUnitsAndNames 看那些欄位是什麼）");
             console.log("✓ units", r.units.length, "| titles", r.titles.length);
           '
           mv roster.json.new roster.json

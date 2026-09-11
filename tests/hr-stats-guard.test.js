@@ -8,7 +8,8 @@
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { checkPayload, scanNames, walkCounts } = require('../tools/hr-stats-guard.js');
+const { checkPayload, scanNames, walkCounts, describeValue, safeContentType }
+  = require('../tools/hr-stats-guard.js');
 
 const 快照時間 = '2026-09-09T22:10:00.000Z';
 
@@ -71,6 +72,89 @@ test('🔴 generatedAt 格式不對 → 拋', () => {
 test('🔴 回應不是 JSON（Cloud Run 擋門的 HTML 錯誤頁）→ 拋，且訊息要指向「被擋」', () => {
   assert.throws(() => checkPayload('<html><body>403 Forbidden</body></html>'),
     /不是 JSON/, '把 HTML 錯誤頁 parse 成資料，會寫一份垃圾進公開 repo');
+});
+
+/**
+ * ─────────── T419：錯誤訊息不得夾帶上游回應內容 ───────────
+ *
+ * 🔴 這一組守的東西跟上面那條不同：上面守「有沒有擋下來」，這一組守
+ *    **「擋下來的時候說了什麼」**。訊息會進 PUBLIC repo 的 Actions log，
+ *    任何人、永久可讀，而**上游回什麼由上游決定**。
+ *
+ * ⚠️ 哨兵字串一律放在**開頭 80 字元以內**。放在後面的話，
+ *    舊版的 `slice(0, 80)` 也會通過 ⇒ 這一組就零鑑別力。
+ */
+const 哨兵 = 'SENTINEL-LEAK-CANARY';
+
+test('⬛ 零點：哨兵確實落在舊版會外洩的窗口內（沒有這條，下面三條可能是假綠）', () => {
+  const 壞回應 = '<!DOCTYPE html><title>' + 哨兵 + '</title>';
+  assert.ok(壞回應.indexOf(哨兵) < 80,
+    '哨兵排在 80 字元之後 ⇒ 舊的 slice(0,80) 本來就印不到它，下面三條測不出東西');
+  // 突變證明：把舊寫法原地跑一次，它「會」外洩——這才證明下面三條在擋真的東西
+  const 舊寫法訊息 = '回應不是 JSON：' + String(壞回應).slice(0, 80);
+  assert.ok(舊寫法訊息.indexOf(哨兵) >= 0, '舊寫法都不外洩 ⇒ 這組測試在防一個不存在的問題');
+});
+
+test('🔴 parse 失敗時，訊息一個位元組的回應內容都不帶', () => {
+  let msg = '';
+  try { checkPayload('<!DOCTYPE html><title>' + 哨兵 + '</title><p>甲、乙、丙</p>'); }
+  catch (e) { msg = e.message; }
+  assert.ok(msg, '前提不成立：這份沒被擋下來，下面幾條就沒在測東西');
+  assert.ok(msg.indexOf(哨兵) < 0, '訊息夾帶了上游回應內容 ⇒ 它會進 PUBLIC repo 的 Actions log');
+  assert.ok(msg.indexOf('甲') < 0, '訊息夾帶了上游回應內容');
+  assert.ok(msg.indexOf('DOCTYPE') < 0, '訊息夾帶了上游回應內容');
+});
+
+test('🔴 不印內容，但要留得下判斷依據：長度、content-type、開頭類別', () => {
+  const 壞回應 = '<!DOCTYPE html><title>' + 哨兵 + '</title>';
+  let msg = '';
+  try { checkPayload(壞回應, { contentType: 'text/html; charset=utf-8' }); }
+  catch (e) { msg = e.message; }
+  assert.ok(msg.indexOf('長度 ' + 壞回應.length) >= 0, '沒講長度 ⇒ 收到的人無從判斷是空的還是錯誤頁');
+  assert.ok(msg.indexOf('text/html') >= 0, '沒講 content-type ⇒ 分不出被擋門還是打到錯誤頁');
+  assert.ok(/角括號/.test(msg), '沒講開頭類別 ⇒ 少掉唯一不用印內容就分得出 HTML 的訊號');
+});
+
+test('🔴 content-type 的參數段也是上游的自由文字 → 只留 media type', () => {
+  let msg = '';
+  try { checkPayload('<html>', { contentType: 'text/html; charset=' + 哨兵 }); }
+  catch (e) { msg = e.message; }
+  assert.ok(msg.indexOf('text/html') >= 0, 'media type 該留');
+  assert.ok(msg.indexOf(哨兵) < 0,
+    'charset 參數被原樣印出 ⇒ 才剛把回應本體堵住，又從標頭開了一條同樣的路');
+});
+
+test('🔴 沒帶 content-type 也要能跑（少一格診斷，不是整支壞掉）', () => {
+  assert.throws(() => checkPayload('<html>'), /不是 JSON/);
+  assert.throws(() => checkPayload('<html>'), /未取得/);
+});
+
+test('🔴 generatedAt 格式不對時，不可以把那個值印出來（它也是上游寫的）', () => {
+  let msg = '';
+  try { checkPayload(好回應((b) => { b.generatedAt = 哨兵; return b; })); }
+  catch (e) { msg = e.message; }
+  assert.ok(msg, '前提不成立：這份沒被擋下來');
+  assert.ok(msg.indexOf(哨兵) < 0, '訊息把上游寫的欄位值原樣印出來了');
+  assert.ok(msg.indexOf('長度 ' + 哨兵.length) >= 0, '連長度都沒給 ⇒ 收到的人無從下手');
+});
+
+test('safeContentType：只認 media type，長度與字元集都限死', () => {
+  assert.equal(safeContentType('application/json'), 'application/json');
+  assert.equal(safeContentType('text/html;charset=utf-8'), 'text/html');
+  assert.equal(safeContentType(''), '(未取得)');
+  assert.equal(safeContentType(undefined), '(未取得)');
+  assert.equal(safeContentType('不是 media type'), '(不是合法的 media type)');
+  assert.ok(safeContentType('application/' + 'a'.repeat(500)).length < 80,
+    '沒有長度上限 ⇒ 上游把資料塞進 subtype 就整段轉進公開 log');
+});
+
+test('describeValue：只講型別與尺寸，不講值', () => {
+  assert.equal(describeValue(undefined), '沒有這一格');
+  assert.equal(describeValue(null), 'null');
+  assert.equal(describeValue('甲乙丙'), '字串，長度 3 字元');
+  assert.equal(describeValue(['甲', '乙']), '陣列，2 個元素');
+  assert.equal(describeValue({ 甲: 1 }), '物件，1 個鍵');
+  assert.ok(describeValue('甲乙丙').indexOf('甲') < 0, '把值印出來了');
 });
 
 // ─────────── 內容異常 ───────────

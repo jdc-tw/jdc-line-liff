@@ -15,14 +15,23 @@ echo "→ 從 GAS 取最新選項…"
 curl -fsSL "$GAS?action=getUnitsAndNames&callback=__cb" | sed -E 's/^__cb\((.*)\)$/\1/' > roster.json.new
 
 # 驗證內容正確、且沒夾帶個資再換檔（與 update-roster.yml 同一套防護）
+#
+# ⚠️ 這支跑在本機，輸出**不會**進公開 log——所以「不印上游內容」對它沒有直接好處。
+#    仍然跟著改，理由只有一條：檔頭寫著這兩份要同步。它們分岔的話，下次有人照這支
+#    改 workflow，就會把剛拿掉的洞原樣放回公開的那一份，而且看起來像在對齊。
+#    （2026-09-11，T419）
 node -e '
   const fs = require("fs");
-  const r = JSON.parse(fs.readFileSync("roster.json.new", "utf8"));
+  const txt = fs.readFileSync("roster.json.new", "utf8");
+  let r;
+  // 裸的 JSON.parse 拋出時，Node 自己的訊息會夾帶輸入內容，堆疊還會把出錯那一整行印出來。
+  try { r = JSON.parse(txt); }
+  catch (e) { throw new Error("回應不是 JSON（GAS 常在 HTTP 200 回登入頁或錯誤頁）：長度 " + txt.length + " 字元 ⇒ 放棄更新"); }
   if (!r.units || !r.units.length || !r.titles || !r.titles.length) throw new Error("roster.json 內容異常");
   if (r.namesByUnit) throw new Error("偵測到 namesByUnit（同仁姓名清單），這是公開檔，放棄更新");
   const ALLOW = { units: 1, titles: 1, unitGroups: 1, titleGroups: 1 };
   const extra = Object.keys(r).filter(function (k) { return !ALLOW[k]; });
-  if (extra.length) throw new Error("出現未預期欄位，恐夾帶個資：" + extra.join(","));
+  if (extra.length) throw new Error("出現 " + extra.length + " 個未預期欄位，恐夾帶個資 ⇒ 放棄更新（到 GAS 編輯器跑 getUnitsAndNames 看那些欄位是什麼）");
   console.log("✓ units:", r.units.length, "| titles:", r.titles.length);
 '
 mv roster.json.new roster.json
