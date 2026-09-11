@@ -34,6 +34,13 @@
  *    「發布關卡跟著改」——那正好消滅第二道存在的理由。
  *    ⇒ 它們哪天長得不一樣，那不是漂移，是設計。要改這一道之前不必去對齊那一道。
  *
+ * 🔴 **這支的每一則錯誤訊息都會進 PUBLIC repo 的 Actions log，所以一律不印上游回應的內容**
+ *    （2026-09-11，T419）。判準不是「那段內容今天看起來危不危險」——**上游回什麼由上游決定，
+ *    我們控制不了**，而 log 是公開且永久的。可以印的只有我們自己算出來的東西：長度、
+ *    欄位型別、收斂過的 content-type、「像不像 HTML」這種布林判斷的結果。
+ *    工具在 `describeRaw` / `describeValue` / `safeContentType`，要印上游的東西一律走它們。
+ *    ⚠️ 連 `e.message` 都不能接上去——Node 的 JSON parse 錯誤訊息**內建夾帶輸入**。
+ *
  * ⚠️ **回傳形狀是假設，不是查證**（2026-09-10）：`/v1/workforce/composition` 由線 B 實作中，
  *    我沒有看過它真正回什麼。下面 `SHAPE` 那一格就是這個假設的唯一落點——
  *    寫成會擋住的形狀（不合就拋），不是靜默轉接。線 B 的規格定了就改那一格。
@@ -87,18 +94,75 @@ function walkCounts(node, out) {
 }
 
 /**
+ * 把上游回的 content-type 收斂成「可以公開的」形狀：只留 media type，丟掉參數。
+ *
+ * 🔴 **`; charset=…` 之後那一段是上游的自由文字**，跟回應本體一樣不受我們控制。
+ *    只留 `type/subtype`，字元集限死、長度限死——它是診斷用的分類標籤，不是轉信通道。
+ */
+function safeContentType(ct) {
+  if (ct === undefined || ct === null || ct === '') return '(未取得)';
+  var m = /^[A-Za-z0-9][A-Za-z0-9.+-]{0,40}\/[A-Za-z0-9][A-Za-z0-9.+-]{0,40}/.exec(String(ct));
+  return m ? m[0] : '(不是合法的 media type)';
+}
+
+/**
+ * 把「上游回了什麼」描述成可以公開的形狀——**一個位元組的回應內容都不帶**。
+ *
+ * 🔴 **為何不印內容**（2026-09-11）：這支的錯誤訊息會進 `jdc-tw/jdc-line-liff` 的
+ *    Actions log，而那是 PUBLIC repo ——**任何人、永久可讀**。上游回什麼由上游決定：
+ *    錯誤頁、含內部識別的訊息、夾著資料的字串，每一種都會原樣落進去。
+ *    要緊的不是「今天它回的那 80 字元長什麼樣」，是**我們控制不了它**。
+ *
+ * ⚠️ 那還剩什麼可以拿來查？三件事，而且三件都不是上游寫的：
+ *      ① 長度（我們自己數的）
+ *      ② content-type（被 `safeContentType` 收斂過的分類標籤）
+ *      ③ 開頭字元的**類別**——只回答「像不像 HTML／JSON」，回傳布林判斷的結果，
+ *         不回傳那個字元本身。「被 Cloud Run 擋在門外」與「打到錯誤頁」靠這一格分辨，
+ *         而它一個字都不用印。
+ *    ⇒ 要看真正的回應內容，去 Cloud Run 那一側的 log 看（那裡不是公開的）。
+ */
+function describeRaw(raw, contentType) {
+  var s = String(raw === undefined || raw === null ? '' : raw);
+  var 像 = s.length === 0 ? '是空的'
+    : /^\s*</.test(s) ? '以角括號開頭（像 HTML／XML 錯誤頁 ⇒ 多半被擋在門外或打到錯誤頁）'
+    : /^\s*[{[]/.test(s) ? '以大括號或方括號開頭（像 JSON，但 parse 不過 ⇒ 被截斷或夾雜雜訊）'
+    : '既不像 HTML 也不像 JSON';
+  return '長度 ' + s.length + ' 字元｜content-type ' + safeContentType(contentType) + '｜內容' + 像;
+}
+
+/**
+ * 把一個上游欄位描述成可以公開的形狀——只講型別與尺寸，**不講值**。
+ * 理由同 `describeRaw`：欄位的值也是上游寫的。
+ */
+function describeValue(v) {
+  if (v === undefined) return '沒有這一格';
+  if (v === null) return 'null';
+  if (typeof v === 'string') return '字串，長度 ' + v.length + ' 字元';
+  if (Array.isArray(v)) return '陣列，' + v.length + ' 個元素';
+  if (typeof v === 'object') return '物件，' + Object.keys(v).length + ' 個鍵';
+  return typeof v;
+}
+
+/**
  * 驗一份原始回應，回「可以寫進靜態檔的物件」。不合格一律拋。
  * @param {string} raw 入口層回來的原始文字
+ * @param {{contentType?: string}} [meta] 回應的中介資訊（由 workflow 的 `curl -w` 取得）。
+ *        ⚠️ 可省略——省略時只是少一格診斷訊息，**不影響任何一條判準**。
  */
-function checkPayload(raw) {
+function checkPayload(raw, meta) {
   var parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
     // 🔴 Cloud Run 擋門回的是 text/html 錯誤頁，不是 JSON。
     //    判「有沒有被擋在門外」不要靠狀態碼——401 也是本服務憑證失敗的碼。
+    // 🔴 **不要把 `e.message` 接上去**：Node 自己的 JSON parse 錯誤訊息**內建夾帶輸入**
+    //    （實測 v20～v26：`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`）。
+    //    這一行改成不印內容，卻把 `e.message` 印出來的話，等於原地繞回來。
     throw new Error('回應不是 JSON（很可能被 Cloud Run 擋在門外，或打到了錯誤頁）：'
-      + String(raw).slice(0, 80));
+      + describeRaw(raw, (meta || {}).contentType)
+      + '（刻意不印回應內容：這則訊息會進 PUBLIC repo 的 Actions log，'
+      + '而上游回什麼由上游決定。要看內容請到 Cloud Run 那一側的 log。）');
   }
 
   var r = SHAPE(parsed);
@@ -138,9 +202,13 @@ function checkPayload(raw) {
   //    「快取命中時它是舊的，**這正是重點**」。換成抓取時間的話，一份快取命中
   //    的舊快照會顯示成剛出爐的，**而那正是這一格要偵測的狀況**。
   // 🔴 缺了它就拒收，不要用現在時間補：補了就把「我不知道這份多舊」偽裝成「很新」。
+  // ⚠️ 訊息裡**不印這一格的值**：`generatedAt` 是上游寫的字串，長度與內容都不受我們控制，
+  //    而這則訊息會進 PUBLIC repo 的 Actions log。只講型別與長度，足夠判「是缺了、
+  //    還是格式漂了」。（走到這裡的值正是**沒**通過 `Date.parse` 的那些，更沒有理由信任它。）
   if (!r.generatedAt || !Date.parse(r.generatedAt))
-    throw new Error('缺 generatedAt 或格式不對（拿到的是「' + r.generatedAt + '」）'
-      + ' ⇒ 前端將分不出資料新舊，放棄更新');
+    throw new Error('缺 generatedAt 或格式不對（拿到的是 ' + describeValue(r.generatedAt) + '）'
+      + ' ⇒ 前端將分不出資料新舊，放棄更新'
+      + '（刻意不印值：這則訊息會進 PUBLIC repo 的 Actions log）');
   // 🔴 `counts` 原樣進公開 repo，兩道投影守門都沒經過（見檔頭）。這一條是它唯一的關卡。
   // ⚠️ 缺 counts 也拋，這比「每個葉節點都是數字」的字面要求多一步：空手通過與真的乾淨
   //    長得一模一樣，而這條鏈上寧可停下來，也不要靜默放行一個形狀已經漂掉的上游。
@@ -160,14 +228,17 @@ function checkPayload(raw) {
     countsChecked: cw.checked };
 }
 
-module.exports = { checkPayload, scanNames, walkCounts, SHAPE };
+module.exports = { checkPayload, scanNames, walkCounts, SHAPE, describeRaw, describeValue, safeContentType };
 
 // CLI：node tools/hr-stats-guard.js <輸入檔> <輸出檔>
+// content-type 由環境變數 UPSTREAM_CONTENT_TYPE 帶進來（workflow 用 `curl -w` 取）。
+// ⚠️ 沒帶也能跑——它只影響 parse 失敗時的診斷訊息多不多一格，不影響任何判準。
 if (require.main === module) {
   var fs = require('fs');
   var inFile = process.argv[2], outFile = process.argv[3];
   if (!inFile || !outFile) { console.error('用法：node tools/hr-stats-guard.js <in> <out>'); process.exit(2); }
-  var out = checkPayload(fs.readFileSync(inFile, 'utf8'));
+  var out = checkPayload(fs.readFileSync(inFile, 'utf8'),
+    { contentType: process.env.UPSTREAM_CONTENT_TYPE });
   fs.writeFileSync(outFile, JSON.stringify(out.value));
   console.log('✓ 在職 ' + out.total + ' ｜ 快照時間 ' + out.generatedAt
     + ' ｜ 姓名檢查掃過 ' + out.scanned + ' 格，0 外洩'

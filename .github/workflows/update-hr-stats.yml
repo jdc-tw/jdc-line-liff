@@ -68,12 +68,25 @@ jobs:
           #    X-Serverless-Authorization → Cloud Run 檢查「你進不進得來」
           #    Authorization              → 本服務檢查「你是誰、能打哪幾條」
           #    兩個都給時 Cloud Run 只吃前者，後者原封不動進容器。
-          # ⚠️ 不加 `-f`：被擋掉時我們要看到回應內容（HTML 錯誤頁），
-          #    交給 guard 去判斷並印出來。`-f` 會讓 curl 直接失敗、把證據丟掉。
-          curl -sSL \
+          # ⚠️ 不加 `-f`：被擋掉時我們要拿到回應本體交給 guard 判斷。
+          #    `-f` 會讓 curl 直接失敗、把證據丟掉。
+          #
+          # 🔴 **拿到 ≠ 印出來**（2026-09-11，T419）：這一步的 log 在 PUBLIC repo 上
+          #    任何人都看得到、而且是永久的，**上游回什麼由上游決定**——錯誤頁、含內部
+          #    識別的訊息、夾著資料的字串，每一種都會原樣落進去。所以回應本體只進
+          #    `hr-stats-pub.json.raw`（本地檔、不 commit），guard 只從它算出長度與分類，
+          #    一個位元組的內容都不印。要看內容請到 Cloud Run 那一側的 log。
+          #
+          # `-w '%{content_type}'` 是那句「上游回的是什麼種類」的來源——它取自
+          # **回應標頭**，不是回應本體；guard 的 `safeContentType` 還會把 `; charset=…`
+          # 之後那段自由文字砍掉再印。
+          UPSTREAM_CONTENT_TYPE=$(curl -sSL \
             -H "Authorization: Bearer ${CONSUMER_TOKEN}" \
             -H "X-Serverless-Authorization: Bearer ${ID_TOKEN}" \
-            "${BASE}/v1/workforce/composition" > hr-stats-pub.json.raw
+            -o hr-stats-pub.json.raw \
+            -w '%{content_type}' \
+            "${BASE}/v1/workforce/composition")
+          export UPSTREAM_CONTENT_TYPE
           node tools/hr-stats-guard.js hr-stats-pub.json.raw hr-stats-pub.json.new
           mv hr-stats-pub.json.new hr-stats-pub.json
           rm -f hr-stats-pub.json.raw

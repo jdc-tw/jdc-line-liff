@@ -31,7 +31,20 @@ if (require.main === module) {
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({ channel: channel, text: buildText({ runUrl: runUrl }) })
   }).then((r) => r.json()).then((j) => {
-    if (!j.ok) { console.error('Slack 拒收：' + JSON.stringify(j)); process.exit(1); }
+    if (!j.ok) {
+      // 🔴 **只印 Slack 自己定義的錯誤代碼，不印整份回應**（2026-09-11，與 T419 同一族）。
+      //    這則訊息會進 PUBLIC repo 的 Actions log，而回應體裡有什麼由 Slack 決定——
+      //    `response_metadata.messages` 就是一段自由文字。`JSON.stringify(j)` 等於
+      //    把一條「上游想印什麼就印什麼」的路開進一份公開、永久的紀錄。
+      // ⚠️ 代價：少了 warning 與 response_metadata ⇒ 診斷要去 Slack 那一側看。
+      //    這是知情的取捨，跟 hr-stats-guard 那兩處同一條判準。
+      var code = (typeof j.error === 'string' && /^[a-z0-9_]{1,64}$/.test(j.error))
+        ? j.error : '（沒有可辨識的 error 代碼）';
+      console.error('Slack 拒收：' + code
+        + '｜回應有 ' + Object.keys(j).length + ' 個欄位'
+        + '（刻意不印回應內容：這則訊息會進 PUBLIC repo 的 Actions log）');
+      process.exit(1);
+    }
     console.log('✓ 已通知 ' + channel);
   }).catch((e) => { console.error('Slack 送不出去：' + e); process.exit(1); });
 }
