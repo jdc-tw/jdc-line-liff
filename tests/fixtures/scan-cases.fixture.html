@@ -1,0 +1,86 @@
+<!doctype html>
+<!--
+  掃原始碼那一族檢查的**反例夾具**（2026-09-10，F5 前端那一半）。
+
+  🔴 **這個檔存在的目的就是要騙過近似寫法。** 每一支函式對應
+  `tests/source-scan-tripwire.test.js` 裡具名的一個反例，**不要「順手整理」它們**：
+  把 `};` 改成縮排、把一行寫法拆成多行，都會讓對應的那條反例靜默失效
+  （測試照樣綠，因為它斷言的是「近似被騙到」，而近似沒被騙到就沒得比）。
+
+  ⚠️ 這一頁**刻意在中段拋例外**，模擬 `welfare.html` 的真實形狀
+  （2026-09-10 實測：script 第 38 行 `location is not defined`，全長 1016 行）。
+  例外前後各放一個 `var f = function () {}`，用來釘定義域的邊界。
+-->
+<html>
+<body>
+<script src="./不存在.js"></script>
+<script>
+// ── 例外之前：var 賦值的函式（會被賦到值）─────────────────────────────
+var 例外前的匿名_ = function () {
+  return 'BEFORE_THROW';
+};
+
+// ── 反例①：函式體裡有對齊到第 0 欄的 `};`（物件字面量收尾）─────────────
+//    近似 A（`^function N\([\s\S]*?^}`）會在那個 `}` 提早收手 ⇒ 後半掃不到。
+function 受害者_() {
+  var 設定 = {
+    甲: 1,
+    乙: 2,
+};
+  return 設定.甲 + 'DANGEROUS_TOKEN';
+}
+
+// ── 反例①b：一行寫法 ⇒ 近似 A 找不到行首 `}`，一路吞到下一支 ────────────
+function 一行的_(e) { return e; }
+
+function 下一支_() {
+  return 'SHOULD_NOT_BE_HERE';
+}
+
+// ── 反例 C：`indexOf('function N(')` → `indexOf('\n}')` 那種變體 ─────────
+//    本體裡第一個出現在行首的 `}` 屬於巢狀區塊 ⇒ 變體 C 在那裡就收手。
+function 巢狀收手_(旗標) {
+  if (旗標) {
+    return 'EARLY';
+}
+  return 'LATE_MARKER';
+}
+
+// ── 反例⑦：繞過 wfCall 的合法寫法（別名呼叫，掃不到那個樣式）──────────
+//    ⚠️ 這一段**刻意不寫出那個樣式的字面**——寫出來的話它自己就會被掃到，
+//      反例就變成「掃得到」而失效（feedback_comment_is_source_code 第五形態，實際踩過）。
+var gasCall = function () { return null; };   // 真實頁面由 assets/gas-call.js 提供
+var 送 = gasCall;
+function 繞過去的_() {
+  return 送(GAS_URL, 'someAction', {}, 1000);
+}
+
+// ── 反例⑥：字串裡的 `//` 讓整行後半消失 ───────────────────────────────
+function 字串裡有斜線_() {
+  var s = 'a//b'; var 鈕 = '刪除';
+  return s + 鈕;
+}
+
+// ── 這一行拋例外，模擬真實頁面的頂層碼 ─────────────────────────────────
+var 網址 = location.href;
+
+// ── 反例：多吞到會拋例外的頂層碼 ⇒ 污染照樣發生（hoisting），但**吵**
+//    這一格跟上面「一行的_ 吞掉 下一支_」是成對的：那一格靜默，這一格會拋。
+//    🔴 沒有這一對，「靜默污染／吵的污染」那個分類就沒有鑑別力——
+//      把分類寫壞（全部算成靜默）也不會有任何東西變紅。
+function 吵的多吞_() { return 'LOUD'; }
+var 又一個網址 = location.search;
+function 被吵的蓋掉_() { return 'VICTIM_OF_LOUD'; }
+
+// ── 例外之後：var 賦值的函式（**拿不到**，這是定義域邊界）───────────────
+var 例外後的匿名_ = function () {
+  return 'AFTER_THROW';
+};
+
+// 函式宣告不受例外影響（hoisting，規格保證）
+function 例外後的宣告_() {
+  return 'HOISTED_ANYWAY';
+}
+</script>
+</body>
+</html>

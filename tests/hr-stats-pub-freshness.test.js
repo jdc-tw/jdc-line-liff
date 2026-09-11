@@ -7,28 +7,21 @@
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
+// 🔴 取函式本體走共用的 `helpers/source-scan.js`，不自己手寫數大括號那一套。
+//    手寫的是**近似取法**：從 `function 名(` 數到括號閉合。它會在一行寫法的函式上
+//    多吞下一支，而多吞得剛剛好的時候是**靜默**的——蓋掉測試種下去的替身、不報錯。
+//    共用那支改走引擎剖析（把檔跑進 context、拿真函式的 `toString`），沒有這個失效方向。
+//    ⬛ 2026-09-10 遷移當下量過：兩種取法對 `pubLabel` 都是 522 字元，這一支本來沒被吃到。
+const { fnSrc, scriptText } = require('./helpers/source-scan.js');
 
-const HTML = fs.readFileSync(path.join(__dirname, '..', 'hr-stats.html'), 'utf8');
-
-/** 逐字取出一支頂層函式（數大括號，不是抓到下一個 `}` 就停）。 */
-function fnSrc(name) {
-  const i = HTML.indexOf('function ' + name + '(');
-  assert.ok(i >= 0, '抓不到 ' + name + ' ⇒ 這支測試什麼都沒測');
-  let d = 0, j = HTML.indexOf('{', i);
-  for (let k = j; k < HTML.length; k++) {
-    if (HTML[k] === '{') d++;
-    else if (HTML[k] === '}' && --d === 0) return HTML.slice(i, k + 1);
-  }
-  throw new Error(name + ' 的大括號沒閉合');
-}
+const HTML = scriptText('hr-stats.html');
 
 /** 門檻值也從原始碼取，不在測試裡另抄一份——抄了就會有兩個門檻各自漂移。 */
 const HOURS = Number(/var PUB_STALE_HOURS = (\d+)/.exec(HTML)[1]);
 // 那支函式讀外層的 PUB_STALE_HOURS，所以把**原始碼裡那一個**注進去；
 // 測試不另抄一份門檻，抄了就是兩個門檻各自漂移。
-const pubLabel = new Function('PUB_STALE_HOURS', 'return (' + fnSrc('pubLabel') + ')')(HOURS);
+const pubLabel = new Function('PUB_STALE_HOURS',
+  'return (' + fnSrc('pubLabel', 'hr-stats.html') + ')')(HOURS);
 const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
 
 test('⬛ 零點：這支函式真的被抓出來了，而且門檻是原始碼裡那個數字', () => {
