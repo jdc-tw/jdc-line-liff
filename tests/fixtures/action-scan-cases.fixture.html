@@ -1,0 +1,41 @@
+<!-- 詞法掃描器的反例集。**每一格都是「近似寫法會判錯、而判錯是靜默的」的實例。** -->
+<script src="assets/not-real.js"></script>
+<script>
+// 反例①：註解裡的呼叫——逐字 grep 會把它算成呼叫點
+// 這一頁的首載走 jsonp('batch', {token:t})，但那只是一句說明
+/* 反例①b：區塊註解裡的 jsonp('listActivities', {}) 同樣不是呼叫 */
+
+/*
+ * 反例①c：**跨行**的區塊註解，而且刻意不用反引號把它包起來。
+ * 🔴 這一格是拆開兩道互相覆蓋的防護用的：①b 只有一行，掃描器就算不認得區塊註解，
+ *    也會把它當成正則字面值（`/` … `/`）整段吃掉 ⇒ 拿掉區塊註解處理也不會紅
+ *    ⇒ 那條斷言就變成裝飾品。正則字面值遇到換行會放棄，所以跨行的這一格
+ *    **只有「認得區塊註解」擋得住**。
+ *    寫法範例：jsonp('getRosterExport', { token: t })
+ */
+
+// 反例②：字串裡的呼叫——組出來要印給人看的說明文字
+var 說明 = "首載請改寫成 jsonp('batch', …) 的形式";
+
+// 反例③：正則字面值裡含引號，近似掃描會從這裡開始把後面整段當字串吃掉
+var 切 = /['"]/g;
+var 真呼叫 = jsonp('getActivityStats', { act: '' });
+
+// 反例④：switch 標籤不是呼叫（board-cache.js 的分片對照表就是這個形狀）
+function 分片(action) {
+  switch (action) {
+    case 'listActivities': return 'activities';
+    case 'getHrPending': return 'hrPending';
+  }
+}
+
+// 反例⑤：除號後面接引號，不可以被當成正則
+var 比例 = (10 / 2) + '成';
+
+// 真的 batch 子項（兩種寫法都要抽得到）
+var 甲 = [{ a: 'listActivities' }, { a: 'getActivityStats', p: { act: '' } }];
+var 乙 = [{ 'a': 'getHrPending' }];
+
+// 反例⑥：`a:` 的值是變數 ⇒ 抽不到（已知的定義域邊界，不是 bug）
+var 丙 = ['listOptions'].map(function (x) { return { a: x }; });
+</script>

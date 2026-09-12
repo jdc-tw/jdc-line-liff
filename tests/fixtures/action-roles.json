@@ -1,0 +1,1031 @@
+{
+  "_generatedBy": "jdc-line-gas: node ci/roles-matrix/export-json.js --out <liff>/tests/fixtures/action-roles.json",
+  "identities": [
+    "admin",
+    "activity",
+    "hr",
+    "hrstats",
+    "view",
+    "staff",
+    "welfare",
+    "future",
+    "unknown"
+  ],
+  "batchAllowed": [
+    "getActivityStats",
+    "getAnniversaries",
+    "getCheckinOptions",
+    "getCheckinPending",
+    "getHrPending",
+    "getHrStats",
+    "getRosterList",
+    "getSeatingBoard",
+    "getSeniorNotice",
+    "listActivities",
+    "listHrNotices",
+    "listOptions",
+    "listStaffStations",
+    "previewPassBroadcast"
+  ],
+  "actions": {
+    "__whoami": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "addActivity": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "addGuests": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "addSeniorTemplate": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "addStaffStation": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "addTitle": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "addUnit": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "addWelfareTemplate": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "approveCheckin": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "batch": {
+      "roles": [
+        "any",
+        "view"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view"
+      ]
+    },
+    "batchTransferUnit": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "cancelPassSchedule": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "clearGuests": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "clearSeatMarks": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "confirmHrChange": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "deleteActivity": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getActivityReplies": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getActivityStats": {
+      "roles": [
+        "activity",
+        "view"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "view"
+      ]
+    },
+    "getAnniversaries": {
+      "roles": [
+        "any"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats"
+      ]
+    },
+    "getArrivalTimeline": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getArrivalWall": {
+      "roles": [
+        "activity",
+        "view"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "view"
+      ]
+    },
+    "getBindLink": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getBindingState": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getBounceCursor": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "getCheckinCodes": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getCheckinOptions": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getCheckinPending": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "getCompareLists": {
+      "roles": [
+        "admin"
+      ],
+      "who": [
+        "admin"
+      ]
+    },
+    "getEventCheckedIn": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getEventCheckinPass": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getEventCheckinSnapshot": {
+      "roles": [
+        "staff"
+      ],
+      "who": [
+        "staff"
+      ]
+    },
+    "getEventCheckinStats": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getHrPending": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "getHrStats": {
+      "roles": [
+        "hrstats"
+      ],
+      "who": [
+        "admin",
+        "hrstats"
+      ]
+    },
+    "getHrStatsPublic": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getMsgLogToken": {
+      "roles": [
+        "any"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats"
+      ]
+    },
+    "getMyLottery": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getMyReply": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getRefillCandidates": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getRoleSourceStatus": {
+      "roles": [
+        "admin"
+      ],
+      "who": [
+        "admin"
+      ]
+    },
+    "getRosterExport": {
+      "roles": [
+        "any"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats"
+      ]
+    },
+    "getRosterList": {
+      "roles": [
+        "any"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats"
+      ]
+    },
+    "getSeatingBoard": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getSeniorNotice": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getTitleRanks": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "getUndelivered": {
+      "roles": [
+        "any"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats"
+      ]
+    },
+    "getUnitsAndNames": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "getWelfareAudience": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "getWelfareStatus": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "getWelfareTemplates": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "grantRefill": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "ingestHrNotice": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "isEventCheckedIn": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "listActivities": {
+      "roles": [
+        "activity",
+        "view"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "view"
+      ]
+    },
+    "listGuests": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "listHrNotices": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "listOptions": {
+      "roles": [
+        "any"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats"
+      ]
+    },
+    "listStaffStations": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "listTableBoard": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "previewPassBroadcast": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "publishTables": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "reconcileBegin": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "reconcileChunk": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "reconcileCommit": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "recordEventCheckins": {
+      "roles": [
+        "staff"
+      ],
+      "who": [
+        "staff"
+      ]
+    },
+    "rejectHrChange": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "removeSeniorTemplate": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "removeStaffStation": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "removeWelfareTemplate": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "reportBounce": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "requestWelfareOtp": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "requeueCheckinMail": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "resendVerifyMail": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "restoreWelfareTemplate": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "revertHrChange": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "revokeRefill": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "rollbackRoleSource": {
+      "roles": [
+        "admin"
+      ],
+      "who": [
+        "admin"
+      ]
+    },
+    "savePassTemplate": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "saveSeniorTemplate": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "saveWelfareTemplate": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "schedulePassBroadcast": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "sendPassBroadcast": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "sendSeniorNotice": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "sendWelfareBroadcast": {
+      "roles": [
+        "messaging",
+        "welfare",
+        "broadcast"
+      ],
+      "who": [
+        "admin",
+        "welfare"
+      ]
+    },
+    "setActivityStatus": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "setBounceCursor": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "setGuestTable": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "setGuestTables": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "setTables": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "setTitleRanks": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "submitActivity": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "submitBinding": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "submitCheckin": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    },
+    "unpublishTables": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "updateActivity": {
+      "roles": [
+        "activity"
+      ],
+      "who": [
+        "admin",
+        "activity"
+      ]
+    },
+    "updateOption": {
+      "roles": [
+        "hr"
+      ],
+      "who": [
+        "admin",
+        "hr"
+      ]
+    },
+    "verify": {
+      "roles": [
+        "public"
+      ],
+      "who": [
+        "admin",
+        "activity",
+        "hr",
+        "hrstats",
+        "view",
+        "staff",
+        "welfare",
+        "future",
+        "unknown"
+      ]
+    }
+  }
+}
