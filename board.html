@@ -295,9 +295,28 @@ var TOKEN=getToken();
 
 /**
  * LIFF app。**與 index.html／welfare.html 同一條，不多開 LIFF ID**
- * （`tools.md`：同一條 LIFF ＋ 參數）。endpoint 記載為站台根
- * （`campaign.jdc-corpn.com.tw`），本頁在它底下 ⇒ `liff.login` 的 redirectUri 成立。
- * ⚠️ **那是記載，不是當日複核過的 Console 值**——沿用 welfare.html 檔頭的同一句保留。
+ * （`tools.md`：同一條 LIFF ＋ 參數）。
+ *
+ * 🔴 **原本這裡寫「本頁在 endpoint 底下 ⇒ `liff.login` 的 redirectUri 成立」——那句是錯的。**
+ *    2026-09-12 使用者在手機 LINE 內建瀏覽器開本頁（不帶 `?t=`），拿到 `access.line.me`
+ *    的 **400 Bad Request**。以下是當天一手量到的，不是推論：
+ *
+ *    ① LIFF 的 endpoint 確實是站台根 `https://campaign.jdc-corpn.com.tw/`
+ *       （量法：`curl https://liff.line.me/2010451233-a781rqsm`，它自己的轉址頁裡有）。
+ *    ② 但 `liff.login({redirectUri:'…/board.html'})` **不會**以本頁當 redirect_uri。
+ *       SDK 打的是 `https://access.line.me/liff/v1/authorize`，LINE 在那裡把子路徑
+ *       **改寫**成 `根/?liff.state=%2Fboard.html` ⇒ **登入後他落在首頁，不是本頁。**
+ *    ③ LINE Login channel 的 Callback URL 白名單**只有根目錄**：拿
+ *       `https://campaign.jdc-corpn.com.tw/board.html` 當 redirect_uri 打
+ *       `oauth2/v2.1/authorize` 回 **400**，與拿 `https://evil.example.com/` 打**同樣**回 400；
+ *       而根目錄（帶任意 query 都行）回 302 ⇒ 這個量法有鑑別力，不是「什麼都 400」。
+ *
+ *    ⚠️ **「400 發生在哪一跳」我沒量到**：登入頁之前的每一跳都實測正常（真瀏覽器跑到
+ *       LINE 登入頁，無 400），而登入之後的每一跳都需要 LINE 登入態——那不在我手上，
+ *       也不該由程式去代操。**所以下面這條路目前是「已知會壞、成因未定」。**
+ *
+ * **解除條件**（不是現在狀態）：等「board.html 要怎麼被進入」拍板並落地之後，
+ * 這整段連同下面的 `liff.login()` 一起重寫；在那之前別把它讀成「照著做就好」。
  */
 var LIFF_ID='2010451233-a781rqsm';
 var ID_TOKEN='';            // ②才有值；jsonp 會把它掛上每一支呼叫
@@ -341,7 +360,12 @@ function startAuth(){
   }
   return liff.init({liffId:LIFF_ID}).then(function(){
     if(!liff.isLoggedIn()){
-      authBlock('正在前往 LINE 登入，登入後會自動回到這一頁…',false);
+      // 🔴 **「登入後會自動回到這一頁」是假的**（原本的文案就是這樣寫）。
+      //    實測：LINE 會把 redirect_uri 改寫成 `根/?liff.state=%2Fboard.html`，
+      //    他登入後落在**首頁**。文案不可以承諾系統做不到的事——那會讓他在首頁等，
+      //    以為再等一下就會跳過來。檔頭①②③是這句話的證據。
+      authBlock('正在前往 LINE 登入…（登入後可能會停在本站首頁，'
+        +'若沒有自動開啟本頁，請回到原本的看板連結重開）',false);
       liff.login({redirectUri:location.href});
       return new Promise(function(){});               // 導頁中，不要發車
     }

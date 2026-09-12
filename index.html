@@ -228,6 +228,22 @@
       <p class="hint">待活動公告後，請重新開啟此頁面填寫。</p>
     </div>
 
+    <!--
+      登入成功、但他本來要去的不是這一頁。
+      ⚠️ **這不是裝飾，是唯一的訊號**：LIFF 的 endpoint 註冊在站台根目錄，所以任何
+         `https://liff.line.me/<id>/<某頁>` 的深連結，LINE 都只會把人送到根目錄、
+         把原本的路徑塞進 `?liff.state=`（2026-09-12 一手實測，見 `destFromLiffState`）。
+         本頁沒有任何一行會再把人送過去 ⇒ 沒有這一格的話，他會**看見一張跟他要做的事
+         無關的活動卡**，而且畫面上完全沒有東西告訴他「你沒到目的地」。
+    -->
+    <div id="section-dest-blocked" class="card" style="display:none">
+      <h2>這個連結到不了您要開的頁面</h2>
+      <p style="margin:8px 0">您已經登入成功，但這條連結只能開到本站首頁，沒辦法把您送到
+        <b id="dest-blocked-path"></b>。</p>
+      <p class="hint">請改用該頁面的專用連結（人事看板與統計看板都有各自帶密鑰的網址），
+        或把這個畫面截圖給資訊人員。</p>
+    </div>
+
     <!-- 活動已截止：本人回覆唯讀（桌次發布後一併顯示） -->
     <div id="section-closed" class="card" style="display:none">
       <h2 id="closed-act-name"></h2>
@@ -409,6 +425,33 @@
     }
     function getMode() { return getParam('mode'); }
     function getAct() { return getParam('act'); }
+
+    /**
+     * 他本來要去的「本站另一頁」，沒有就回 ''。
+     *
+     * **判準是 `liff.state` 的第一個字元，這不是猜的**（2026-09-12 一手量 liff.line.me
+     * 自己吐出來的轉址頁）：
+     *   `https://liff.line.me/<id>?act=midyear2026` → `liff.state = "?act=midyear2026"`
+     *   `https://liff.line.me/<id>?mode=onboard`    → `liff.state = "?mode=onboard"`
+     *   `https://liff.line.me/<id>/board.html`      → `liff.state = "/board.html"`
+     * ⇒ 以 `?` 開頭＝參數式入口（今天全公司在用的那幾條，**一條都不可以被這裡攔到**）；
+     *    以 `/` 開頭＝路徑式深連結，那才是「他要去別頁」。
+     *
+     * ⚠️ **今天沒有任何正式連結會走到這裡**（後端組看板連結的地方一律帶 `?t=`）。
+     *    這一格是給「已經發生過、而畫面什麼都沒說」的那種情況用的——
+     *    2026-09-12 使用者在手機上就是落在首頁，而首頁裝作一切正常。
+     */
+    function destFromLiffState() {
+      try {
+        var st = new URLSearchParams(location.search).get('liff.state');
+        if (!st) return '';
+        var d = decodeURIComponent(st);
+        // 只有路徑式（`/xxx`）算；`//` 開頭是換網域，不是本站的頁，一律不採信。
+        if (d.charAt(0) !== '/' || d.charAt(1) === '/') return '';
+        var path = d.split('?')[0].split('#')[0];
+        return (path === '' || path === '/') ? '' : path;
+      } catch (e) { return ''; }
+    }
 
     // ─── 全域狀態 ──────────────────────────────────────────────────────────────
     var gUserId = '';
@@ -717,7 +760,18 @@
 
     // 依狀態顯示正確畫面（冪等，可重複套用＝校正）
     function applyState(state) {
-      ['section-bind', 'section-need-verify', 'section-pending', 'section-activity', 'section-no-activity', 'section-onboard', 'section-closed'].forEach(hide);
+      ['section-bind', 'section-need-verify', 'section-pending', 'section-activity', 'section-no-activity', 'section-onboard', 'section-closed', 'section-dest-blocked'].forEach(hide);
+      // 他要去的是別頁而我們送不過去 ⇒ 先講這件事，**不要**接著畫一張與他無關的卡。
+      // 排在 onboard 之前：兩者同時成立時，「你沒到目的地」才是他需要先知道的。
+      var destBlocked = destFromLiffState();
+      if (destBlocked) {
+        var dbp = document.getElementById('dest-blocked-path');
+        if (dbp) dbp.textContent = destBlocked;
+        var greetDb = document.getElementById('greeting');
+        if (greetDb) greetDb.style.display = 'none';
+        show('section-dest-blocked');
+        return;
+      }
       if (getMode() === 'onboard') { show('section-onboard'); ensureFriendThenOnboard(); return; }
       var greet = document.getElementById('greeting');
       if (!state || !state.bound) {

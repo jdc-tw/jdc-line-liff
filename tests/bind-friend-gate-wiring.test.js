@@ -30,6 +30,12 @@ function runApplyState(opt, source) {
     hide: (id) => hidden.push(id),
     getMode: () => opt.mode,
     getAct: () => '',
+    // 2026-09-12 新協作者：applyState 開頭會先問「他是不是要去別頁」。
+    // 這裡固定回 ''（＝沒有別的目的地），本支測的是**閘**，不是那一格；
+    // 那一格自己的正反面在 `index-dest-blocked.test.js`。
+    // ⚠️ 預設值若寫成非空字串，applyState 會在閘之前就 return ⇒ 下面每一條都會
+    //    變成「什麼都沒測到」而仍可能綠，所以這裡刻意是 ''。
+    destFromLiffState: () => (opt.destBlocked || ''),
     ensureFriendThenOnboard: () => gateCalls.push('onboard'),
     ensureFriendThenBind: () => gateCalls.push('bind'),
     showClosedIfReplied: () => {},
