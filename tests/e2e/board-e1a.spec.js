@@ -72,10 +72,35 @@ async function visibleText(page) {
   })).join(' ⏎ ');
 }
 
+/**
+ * 後端 `GATE_MSG_LINE` 的文案副本。
+ *
+ * ⚠️ **這是一份跨 repo 的抄本，抄本一產生就開始腐爛。** 下面每一條測試餵進去的
+ *    envelope 與斷言的期望值**是同一個變數** ⇒ 這些測試量的是「畫面有沒有把後端
+ *    那句話畫出來」，**量不到「這句話跟後端現在說的一樣」**。後者沒有任何機械保護。
+ *    （同 assets/deny-no-role.js 檔頭那段跨 repo 對齊的處境。）
+ *
+ * 重算來源（jdc-line-gas，2026-09-12 於 `1c18363`＝線上 build `g1c18363`）：
+ *   awk '/^var GATE_MSG_LINE = \{/,/^\};/' line-platform/roles.js | grep -c '^  line_'
+ *   → 6
+ *   ⬛ 對照組（缺一不可，否則那個 6 可能是「awk 把整檔吐出來」）：
+ *      同一條 awk 抓到 11 行、全檔 911 行（相同就代表區間沒生效）；
+ *      把起點字樣換成不存在的 `GATE_MSG_NOSUCHTHING` → 0 行。
+ *   ⚠️ 原本只比「區間內的 line_ 筆數」與「全檔的 line_ 筆數」，兩個都是 6
+ *      ⇒ **那個對照組零鑑別力**，它同時相容於「區間對」與「區間等於全檔」。
+ *
+ * 🔴 6 種裡本檔原本只畫過 2 種（unbound／upstream）。其餘 4 種**從來沒有在瀏覽器裡
+ *    出現過一次**，其中 `needs_sheet` 是整條 E1a 的退路開關（後端 `ROLE_SOURCE`
+ *    切回 `token` 時就送這一句）——**退路的畫面沒人看過，等於退路沒驗過**。
+ */
 const MSG = {
   unbound: '您的 LINE 帳號還沒有完成員工身分綁定，所以系統認不出您是誰。請先回 LINE 完成綁定，再開啟這一頁。',
   upstream: '系統目前無法確認您的身分（不是您的問題）。請稍後再試一次；若一直這樣，請聯絡系統維護者。',
   unresolved: '系統目前讀不到您的權限設定。換一條連結不會有幫助，請聯絡系統維護者。',
+  noToken: '沒有取得您的 LINE 登入資訊，請關掉這一頁重新開啟。',
+  badToken: 'LINE 登入已過期，請關掉這一頁重新開啟以重新登入。',
+  ambiguous: '您的綁定資料有重複的紀錄，系統無法判斷是哪一位。重新登入不會有幫助，請聯絡系統維護者。',
+  needsSheet: '這一頁的 LINE 登入目前暫停使用，請改用原本的連結。',
 };
 
 /* ══ 狀態①：還沒登入 ═══════════════════════════════════════════════ */
@@ -142,6 +167,72 @@ for (const [key, reason, msg] of [
     expect(txt, `${reason} 的訊息沒有出現在畫面上 ⇒ 三種失敗對使用者是同一句`).toContain(msg.slice(0, 12));
   });
 }
+
+/* ══ 狀態⑥⑦⑧⑨：後端送得出來、而畫面從沒畫過的另外四種 ═══════════════════
+ *
+ * 為何補（2026-09-12，線 A）：`grep -rn 'line_no_token\|line_bad_token' tests/ assets/`
+ * 在整個 liff repo **零命中**。
+ *   ⬛ 對照組：同一條 grep 對 `line_unbound`／`line_upstream`／`role_unresolved`
+ *      回 8 列 ⇒ 它會命中，「零」不是量法壞掉。
+ *
+ * 🔴 其中 `line_needs_sheet` 特別要緊：那是後端把 `ROLE_SOURCE` 切回 `token`
+ *    （＝關掉整條 LINE 登入）時送的那一句。**退路是出事時才按的，按下去才第一次
+ *    看到畫面長什麼樣＝最貴的時機。**
+ *
+ * ⚠️ 這幾條**證明不了後端真的會送這些字**（期望值與輸入同源，見 MSG 檔頭）。
+ *    它們證明的是：這四種 reason 走到 `failBox` 那條路、訊息真的畫在畫面上、
+ *    而且不是靜默空白，console 也乾淨。
+ */
+for (const [key, reason, msg] of [
+  ['06-憑證沒帶上來', 'line_no_token', MSG.noToken],
+  ['07-登入過期', 'line_bad_token', MSG.badToken],
+  ['08-綁定資料重複', 'line_ambiguous', MSG.ambiguous],
+  ['09-退路已啟動', 'line_needs_sheet', MSG.needsSheet],
+]) {
+  test(`失敗畫面 ${key}：後端的那一句要真的出現在畫面上（${reason}）`, async ({ page }) => {
+    const logs = await open(page, { envelope: { ok: false, msg, reason } });
+    const txt = await visibleText(page);
+    await page.screenshot({ path: `test-results/e1a-${key}.png`, fullPage: true });
+    console.log(`【${key}】reason=${reason}`);
+    console.log(`【${key}】畫面：`, txt.slice(0, 400));
+    console.log(`【${key}】console：`, JSON.stringify(logs));
+    expect(logs.filter((l) => l.startsWith('[pageerror]')), 'console 有未捕捉的錯誤').toEqual([]);
+    expect(txt, `${reason} 的訊息沒有畫出來 ⇒ 他只看到一個空畫面`).toContain(msg.slice(0, 12));
+    // ⬛ 不只要「有字」，還要「不是空狀態的樣子」——否則被擋住與沒資料分不開。
+    const look = await boxLook(page);
+    expect(look, `${reason} 連訊息框都沒畫出來`).not.toBeNull();
+    expect(look.cls, `${reason} 走的是 .empty（＝看起來像「這裡沒有資料」）`).toContain('msg-err');
+  });
+}
+
+/**
+ * 🔴 六種 reason 在畫面上必須是六句不同的話。
+ *
+ * 上面那條既有的「三種失敗必須是三句不同的話」量的是 3；這一條把後端送得出來的
+ * 六種一次擺在一起比。**擴定義域時，對照的那一側也要跟著擴**——只補畫面、不擴
+ * 「彼此必須不同」這條，就會出現「新加的四種其實都印同一句」而測試全綠。
+ */
+test('🔴 後端送得出來的六種 LINE 路失敗，畫面上必須是六句不同的話', async ({ browser }) => {
+  const seen = {};
+  for (const [reason, msg] of [
+    ['line_unbound', MSG.unbound], ['line_upstream', MSG.upstream],
+    ['line_no_token', MSG.noToken], ['line_bad_token', MSG.badToken],
+    ['line_ambiguous', MSG.ambiguous], ['line_needs_sheet', MSG.needsSheet],
+  ]) {
+    const p = await (await browser.newContext()).newPage();
+    await open(p, { envelope: { ok: false, msg, reason } });
+    seen[reason] = await visibleText(p);
+    await p.close();
+  }
+  const vals = Object.values(seen);
+  // ⬛ 對照組：先確認每一種都真的畫出了東西（否則下面在比六個相同的空字串，
+  //    而 Set 大小會是 1、紅得像「壓成一句」，真因卻是「六種都沒畫」）。
+  Object.entries(seen).forEach(([k, v]) => {
+    if (!v || !v.trim()) throw new Error(k + ' 畫面整片空白 ⇒ 這條測試什麼都沒比到');
+  });
+  expect(new Set(vals).size, '有兩種以上失敗畫出同一個畫面 ⇒ 那幾種人被指錯路').toBe(6);
+  console.log('【六種失敗各自的畫面】', JSON.stringify(seen, null, 1).slice(0, 2000));
+});
 
 /**
  * 🔴 **「被擋住」與「這裡沒有資料」必須在畫面上分得開。**
