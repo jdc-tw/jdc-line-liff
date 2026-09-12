@@ -343,11 +343,51 @@ function lineSub(){
  *    「正在前往 LINE 登入…」**也是紅的**——那是一個正常的過場，紅色會讓人以為壞了。
  *    紅色要留給真的擋住的情況，否則紅色就不再代表任何事。
  */
+/**
+ * 🔴 **2026-09-12：原本只寫 `#who`，而 `#who` 在 `<div id="tab-checkin">` 裡面。**
+ *    身分失敗的訊息寫進一個**分頁內**的元素 ⇒ 切到別的分頁、或後續渲染蓋掉它，
+ *    那句話就消失了，而畫面看起來仍然是一張正常的看板。
+ *    當天的實況就是這個長相：使用者回報「畫面正常、導覽列五顆鈕都在」，
+ *    **而我們到現在都還不知道當時 `startAuth` 走到哪一格**——因為唯一會講的那個位置
+ *    本來就可能看不見。**這是「該看的東西沒被放到眼前」，不是他沒看。**
+ *
+ * 改法：訊息改畫在 `<body>` 最上緣的固定橫幅（自建元素，不依附任何分頁），
+ * `#who` 仍然照舊寫（正常時它是「核准人：xxx」那一格，那個用途沒變）。
+ */
+function authBanner(msg,isErr,diag){
+  var id='auth-banner';
+  var b=document.getElementById(id);
+  if(!b){
+    b=document.createElement('div');
+    b.id=id;
+    // `|| null`：空 body 時 firstChild 是 null，而傳 undefined 的行為各家不一致。
+    document.body.insertBefore(b,document.body.firstChild||null);
+  }
+  b.style.cssText='position:sticky;top:0;z-index:9999;padding:10px 14px;font-size:14px;'
+    +'font-weight:700;line-height:1.6;border-bottom:1px solid rgba(0,0,0,.12);'
+    +'background:'+(isErr?'#fdecec':'#f4f4f4')+';color:'+(isErr?'#c00':'#555');
+  b.textContent=msg;
+  if(diag){
+    var d=document.createElement('div');
+    // ⚠️ 只印「有沒有／多長」，**不印憑證內容**——這一行會被截圖傳出去。
+    d.style.cssText='margin-top:4px;font-weight:400;font-size:12px;color:#777';
+    d.textContent=diag;
+    b.appendChild(d);
+  }
+}
+/** 機器狀態一行。下一次有人回報「壞了」時，這一行就是證據，不必再靠回想。 */
+function authDiag(){
+  var hasLiff=!!(window.liff&&typeof liff.init==='function');
+  var logged='?',idLen='?';
+  try{ logged=hasLiff&&typeof liff.isLoggedIn==='function'?String(liff.isLoggedIn()):'?'; }catch(e){ logged='throw'; }
+  try{ idLen=hasLiff&&typeof liff.getIDToken==='function'?String(String(liff.getIDToken()||'').length):'?'; }catch(e){ idLen='throw'; }
+  return '診斷：t='+(TOKEN?'有':'無')+'／liff='+(hasLiff?'有':'無')
+    +'／已登入='+logged+'／憑證長度='+idLen;
+}
 function authBlock(msg,isErr){
+  authBanner(msg,isErr,isErr?authDiag():'');
   var el=document.getElementById('who');
   if(el){el.textContent=msg;el.style.color=isErr?'#c00':'#888';}
-  else{document.body.insertAdjacentHTML('afterbegin',
-    '<div style="padding:16px;font-weight:700;color:'+(isErr?'#c00':'#888')+'">'+msg+'</div>');}
 }
 /** 永遠不 resolve ⇒ 後面的首載整批不會發車。**fail-closed，不是忘了 resolve。** */
 function authHalt(msg){authBlock(msg,true);return new Promise(function(){});}
