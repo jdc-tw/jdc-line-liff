@@ -23,15 +23,28 @@ const vm = require('node:vm');
  */
 
 const ROOT = path.join(__dirname, '..');
-// index.html（全體同仁入口）與 staff.html（現場掃描站）2026-08-21 補入。
-// 這兩頁原本缺席，而它們正是出事代價最高的兩頁：index 掛了全公司進不來，
-// staff 掛了現場整隊卡住。要能跑起來需要兩個外部相依的替身——LIFF SDK 走 CDN
-// （scriptsOf 一律不抓外部）、相機是瀏覽器 API——都補在 makeContext 裡。
-// welfare.html（福委會發送頁）2026-08-29 補入。它是全站唯一「按下去就發 137 則、
-// 收不回來」的頁面，而它的啟動流程有四支非同步載入與三顆按鈕的接線——
-// 少一個識別字就是頁面停在載入中，而且沒有人會收到通知。
-const PAGES = ['admin.html', 'board.html', 'stats.html', 'attend.html', 'hr-stats.html',
-               'messages.html', 'index.html', 'staff.html', 'welfare.html'];
+
+/**
+ * 頁面清單＝**掃目錄**，不是手寫（2026-09-12 改）。
+ *
+ * 為何改：原本是手寫九頁——`admin / board / stats / attend / hr-stats /
+ * messages / index / staff / welfare`。手寫清單是「用列舉代替定義域」：
+ * **新頁面永遠自動落在檢查之外，而且零錯誤訊息**。
+ * 實測到的三頁缺口：`checkin.html`（活動報到看板）、`verify.html`（email 驗證
+ * 落地頁）、`wall.html`。三頁都從來沒被這支跑過 ⇒ 它們的頂層 JS 錯誤
+ * 不會被任何東西抓到。補進去當天三頁都是綠的（2026-09-12 實測），
+ * 所以這次改動沒有掩蓋任何既有缺陷。
+ *
+ * ⚠️ 掃目錄把什麼掃進來：**repo 根目錄的每一個 `.html`**。今天根目錄就只有
+ * 要發佈到 GitHub Pages 的頁面（測試用的 fixture 在 `tests/fixtures/`，
+ * 不在掃描範圍），所以「掃進不該測的東西」今天是 0。
+ * 日後若有人在根目錄放暫用頁，代價是多一支**假紅**——吵，但方向是對的；
+ * 手寫清單的代價是**漏測而且安靜**。真的要排除就在這裡明寫 EXCLUDE 並附理由。
+ *
+ * 🔴 掃描自己的失效形態是「**掃到比較少**」——回 0 頁的話這個 for 迴圈一支測試
+ * 都不產生，整個檔案仍然綠。所以下面另有一支「掃得到東西」的絆線把下限釘住。
+ */
+const PAGES = fs.readdirSync(ROOT).filter((f) => /\.html$/i.test(f)).sort();
 
 /** 一個什麼都收的假元素——頁面頂層常直接對 getElementById 的結果取屬性。 */
 function fakeEl(tag) {
@@ -208,6 +221,16 @@ for (const page of PAGES) {
     }
   });
 }
+
+test('⬛ 零點：掃目錄真的掃得到頁面——回 0 頁的話上面整組測試會安靜地不存在', () => {
+  assert.ok(PAGES.length >= 12,
+    `只掃到 ${PAGES.length} 頁（${PAGES.join(', ')}）——掃描壞掉時上面的 for 迴圈會一支測試都不產生，而檔案照樣全綠`);
+  // 錨點：這幾頁壞掉的代價最高（index 掛了全公司進不來、staff 掛了現場整隊卡住、
+  // welfare 是唯一「按下去就發 137 則收不回來」的頁）。掃描漏了它們必須是紅的。
+  for (const must of ['index.html', 'staff.html', 'welfare.html', 'board.html', 'checkin.html']) {
+    assert.ok(PAGES.includes(must), `${must} 不在掃描結果裡——掃描的定義域壞了`);
+  }
+});
 
 test('對照組：把 Critical 的形狀重現一次，這支測試必須抓得到', () => {
   // stats.html 2026-08-19 的真實錯法：頂層先用 SECOND，才在後面 var SECOND = …
