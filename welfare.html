@@ -243,6 +243,13 @@
     </div>
     <button type="button" class="btn btn-send" id="btn-send" disabled>送出 LINE 訊息</button>
   </div>
+  <!-- 延遲送出的反悔窗口（2026-09-12 使用者拍板）。送出之後這一塊才出現。
+       ⚠️ 倒數只是「還剩多久」的顯示，**不是它在計時**——真正在等的是伺服器那一次
+          執行（`Utilities.sleep`）。所以關掉分頁不會取消，確認框裡明講這件事。 -->
+  <div class="otp-box" id="cancel-box" hidden>
+    <button type="button" class="btn" id="btn-cancel-send">取消這次發送</button>
+    <span class="msg" id="cancel-count"></span>
+  </div>
   <div class="msg" id="send-note"></div>
 </div>
 
@@ -333,6 +340,26 @@ var SAVE_IN_FLIGHT = false;
 var OTP_IN_FLIGHT = false;
 /** 送出是否進行中。**與 armed 是兩件事**，不可共用一個旗標。 */
 var SEND_IN_FLIGHT = false;
+
+/* ── 延遲送出的反悔窗口（2026-09-12 使用者拍板）────────────────────────
+ * 🔴 **真正在等的是伺服器**（後端 `Utilities.sleep`），這裡的倒數只是顯示。
+ *    兩個後果，都要記住：
+ *      ① 關掉分頁不會取消——這一句寫在確認框裡，`tests/welfare-page-wiring`
+ *         有一條釘住它還在。
+ *      ② 這裡的秒數與後端的 `WELFARE_SEND_DELAY_MS` 是**兩份**，沒有東西
+ *         逼它們相等。所以倒數歸零之後**不可以**說「已經送出去了」——
+ *         它只知道自己數完了，不知道伺服器數完了沒。歸零時改說「隨時會送出」。
+ *         ⚠️ 後端改了秒數而這裡沒跟上，症狀是倒數與實際不同步、**不是發錯訊息**；
+ *            真正的門在後端（取消到底攔不攔得住由它決定）。
+ */
+var SEND_CANCEL_SEC = 60;
+/** 一次送出呼叫的逾時。窗口 60 秒 ＋ 發送實測 31–52 秒 ⇒ 120 秒只剩 8 秒餘裕。 */
+var SEND_TIMEOUT_MS = 180000;
+/** 可以取消的是哪一發（nonce）。空字串＝現在沒有東西可以取消。 */
+var CANCEL_NONCE = '';
+var CANCEL_TIMER = null;
+var CANCEL_LEFT = 0;
+var CANCEL_IN_FLIGHT = false;
 
 /**
  * UI generation：任何會讓「畫面上這一份」與「碼綁的那一份」脫鉤的事件都要 +1。
@@ -866,6 +893,84 @@ function onRequestOtp() {
           function (e) { OTP_IN_FLIGHT = false; syncOtpButton(); throw e; });
 }
 
+/* ── 反悔窗口：倒數與取消鈕 ───────────────────────────────────────────── */
+
+/**
+ * 開窗。**只由 `onSend` 在確認框按下確定之後呼叫。**
+ * 記住這一發的 nonce——取消要送同一個識別值上去，畫面上也才知道在取消哪一發。
+ */
+function armCancel(nonce) {
+  CANCEL_NONCE = String(nonce || '');
+  CANCEL_IN_FLIGHT = false;
+  document.getElementById('cancel-box').hidden = false;
+  syncCancelButton();
+  CANCEL_LEFT = SEND_CANCEL_SEC;
+  if (CANCEL_TIMER) clearInterval(CANCEL_TIMER);
+  cancelTick();
+  CANCEL_TIMER = setInterval(cancelTick, 1000);
+}
+
+/**
+ * 倒數一格。
+ * ⚠️ **刻意寫成 `function` 宣告、不是 `var tick = function`**——
+ *    `tests/source-scan-tripwire.test.js` 有一條絆線在擋後者：共用的取原始碼工具
+ *    列舉不到那種形式，會**靜默**取不到（2026-09-12 我就是被它擋下來的）。
+ */
+function cancelTick() {
+  // 🔴 歸零之後**不可以**說「已經送出去了」。這裡的倒數與伺服器的等待是兩份，
+  //    沒有東西逼它們相等 ⇒ 它只知道自己數完了。說死會變成一句錯的保證。
+  setNote('cancel-count', CANCEL_LEFT > 0
+    ? ('還有 ' + CANCEL_LEFT + ' 秒可以取消（關掉這一頁不會取消）')
+    : '時間到了，隨時會送出——取消可能已經來不及。');
+  if (CANCEL_LEFT <= 0) { clearInterval(CANCEL_TIMER); CANCEL_TIMER = null; return; }
+  CANCEL_LEFT--;
+}
+
+/** 關窗。送出那一次呼叫回來（成功或失敗）就沒得取消了。 */
+function disarmCancel() {
+  CANCEL_NONCE = '';
+  if (CANCEL_TIMER) { clearInterval(CANCEL_TIMER); CANCEL_TIMER = null; }
+  document.getElementById('cancel-box').hidden = true;
+  setNote('cancel-count', '');
+}
+
+/**
+ * 🔴 btn-cancel-send.disabled 只准由這一支指派（同 `syncSendButton` 的理由：
+ *    兩處各寫各的方向，一定會出現「該按得動卻按不動」）。
+ */
+function syncCancelButton() {
+  document.getElementById('btn-cancel-send').disabled = !CANCEL_NONCE || CANCEL_IN_FLIGHT;
+}
+
+/**
+ * 按下取消。**這是另一次請求**——送出那一次還卡在伺服器上睡覺，
+ * 它不可能自己回頭看有沒有人按了鈕。
+ *
+ * ⚠️ **不在這裡宣布結果。** 這一支只負責把「我要取消」寫進伺服器那一格；
+ *    到底攔不攔得住由後端回答（它可能回 `too_late`）。畫面上的定論一律等
+ *    **送出那一次呼叫**回來——那一則才是真正知道有沒有人收到的。
+ */
+function onCancelSend() {
+  if (!CANCEL_NONCE || CANCEL_IN_FLIGHT) return;      // 同步防雙擊，早於任何非同步
+  CANCEL_IN_FLIGHT = true;
+  syncCancelButton();
+  setNote('send-note', '正在取消…');
+  return wfCall('sendWelfareBroadcast',
+          { cancel: '1', templateId: CURRENT_TPL, nonce: newNonce() })
+    .then(function (r) {
+      if (r && r.transport) {
+        // 🔴 取消的請求送不出去 ＝ **沒有取消成功**，不是「大概取消了吧」。
+        //    窗口很短，所以要她立刻再按一次，不是叫她等。
+        setNote('send-note', '⚠️ 取消沒有送達伺服器，這一發可能還會送出去。請立刻再按一次取消。', 'err');
+        return;
+      }
+      setNote('send-note', (r && r.msg) || '取消的結果無法確認。', (r && r.ok) ? '' : 'err');
+    })
+    // 等價於 finally（舊 Safari 沒有 Promise.prototype.finally）。
+    .then(function () { CANCEL_IN_FLIGHT = false; syncCancelButton(); },
+          function (e) { CANCEL_IN_FLIGHT = false; syncCancelButton(); throw e; });
+}
+
 /* ── 送出 ─────────────────────────────────────────────────────────────── */
 
 function onSend() {
@@ -897,12 +1002,25 @@ function onSend() {
   var msg = '確定要發送給 ' + who + '嗎？\n\n'
           + '這一則最近一次的狀態：' + lastStatusLabel() + '\n'
           + (OTP_STATE.quotaWarning ? ('⚠️ ' + OTP_STATE.quotaWarning + '\n') : '')
+          // 🔴 **兩句都要講，而且第二句不可以省。**
+          //    等待是在**伺服器上**進行的（它沒有辦法知道你的分頁還開不開），
+          //    所以關掉分頁不會取消。她若以為關掉就不送，會用錯的方式「反悔」。
+          + '\n按下確定之後有 ' + SEND_CANCEL_SEC + ' 秒可以按「取消這次發送」。'
+          // ⚠️ 這是 confirm() 的純文字，markdown 的星號會原樣顯示，不要用。
+          + '\n⚠️ 關掉這一頁不會取消——等待是在伺服器上進行的，時間到照樣送出。'
           + '\n⚠️ LINE 訊息送出後收不回來。';
   if (!confirm(msg)) { SEND_IN_FLIGHT = false; syncSendButton(); syncSaveButton(); return; }
+  // 開倒數＋取消鈕。**用這次的 nonce 記住「可以取消的是哪一發」**。
+  armCancel(nonce);
   return wfCall('sendWelfareBroadcast',    // ← return：見 onSaveTemplate 的理由
           { templateId: CURRENT_TPL, otp: otpValue(), nonce: nonce },
-          120000)                                         // ⚠️ 數字；不是預設的 45 秒
+          // ⚠️ 數字；不是預設的 45 秒。**延遲窗口把這一次呼叫拉長了**：
+          //    窗口 60 秒 ＋ 一次發送實測 31–52 秒 ≈ 112 秒，原本的 120000 只剩 8 秒餘裕
+          //    ⇒ 逾時會讓「其實送成功了」被顯示成 transport（狀態不明），
+          //      而那一則文案會叫她不要重按、去查紀錄——**一個本來不必發生的疑案**。
+          SEND_TIMEOUT_MS)
     .then(function (r) {
+      disarmCancel();                      // 回來了就沒得取消了（不管成功失敗）
       if (r && r.ok) { disarmOtp(); showState(r, sentTpl); return; }   // 送出成功＝這組碼用掉了
       if (r && r.transport) {
         // 🔴 傳輸失敗 ＝ unknown，**不是失敗**。
@@ -1149,6 +1267,7 @@ function wireButtons() {
   });
   document.getElementById('btn-otp').addEventListener('click', onRequestOtp);
   document.getElementById('btn-send').addEventListener('click', onSend);
+  document.getElementById('btn-cancel-send').addEventListener('click', onCancelSend);
   document.getElementById('btn-all').addEventListener('click', function () { setAllChecked(true); });
   document.getElementById('btn-none').addEventListener('click', function () { setAllChecked(false); });
 }

@@ -63,7 +63,9 @@ const fnSrc = (name) => S.fnSrc(name);
 function ctxWith(names, opt) {
   opt = opt || {};
   const calls = { note: [], status: [], msglog: [], select: [], loadStatus: [],
-                  confirm: [], audience: [], syncSave: [], syncOtp: [], syncSend: [] };
+                  confirm: [], audience: [], syncSave: [], syncOtp: [], syncSend: [],
+                  // 延遲送出的反悔窗口（2026-09-12）
+                  armCancel: [], disarmCancel: [], interval: [], clearInterval: [] };
   const els = {};
   const el = (id) => (els[id] = els[id] || {
     value: '', textContent: '', innerHTML: '', hidden: false, disabled: false,
@@ -127,6 +129,22 @@ function ctxWith(names, opt) {
   ctx.onAddTemplate = ctx.onDisableTemplate = ctx.onRestoreTemplate = () => {};
   ctx.setAllChecked = () => {};
   ctx.SAVE_IN_FLIGHT = false; ctx.OTP_IN_FLIGHT = false; ctx.SEND_IN_FLIGHT = false;
+  // ── 延遲送出的反悔窗口（2026-09-12）────────────────────────────────
+  // ⚠️ 常數從 welfare.html 的真宣告抽進來，**不在這裡抄一份值**（同 LIFF_ID 的理由：
+  //    抄的話就變成拿自己的答案驗自己，頁面改了這裡照樣綠）。
+  ctx.SEND_CANCEL_SEC = Number((SRC.match(/^var SEND_CANCEL_SEC = (\d+);/m) || [])[1]);
+  ctx.SEND_TIMEOUT_MS = Number((SRC.match(/^var SEND_TIMEOUT_MS = (\d+);/m) || [])[1]);
+  ctx.CANCEL_NONCE = ''; ctx.CANCEL_TIMER = null; ctx.CANCEL_LEFT = 0;
+  ctx.CANCEL_IN_FLIGHT = false;
+  // 倒數用的計時器：記帳，不真的跑（真的跑會讓測試等 60 秒，而且不會停）。
+  ctx.setInterval = (f) => { calls.interval.push(f); return 'TIMER'; };
+  ctx.clearInterval = (t) => { calls.clearInterval.push(t); };
+  // 開窗／關窗預設替身；受測時由 `names` 載入真的那一支覆寫掉（見下面那行註解）。
+  ctx.armCancel = (n) => { calls.armCancel.push(n); };
+  ctx.disarmCancel = () => { calls.disarmCancel.push(1); };
+  ctx.syncCancelButton = () => {};
+  ctx.cancelTick = () => {};
+  ctx.onCancelSend = () => {};
   // 2026-09-02：九個呼叫點改走 wfCall（憑證只掛在那一支）。
   // ⚠️ **載入真的 wfCall，不另做替身**——替身會把「憑證有沒有掛上去」整個跳過，
   //    而那正是這一輪加的東西。底下的 gasCall 仍是替身。
@@ -1029,4 +1047,133 @@ test('舊名稱沒有回頭：只准出現在註解裡標「原名」的那一�
     `舊名稱「${OLD_NAME}」出現在 welfare.html 這幾行：`
     + strays.map(([l, n]) => `\n     第 ${n} 行：${l.trim()}`).join('')
     + `\n   ⇒ 這是改名被複製回去了。要保留歷史請寫成「原名「${OLD_NAME}」」那個形狀。`);
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 延遲送出的反悔窗口（2026-09-12 使用者拍板）
+ *
+ * 🔴 **前端這一側能證明的事是有上限的。** 真正的門在後端：取消攔不攔得住，
+ *    由 `jdc-line-gas` 的 `takeWelfarePending_` 決定（那一側有外送計數 ＋ 零點）。
+ *    這裡只驗四件接線：鈕接上了、確認框講清楚了、取消送的是 `cancel=1`、
+ *    以及**逾時放得夠長**（放不夠長的症狀是「其實送成功了」被顯示成狀態不明）。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+test('🔴 取消鈕接上了 click（接不上＝這顆鈕不存在，而畫面上看得到它）', () => {
+  const { ctx, el } = ctxWith(['wireButtons']);
+  ctx.onCancelSend = () => { ctx.__hit = (ctx.__hit || []).concat('cancel'); };
+  vm.runInContext('wireButtons()', ctx);
+  el('btn-cancel-send').fire('click', {});
+  assert.deepStrictEqual(ctx.__hit, ['cancel'], '取消鈕按下去什麼都不會發生');
+});
+
+test('🔴 確認框要講「關掉這一頁不會取消」——這是刻意的行為，不寫出來就會被當成 bug 修掉', () => {
+  // 🔴 等待是在**伺服器**上進行的（後端 `Utilities.sleep`），它不可能知道分頁關了沒。
+  //    她若以為關掉分頁就不送，會用一個沒有效果的方式「反悔」。
+  const { ctx, calls } = ctxWith(['onSend'], { confirmAnswer: false });
+  ctx.OTP_STATE = { armed: true, count: 137, uncertain: false, quotaWarning: '' };
+  vm.runInContext('onSend()', ctx);
+  assert.ok(calls.confirm[0].indexOf('關掉這一頁不會取消') >= 0,
+    '確認框沒有講「關掉這一頁不會取消」：' + calls.confirm[0]);
+  assert.ok(calls.confirm[0].indexOf('秒可以按') >= 0,
+    '確認框沒有講可以取消的秒數：' + calls.confirm[0]);
+  // ⚠️ confirm() 是純文字，markdown 的星號會原樣顯示出來。
+  assert.ok(calls.confirm[0].indexOf('**') < 0, '確認框裡有 markdown 的星號');
+});
+
+test('🔴 按下確定才開窗；她在確認框按取消 → 不可以留下一顆可以按的取消鈕', () => {
+  const 不送 = ctxWith(['onSend'], { confirmAnswer: false });
+  不送.ctx.OTP_STATE = { armed: true, count: 1, uncertain: false, quotaWarning: '' };
+  vm.runInContext('onSend()', 不送.ctx);
+  assert.deepStrictEqual(不送.calls.armCancel, [], '她按了取消，卻開出一顆取消鈕');
+
+  const 送 = ctxWith(['onSend'], { confirmAnswer: true,
+    responses: { sendWelfareBroadcast: { ok: true, state: 'sent' } } });
+  送.ctx.OTP_STATE = { armed: true, count: 1, uncertain: false, quotaWarning: '' };
+  vm.runInContext('onSend()', 送.ctx);
+  // ⬛ 零點：按了確定就一定要開窗，否則上面那條在「永遠不開窗」的實作上也會綠。
+  assert.deepStrictEqual(送.calls.armCancel, ['nonce-1'],
+    '按了確定卻沒有開出取消窗（或開的不是這一發的 nonce）');
+});
+
+test('🔴 送出那一次呼叫回來就關窗——不管成功、失敗還是傳輸掉包', async () => {
+  const 情境 = [
+    ['成功', { ok: true, state: 'sent' }],
+    ['傳輸掉包', { ok: false, transport: true }],
+    ['伺服器拒絕', { ok: false, reason: 'send_cancelled', msg: '已取消' }],
+  ];
+  for (const [名, 回應] of 情境) {
+    const { ctx, calls } = ctxWith(['onSend'], { responses: { sendWelfareBroadcast: 回應 } });
+    ctx.OTP_STATE = { armed: true, count: 1, uncertain: false, quotaWarning: '' };
+    await vm.runInContext('onSend()', ctx);
+    assert.ok(calls.disarmCancel.length > 0,
+      '「' + 名 + '」那條路沒有關窗 ⇒ 畫面上留著一顆按了只會拿到 nothing_pending 的鈕');
+  }
+});
+
+test('🔴 送出的逾時要放得比「窗口＋一次發送」長（120 秒只剩 8 秒餘裕）', () => {
+  // 🔴 放不夠長的症狀**不是逾時而已**：它會把「其實送成功了」顯示成 transport
+  //    （狀態不明），而那一則文案叫她不要重按、去查紀錄——一個本來不必發生的疑案。
+  //    60（窗口）＋ 52（一次發送實測的上緣，二手數字）＝ 112 秒。
+  const wf = S.fnSrc('onSend');
+  assert.ok(wf.indexOf('SEND_TIMEOUT_MS') >= 0,
+    'onSend 沒有用 SEND_TIMEOUT_MS ⇒ 逾時又變成寫死的數字');
+  const 秒 = Number((SRC.match(/^var SEND_CANCEL_SEC = (\d+);/m) || [])[1]);
+  const 逾時 = Number((SRC.match(/^var SEND_TIMEOUT_MS = (\d+);/m) || [])[1]);
+  assert.ok(秒 > 0 && 逾時 > 0, '對照組：兩個常數都要抽得到');
+  assert.ok(逾時 >= (秒 + 52) * 1000 + 15000,
+    '逾時 ' + 逾時 + 'ms 不夠：窗口 ' + 秒 + ' 秒 ＋ 發送 52 秒 ＋ 餘裕');
+});
+
+test('🔴 取消送的是 cancel=1（走同一支 action，不是第十支）', async () => {
+  const { ctx } = ctxWith(['onCancelSend'], {});
+  const 打出去 = [];
+  ctx.gasCall = (url, action, p) => { 打出去.push({ action, p }); return Promise.resolve({ ok: true, msg: '已取消' }); };
+  ctx.CANCEL_NONCE = 'nonce-1';
+  await vm.runInContext('onCancelSend()', ctx);
+  assert.strictEqual(打出去.length, 1, '取消沒有打出去，或打了不只一次');
+  assert.strictEqual(打出去[0].action, 'sendWelfareBroadcast',
+    '取消另外開了一支 action ⇒ 後端 ACTION_ROLES 要多一格，而那會動到三條到期哨兵');
+  assert.strictEqual(打出去[0].p.cancel, '1');
+  // 憑證必須跟著（走 wfCall ⇒ token 與 idToken 只掛在那一支）。
+  assert.strictEqual(打出去[0].p.token, 'T');
+  assert.ok(打出去[0].p.idToken, '取消沒有帶 idToken ⇒ 第二道守門會擋下它');
+});
+
+test('🔴 沒有東西可以取消時，onCancelSend 一個字都不送出去', () => {
+  const { ctx } = ctxWith(['onCancelSend'], {});
+  const 打出去 = [];
+  ctx.gasCall = (url, action, p) => { 打出去.push(action); return Promise.resolve({ ok: true }); };
+  ctx.CANCEL_NONCE = '';
+  vm.runInContext('onCancelSend()', ctx);
+  assert.deepStrictEqual(打出去, [], '窗口沒開卻打了取消請求');
+});
+
+test('🔴 取消的請求送不出去 ＝ 沒有取消成功，不可以講成「大概取消了吧」', async () => {
+  const { ctx, calls } = ctxWith(['onCancelSend'], {
+    responses: { sendWelfareBroadcast: { ok: false, transport: true } } });
+  ctx.CANCEL_NONCE = 'nonce-1';
+  await vm.runInContext('onCancelSend()', ctx);
+  const 說的 = calls.note.map((n) => n.text).join('｜');
+  assert.ok(說的.indexOf('可能還會送出去') >= 0, '把「沒送達」講成了取消成功：' + 說的);
+  assert.ok(說的.indexOf('立刻再按一次') >= 0, '窗口只有幾十秒，叫她「稍後」等於叫她放棄');
+});
+
+test('🔴 倒數歸零不可以說「已經送出去了」——前端只知道自己數完了', () => {
+  // 前端的倒數與後端的 `WELFARE_SEND_DELAY_MS` 是兩份，沒有東西逼它們相等。
+  const { ctx, calls } = ctxWith(['cancelTick'], {});
+  ctx.CANCEL_LEFT = 0;
+  vm.runInContext('cancelTick()', ctx);
+  const 說的 = calls.note.map((n) => n.text).join('｜');
+  assert.ok(說的.indexOf('已送出') < 0 && 說的.indexOf('已經送出') < 0,
+    '倒數歸零就宣布送出去了，而它並不知道：' + 說的);
+  assert.ok(說的.indexOf('隨時會送出') >= 0, 說的);
+});
+
+test('⬛ 對照組：倒數還沒歸零時，講的是「還有幾秒」（否則上一條恆真）', () => {
+  const { ctx, calls } = ctxWith(['cancelTick'], {});
+  ctx.CANCEL_LEFT = 30;
+  vm.runInContext('cancelTick()', ctx);
+  const 說的 = calls.note.map((n) => n.text).join('｜');
+  assert.ok(說的.indexOf('還有 30 秒') >= 0, 說的);
+  assert.ok(說的.indexOf('關掉這一頁不會取消') >= 0, '倒數那一行也要提醒一次：' + 說的);
 });
