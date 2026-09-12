@@ -143,6 +143,61 @@ for (const [key, reason, msg] of [
   });
 }
 
+/**
+ * 🔴 **「被擋住」與「這裡沒有資料」必須在畫面上分得開。**
+ *
+ * 為何補這一條（2026-09-12）：下面那條「三句話必須不同」是**綠的**，而畫面仍然有缺口
+ * ——三句話確實不同，但它比的是三種失敗**彼此**，從來沒跟「沒有資料」比過。
+ * 實際截圖看到的是：被擋下的訊息走 `.empty`（這一頁用來說「這一區沒有資料」的樣式），
+ * 於是進不去的人看到的畫面，跟「這裡本來就沒東西」一模一樣。
+ *
+ * ⚠️ **判準刻意是「兩者必須不同」，不是「顏色等於某個值」。**
+ *    把顏色寫死在測試裡，等於把同一個值抄第二份——樣式改一次就要改兩個地方，
+ *    而忘了改的那一次測試會紅得莫名其妙（或更糟：改了測試去遷就）。
+ */
+/** #pending 裡那一塊訊息的「長相簽名」。 */
+async function boxLook(page) {
+  return page.evaluate(() => {
+    const el = document.querySelector('#pending > div');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { cls: el.className, color: cs.color, bg: cs.backgroundColor,
+             align: cs.textAlign, text: (el.textContent || '').trim().slice(0, 20) };
+  });
+}
+
+test('🔴 被擋住的畫面，與「沒有資料」的畫面，必須分得開', async ({ browser }) => {
+  const look = {};
+  const cases = [
+    ['沒有資料', { ok: true, results: {
+      getCheckinOptions: { ok: true, units: [], titles: [] },
+      getCheckinPending: { ok: true, rows: [], who: '甲', admin: false },
+      getHrPending: { ok: true, rows: [] }, getAnniversaries: { ok: true, items: [] } } }],
+    ['被擋住_沒綁定', { ok: false, msg: MSG.unbound, reason: 'line_unbound' }],
+    ['被擋住_系統壞了', { ok: false, msg: MSG.upstream, reason: 'line_upstream' }],
+  ];
+  for (const [name, envelope] of cases) {
+    const p = await (await browser.newContext()).newPage();
+    await open(p, { envelope });
+    look[name] = await boxLook(p);
+    await p.close();
+  }
+  console.log('【長相簽名】', JSON.stringify(look, null, 1));
+
+  // ⬛ 對照組：兩種狀態都真的畫出了東西（否則下面在比兩個 null）
+  Object.entries(look).forEach(([k, v]) => {
+    if (!v) throw new Error(k + ' 沒有畫出任何訊息 ⇒ 這條測試什麼都沒比到');
+  });
+
+  const sig = (v) => [v.color, v.bg, v.align].join('|');
+  expect(sig(look['被擋住_沒綁定']), '被擋住與沒有資料長得一模一樣 ⇒ 他不知道自己被擋住了')
+    .not.toBe(sig(look['沒有資料']));
+  expect(sig(look['被擋住_系統壞了']), '同上，另一種失敗也要分得開')
+    .not.toBe(sig(look['沒有資料']));
+  // 兩種「被擋住」之間長相相同是對的——它們靠文字分辨，不靠顏色分辨。
+  expect(sig(look['被擋住_沒綁定'])).toBe(sig(look['被擋住_系統壞了']));
+});
+
 test('🔴 三種失敗在畫面上必須是三句不同的話（壓成一句＝這一格白做）', async ({ page, browser }) => {
   const seen = {};
   for (const [reason, msg] of [

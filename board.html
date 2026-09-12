@@ -477,6 +477,29 @@ function updateBadge(n){
 }
 var gOpts={titles:[],units:[]};
 function esc(s){return (s==null?'':s).toString().replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+
+/**
+ * 後端說「載不到／你被擋住」時要畫的東西。**全頁四個呼叫點共用這一支。**
+ *
+ * 🔴 **為何不能再沿用 `.empty`**：`.empty` 是這一頁用來說「這一區沒有資料」的樣式
+ *    （置中、灰字 `#888`、大留白）。被擋在門外的人看到的畫面，
+ *    會跟「這裡本來就沒東西」**一模一樣**——他不會知道自己是被擋住的。
+ *
+ *    2026-09-12 看實際截圖才發現：e2e 斷言「三種失敗的三句話必須不同」是**綠的**，
+ *    因為三句話確實不同；但三個畫面都長得像空資料。
+ *    **那條斷言比的是三種失敗彼此，從來沒跟「沒有資料」比過。**
+ *    ⇒ 這是 CHK2 那條判準的下一層：當初買到「舊碼」與「查無此人」分得開，
+ *      這次缺的是「進不去」與「這裡是空的」分得開。
+ *
+ * ⚠️ **用既有的 `.msg msg-err show`，不新造第四種樣式**——新造一種就是
+ *    第三份「錯誤長什麼樣」的定義，而三份遲早會漂。
+ *    （`.msg` 預設 `display:none`，所以 `show` 這一格不可省。）
+ *
+ * ⚠️ 一律 `esc`。原本 1129 那一處**沒有** esc，另外三處有——同一件事寫四遍就會漏一遍。
+ */
+function failBox(msg,fallback){
+  return '<div class="msg msg-err show">'+esc(msg||fallback)+'</div>';
+}
 function emailPrefix(full){full=(full||'').toString();var i=full.indexOf('@');return i>=0?full.slice(0,i):full;}
 function setMsg(el,text,type){el.className='msg show msg-'+(type||'info');el.textContent=text;}
 // ── 呼叫 nonce（2026-08-21）────────────────────────────────────────────
@@ -658,7 +681,7 @@ function westEff_(v){
 }
 function renderLog(r){
   var box=document.getElementById('log-list');
-  if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  if(!r||!r.ok){box.innerHTML=failBox(r&&r.msg,'載入失敗');return;}
   if(!r.rows.length){box.innerHTML='<div class="empty">還沒有任何異動紀錄</div>';return;}
   box.innerHTML='<div class="done-list">'+r.rows.map(function(x){
     var col=CAT_COLOR[x.cat]||'#666';
@@ -978,7 +1001,7 @@ function loadHr(){
 // 只負責畫。成功與失敗兩種輸入都收，快取與網路兩條路才能共用同一份繪製邏輯。
 function paintHr(r){
   var box=document.getElementById('hr-pending');
-  if(!r||!r.ok){box.innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  if(!r||!r.ok){box.innerHTML=failBox(r&&r.msg,'載入失敗');return;}
   hrData={units:r.units||[],namesByUnit:r.namesByUnit||{},titles:r.titles||[]};
   document.getElementById('bt-old').innerHTML='<option value="">── 請選擇 ──</option>'
     +hrData.units.map(function(u){return '<option>'+esc(u)+'</option>';}).join('');
@@ -1009,7 +1032,7 @@ function reviveNotice(row,btn){
 // （畫「一組 row 陣列」進 #r-list，filterRoster() 搜尋時也直接呼叫它）。若這支也取同名，
 // 兩個簽名不同（一個吃 API 回應物件、一個吃陣列）的函式會互相覆蓋，filterRoster 會壞掉。
 function paintRoster(r){
-  if(!r||!r.ok){document.getElementById('r-count').textContent='';document.getElementById('r-list').innerHTML='<div class="empty">'+esc((r&&r.msg)||'載入失敗')+'</div>';return;}
+  if(!r||!r.ok){document.getElementById('r-count').textContent='';document.getElementById('r-list').innerHTML=failBox(r&&r.msg,'載入失敗');return;}
   rosterRows=r.rows||[];
   // 最近 20 筆更新/異動 → 標紅＋顯示更新日期（有 updatedMs 的列，時間新→舊取前 20）
   rosterRows.forEach(function(o){o._recent=false;});
@@ -1126,7 +1149,7 @@ function renderLoad(rs){
     if(opt&&(opt.units||opt.titles))gOpts=opt;
     if(opt&&(opt.unitGroups||opt.titleGroups))window.JDC_GROUPS={unitGroups:opt.unitGroups,titleGroups:opt.titleGroups};   // 分組吃選項主檔「分類」欄
     var box=document.getElementById('pending');
-    if(!r||!r.ok){box.innerHTML='<div class="empty">'+((r&&r.msg)||'連結無效或已失效。')+'</div>';return;}
+    if(!r||!r.ok){box.innerHTML=failBox(r&&r.msg,'連結無效或已失效。');return;}
     document.getElementById('who').textContent='核准人：'+r.who;
     showAdminSwitch(r.admin);
     gEmpConflicts=r.empNoConflicts||{};
