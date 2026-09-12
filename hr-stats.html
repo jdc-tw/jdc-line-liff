@@ -210,6 +210,10 @@
   .names{font-size:12.5px;color:var(--ink);margin:2px 0 8px}
   .names b{font-weight:600}
   .empty{text-align:center;color:var(--ink3);padding:40px 0}
+  /* 主資料（gated getHrStats）失敗時那一條。刻意**不是** .empty——圖表還在、
+     只是姓名那一半沒拿到，整頁清空會把已經畫好的東西也抹掉。 */
+  .gate-fail{margin:0 0 14px;padding:10px 12px;border-radius:8px;background:#fdf3f4;
+    border:1px solid #e7c3ca;color:#8a2233;font-size:13px;line-height:1.7}
   .foot{font-size:11.5px;color:var(--ink3);margin-top:6px}
 </style>
 </head>
@@ -916,7 +920,7 @@ function renderHr(r){
   if(!retRows.length) html+='<div class="empty" style="padding:16px 0">目前沒有 55 歲以上的在職同仁</div>';
   else html+='<table class="rl"><tr><th>類別</th><th>年齡</th><th>單位</th><th>姓名</th></tr>'+retRows.map(function(r,i){
     var first=i===0||retRows[i-1].k!==r.k;
-    return '<tr'+(first?' class="grp"':'')+'><td><span class="chip" style="background:'+KCOL[r.k]+(r.k<=1?';color:#fff':'')+'">'+KLBL[r.k]+'</span></td><td class="ag">'+(r.a!=null?r.a+' 歲':'')+'</td><td>'+esc(r.u)+'</td><td class="pn">'+(s.pub?'<span class="lock">需權限，載入中…</span>':esc(r.n))+'</td></tr>';
+    return '<tr'+(first?' class="grp"':'')+'><td><span class="chip" style="background:'+KCOL[r.k]+(r.k<=1?';color:#fff':'')+'">'+KLBL[r.k]+'</span></td><td class="ag">'+(r.a!=null?r.a+' 歲':'')+'</td><td>'+esc(r.u)+'</td><td class="pn">'+(s.pub?'<span class="lock">'+esc(lockText())+'</span>':esc(r.n))+'</td></tr>';
   }).join('')+'</table>';
   html+='</div>';
   main.innerHTML=html;
@@ -973,16 +977,146 @@ function renderHr(r){
       return jsonp('getHrStats', { token: TOKEN }).then(function (r) {
         return handleVerdict(FP, r).then(function (v) {
           if (v === 'revoked') return;                       // 覆蓋層已蓋上
-          if (v === 'offline') { if (c) markOffline(c.savedAt); else if (!painted) renderHr(r); return; }
+          if (v === 'offline') {
+            // 有快取＝姓名已經是真的，`markOffline` 也會說「資料停在幾點」⇒ 不必再說一次。
+            if (c) { markOffline(c.savedAt); return; }
+            markGateFail(r); if (!painted) renderHr(r); return;
+          }
           return cacheSave(FP, N.hrStats, r).then(function () {
             if (r && r.ok) { renderHr(r); markOffline(null); markPub(null); }
-            else if (!painted) renderHr(r);
+            // 🔴 2026-09-12：原本這裡是 `else if (!painted) renderHr(r);`——
+            //    公開檔已經畫好（`painted`）時，這一發失敗**一個字都不會說**，
+            //    而姓名欄停在「需權限，載入中…」⇒ 讀起來像還在載入，其實已經跑完並失敗。
+            //    `markGateFail` 無條件先講，再決定要不要整頁換成錯誤畫面。
+            else { markGateFail(r); if (!painted) renderHr(r); }
           });
         });
       });
     });
   });
 })();
+
+/* ══ 主資料失敗時，讓它說話（2026-09-12）══════════════════════════════════
+ *
+ * 🔴 **為何存在**：這一頁是兩段式渲染——公開聚合檔 `hr-stats-pub.json` 先畫圖表
+ *    （姓名在後端就被剝掉，只留等長空字串），帶身分的 `getHrStats` 回來後才整個重畫、
+ *    填上真名。**而 gated 那一發失敗時，改動前的程式一個字都不會說**：
+ *      · `denyNoRole` 只對 `reason === 'role_mismatch'` 蓋覆蓋層
+ *      · `cacheVerdict` 只對 msg 前綴「無權限或連結已失效」判 revoked
+ *      · 其餘全部（`line_bad_token`／`line_unbound`／`role_unresolved`／
+ *        `line_upstream`／`line_needs_sheet`／任何未來新增的代號）落進
+ *        `else if (!painted) renderHr(r)`，而公開檔已經畫好 ⇒ `painted` 為真 ⇒ **什麼都不做**。
+ *    使用者看到的是圖表全部正常、姓名欄每一列停在「需權限，載入中…」，**永遠不變**。
+ *    那句話是謊話：它沒有在載入，它已經跑完並失敗了。
+ *
+ * ⚠️ **刻意不走 `denyNoRole` 的覆蓋層。** 那一格的判準（`__pageHasData` 那段）是
+ *    「附屬功能被擋不該蓋整頁」，2026-07-30 線上事故買回來的。把它放寬到所有 reason
+ *    等於把那次事故的修法退回去。這一條走的是**另一層**：這一頁的主資料失敗了，
+ *    圖表還在（那是公開檔畫的、仍然有用），只有姓名那一半沒拿到 ⇒ 用一條橫幅講，
+ *    不遮蓋畫面。兩者可以同時發生（`role_mismatch` 會兩個都出現），那是對的——
+ *    覆蓋層蓋在上面，橫幅在它底下，訊息不衝突。
+ *
+ * ⚠️ **新增 reason 不需要改這裡**：沒列到的一律照樣說話，並把代號與 msg 原樣印出來。
+ *    列舉已知值然後靜默，才是 fail-open——而它讀起來跟「沒事」一模一樣。
+ */
+
+/** 主資料失敗的結果；null ＝ 還沒失敗。`lockText()` 與 `markGateFail()` 共用這一格。 */
+var HR_GATE_FAIL = null;
+
+/**
+ * 退休預警名單姓名欄那一格要寫什麼。
+ * 🔴 **失敗之後不可以再寫「載入中」**——那是這次缺陷的本體。
+ * 分成一支函式是因為那張表會被重畫：失敗先發生、公開檔後畫好，也要拿到失敗後的字。
+ */
+function lockText() {
+  return HR_GATE_FAIL ? HR_GATE_FAIL.lock : '需權限，載入中…';
+}
+
+/**
+ * 一個 `ok:false` 回應要說的話。**純函式 ⇒ 測得到**，而「說了正確的話」與
+ * 「不管什麼都說同一句」在畫面上長得一模一樣。
+ *
+ * ⚠️ 代號取自後端 `jdc-line-gas` `line-platform/roles.js` 的 `GATE_REJECT`
+ *    （跨 repo 的手動對齊，與 `assets/deny-no-role.js` 同一種形狀、同一個弱點：
+ *    兩邊各有測試釘住自己那半，沒有機械的東西逼兩邊相等）。
+ *    **但漏掉一個代號的後果只是「講得比較籠統」，不是靜默**——預設分支會把
+ *    代號與 msg 原樣印出來。這是刻意的：跨 repo 對齊遲早會漂，而漂掉的時候
+ *    使用者仍然看得到「發生了什麼」，維護者仍然拿得到代號。
+ *
+ * @param {{ok?:boolean, msg?:string, reason?:string}} r 後端回應（或本頁 jsonp 自己 catch 出來的）
+ * @returns {{banner:string, lock:string}}
+ */
+function gateFailText(r) {
+  var reason = String((r && r.reason) || '');
+  // ⚠️ `error` 不是多餘的：後端 `doGet` 的外層 catch 回的是
+  //    `{ok:false, error:...}`——**一個 `msg` 都沒有**。只看 `msg` 的話，
+  //    程式炸掉那一種會變成「取得姓名資料失敗。」而把唯一的線索丟掉。
+  var msg = String((r && r.msg) || (r && r.error) || '');
+  var M = {
+    role_mismatch: ['您的權限看不到這一頁的姓名。請改用您自己的看板連結；'
+      + '若確認需要這一頁，請聯絡系統維護者調整權限。', '無權限'],
+    role_unresolved: ['系統認得您，但算不出您的權限（授權名冊上沒有您生效的列）。'
+      + '重新登入不會有用，請聯絡系統維護者。', '權限未設定'],
+    line_bad_token: ['LINE 登入已過期。請關掉這一頁重新開啟，重新登入後就會顯示姓名。', '登入過期'],
+    line_no_token: ['沒有把 LINE 登入憑證送到後端。請關掉這一頁重新開啟。', '憑證未送達'],
+    line_unbound: ['您的 LINE 帳號還沒完成員工身分綁定，系統認不出您是誰。'
+      + '請先回 LINE 完成綁定，再開這一頁。', '尚未綁定'],
+    line_ambiguous: ['您的綁定資料有重複的紀錄，系統無法判斷是哪一位。'
+      + '重新登入沒有用，請聯絡系統維護者。', '綁定重複'],
+    line_upstream: ['系統目前無法確認您的身分（不是您的問題）。請稍後再重新整理一次；'
+      + '若一直這樣，請聯絡系統維護者。', '暫時無法確認'],
+    line_needs_sheet: ['這一頁的 LINE 登入目前暫停使用，請改用原本帶連結參數的舊網址。', '登入暫停'],
+    token_invalid: ['這條連結的憑證驗不過（打錯、過期或被停用）。請改用有效的看板連結。', '連結失效'],
+    token_ambiguous: ['這條連結同時登記在多份名單上，是設定問題。'
+      + '換連結沒有用，請聯絡系統維護者。', '設定異常'],
+  };
+  if (Object.prototype.hasOwnProperty.call(M, reason)) {
+    return { banner: M[reason][0], lock: M[reason][1] };
+  }
+  // 這兩句是本頁 `jsonp()` 自己 catch 出來的字，不是後端文案 ⇒ 比對它們沒有跨 repo 耦合。
+  // （`assets/board-cache.js` 的 `cacheVerdict` 認的是同樣這兩個前綴。）
+  if (msg.indexOf('連線逾時') === 0 || msg.indexOf('連線失敗') === 0) {
+    return { banner: '連不到伺服器，姓名沒有載入（' + msg + '）。請確認網路後重新整理。',
+             lock: '連線失敗' };
+  }
+  // 🔴 沒列到的**也要說**。代號原樣印出來，維護者才查得到是哪一條路。
+  return {
+    banner: '取得姓名資料失敗'
+      + (reason ? '（代號 ' + reason + '）' : '（後端沒有回代號）')
+      + (msg ? '：' + msg : '')
+      + '。請重新整理一次；一直這樣的話請找資訊人員。',
+    lock: '載入失敗',
+  };
+}
+
+/**
+ * 把失敗放到畫面上：一條橫幅 ＋ 把已經畫好的姓名欄改掉。
+ *
+ * ⚠️ 橫幅刻意**不掛在 `#sub`**：`renderHr` 成功時會整個覆寫 `#sub` 的 textContent，
+ *    而公開檔那一發可能比 gated 失敗**晚**回來 ⇒ 橫幅會被靜靜抹掉。
+ *    獨立的 `#gate-fail` 放在 `#main` 前面，誰先誰後都成立。
+ */
+function markGateFail(r) {
+  HR_GATE_FAIL = gateFailText(r);
+  if (window.console && console.warn) {
+    console.warn('[hr-stats] 主資料失敗：', (r && r.reason) || '(無代號)', (r && r.msg) || '');
+  }
+  var el = document.getElementById('gate-fail');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'gate-fail';
+    el.className = 'gate-fail';
+    el.setAttribute('role', 'status');
+    var main = document.getElementById('main');
+    if (main && main.parentNode && main.parentNode.insertBefore) main.parentNode.insertBefore(el, main);
+    else document.body.appendChild(el);
+  }
+  el.textContent = HR_GATE_FAIL.banner;
+  // 已經畫好的那張表：姓名欄每一格都還寫著「載入中」，就地改掉。
+  // （反方向——失敗先發生、表後畫——由 `lockText()` 接住。）
+  var locks = document.querySelectorAll('.rl .lock');
+  for (var i = 0; i < locks.length; i++) locks[i].textContent = HR_GATE_FAIL.lock;
+}
 
 /** 離線標示：有 savedAt 就掛上去，傳 null 代表連上了、拿掉標示。
  *  掛在 #sub（頁面標題下的 meta 列）——本頁沒有 id="meta"，#sub 是同一個角色：
