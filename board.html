@@ -471,7 +471,11 @@ function pick2(a){
     return (slice&&slice.ok===true)?slice:null;
   });
 }
-annivInit(function(){return pick('getAnniversaries');}, FP);   // 年資里程碑提示卡（逢5週年·空名單不顯示）
+// 年資里程碑提示卡（逢5週年·空名單不顯示）。
+// 🔴 傳 failBox 進去：這張卡的 action 被擋下時，原本**整塊靜靜不顯示**
+//    ——而「附屬功能被擋」正是 2026-07-30 那次事故的入口，靜默是最貴的長相。
+//    失敗樣式由本頁供給，anniv.js 自己不定義（全站只有一份「錯誤長什麼樣」）。
+annivInit(function(){return pick('getAnniversaries');}, FP, { failBox: failBox });
 function updateBadge(n){
   document.getElementById('tabbtn-checkin').textContent = n>0 ? '新人報到（'+n+'）' : '新人報到';
 }

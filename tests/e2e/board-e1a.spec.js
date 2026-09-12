@@ -213,3 +213,67 @@ test('🔴 三種失敗在畫面上必須是三句不同的話（壓成一句＝
   expect(new Set(vals).size, '三種失敗畫出來是同一個畫面 ⇒ 使用者被指錯路').toBe(3);
   console.log('【三種失敗各自的畫面】', JSON.stringify(seen, null, 1).slice(0, 1500));
 });
+
+/* ══ 年資里程碑卡：三種狀態（2026-09-12）══════════════════════════════
+ *
+ * 🔴 這張卡原本的缺陷比 board.html 那四處更濃縮：「錯誤訊息」與「空狀態文字」
+ *    擠在同一個運算式的兩側，而外層 class 寫死 `.empty`。
+ * ⚠️ 而且它在 board.html 上**曾經是死路**——board 沒傳 opts ⇒ 失敗時整塊靜靜不顯示。
+ *    同一次已把 failBox 傳進去，所以「被擋住」現在真的會現形。
+ *    這幾條就是釘住「它現在是活的」。
+ */
+/** 開頁後切到員工名冊分頁（年資卡住在那裡），回 #anniv-box 的長相。 */
+async function annivLook(page) {
+  await page.click('#tabbtn-roster');
+  await page.waitForTimeout(300);
+  return page.evaluate(() => {
+    const box = document.getElementById('anniv-box');
+    if (!box) return null;
+    const cs = getComputedStyle(box);
+    const inner = box.firstElementChild;
+    const ics = inner ? getComputedStyle(inner) : null;
+    return {
+      boxDisplay: cs.display,
+      innerCls: inner ? inner.className : '(無內容)',
+      color: ics ? ics.color : '', bg: ics ? ics.backgroundColor : '',
+      text: (box.textContent || '').trim().slice(0, 40),
+    };
+  });
+}
+
+const ANNIV_ROWS = [{ name: '甲', unit: 'A部', years: 10, date: '2016-01-01', status: '在職' }];
+
+test('🔴 年資卡：有資料／沒有資料／被擋住，三種狀態要分得開', async ({ browser }) => {
+  const base = (anniv) => ({ ok: true, results: {
+    getCheckinOptions: { ok: true, units: [], titles: [] },
+    getCheckinPending: { ok: true, rows: [], who: '甲', admin: false },
+    getHrPending: { ok: true, rows: [] },
+    getRosterList: { ok: true, rows: [] },
+    getAnniversaries: anniv } });
+  const look = {};
+  const cases = [
+    ['有資料', base({ ok: true, year: 2026, rows: ANNIV_ROWS }), 'e1a-06-年資卡-有資料'],
+    ['沒有資料', base({ ok: true, year: 2026, rows: [] }), 'e1a-07-年資卡-沒有資料'],
+    ['被擋住', { ok: false, msg: MSG.unbound, reason: 'line_unbound' }, 'e1a-08-年資卡-被擋住'],
+  ];
+  for (const [name, envelope, shot] of cases) {
+    const p = await (await browser.newContext()).newPage();
+    const logs = await open(p, { envelope });
+    look[name] = await annivLook(p);
+    await p.screenshot({ path: `test-results/${shot}.png`, fullPage: true });
+    console.log(`【年資卡/${name}】`, JSON.stringify(look[name]));
+    console.log(`【年資卡/${name}】console：`, JSON.stringify(logs));
+    await p.close();
+  }
+
+  // ⬛ 對照組：有資料那格必須真的畫出名字，否則下面在比三個空殼
+  if (look['有資料'].text.indexOf('甲') < 0) {
+    throw new Error('有資料時沒畫出名單 ⇒ 這條測試什麼都沒比到：' + JSON.stringify(look['有資料']));
+  }
+  const sig = (v) => [v.boxDisplay, v.innerCls, v.color, v.bg].join('|');
+  expect(sig(look['被擋住']), '被擋住與沒有資料長得一模一樣 ⇒ 他不知道自己被擋住了')
+    .not.toBe(sig(look['沒有資料']));
+  expect(sig(look['被擋住']), '被擋住與有資料長得一模一樣').not.toBe(sig(look['有資料']));
+  // 被擋住時後端那句話要真的看得到
+  expect(look['被擋住'].text).toContain(MSG.unbound.slice(0, 10));
+});
