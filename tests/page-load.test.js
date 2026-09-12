@@ -30,8 +30,12 @@ const ROOT = path.join(__dirname, '..');
 // welfare.html（福委會發送頁）2026-08-29 補入。它是全站唯一「按下去就發 137 則、
 // 收不回來」的頁面，而它的啟動流程有四支非同步載入與三顆按鈕的接線——
 // 少一個識別字就是頁面停在載入中，而且沒有人會收到通知。
+// me.html（分流頁）2026-09-12 補入（E1b）。它是 LINE 登入之後第一個看到的畫面
+// ——它掛了，人就停在那裡，而且他連「要去哪一頁」都不知道。
+// ⚠️ **這份清單是手維護的**：新增一頁而忘了加進來，那一頁就沒有任何載入防護，
+//    而測試數字一條都不會變（新增 me.html 前後都是 906 條，實測）。
 const PAGES = ['admin.html', 'board.html', 'stats.html', 'attend.html', 'hr-stats.html',
-               'messages.html', 'index.html', 'staff.html', 'welfare.html'];
+               'messages.html', 'index.html', 'staff.html', 'welfare.html', 'me.html'];
 
 /** 一個什麼都收的假元素——頁面頂層常直接對 getElementById 的結果取屬性。 */
 function fakeEl(tag) {

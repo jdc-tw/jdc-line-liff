@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<title>我的頁面</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo-mark.svg" />
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="assets/gas-call.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans TC", sans-serif;
+    margin: 0; padding: 24px 16px 48px; font-size: 16px; line-height: 1.6;
+    color: #333; background: #f7f7f7; max-width: 480px; margin-left: auto; margin-right: auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #1a1a1a; }
+  #who { font-size: 14px; color: #777; margin: 0 0 20px; min-height: 22px; }
+  #who.err { color: #c00; }
+  .card {
+    display: block; background: #fff; border-radius: 12px; padding: 16px 18px;
+    margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    text-decoration: none; color: inherit; border: 1px solid transparent;
+  }
+  a.card:active { border-color: #06c755; }
+  .card .name { font-size: 17px; font-weight: 700; color: #1a1a1a; }
+  a.card .name::after { content: ' ›'; color: #06c755; }
+  .card .sub { font-size: 13px; color: #888; margin-top: 4px; }
+  /* 🔴 不可點的那幾列刻意做成看得出「這是一個頁面、但現在進不去」，
+     不是灰掉到看不見——看不見＝他會以為自己沒有那個權限。 */
+  .card.off { background: #f2f2f2; box-shadow: none; border: 1px dashed #d5d5d5; }
+  .card.off .name { color: #777; font-weight: 600; }
+  .card.off .sub { color: #999; }
+  .tag {
+    display: inline-block; font-size: 12px; font-weight: 700; border-radius: 4px;
+    padding: 1px 6px; margin-left: 6px; vertical-align: 2px;
+  }
+  .tag-off  { background: #ececec; color: #777; }
+  .tag-note { background: #fff4e5; color: #8a5300; }
+  .msg { padding: 14px 16px; border-radius: 10px; font-size: 15px; margin-bottom: 14px; }
+  .msg-err  { background: #fdecea; color: #b71c1c; }
+  .msg-info { background: #e8f0fe; color: #1a56c4; }
+  .btn {
+    display: block; width: 100%; padding: 13px; border: none; border-radius: 8px;
+    font-size: 16px; font-weight: 700; background: #06c755; color: #fff; cursor: pointer;
+  }
+  .foot { font-size: 13px; color: #999; margin-top: 24px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<h1>我的頁面</h1>
+<p id="who">確認身分中…</p>
+<div id="list"></div>
+<div class="foot" id="foot"></div>
+
+<script>
+/**
+ * **分流頁**（E1b 第 1 項，2026-09-12）。「我用 LINE 登入，我看得到哪幾頁？」
+ *
+ * ══ 🔴 這一頁刻意不做什麼 ═════════════════════════════════════════════
+ *
+ * **① 它不判斷權限。** 清單整份由後端 `listMyPages` 算（權威在 `roles.js` 的
+ *    `DISPATCH_PAGES` ＋ `ACTION_ROLES`）。前端自己列一份的話，兩份會分歧，
+ *    而分歧的長相是「畫面上有一個點下去會被擋的入口」——他做對了每一件事，
+ *    卻被告知沒有權限。
+ *
+ * **② 它不吃 `?t=`、也不產生任何帶 `?t=` 的連結。**
+ *    這一頁存在的前提就是「手上沒有那串亂碼」。做成「登入後發一把 token 給你」
+ *    ＝把登入變成憑證發放機，那是 2026-09-12 明確否決掉的方向。
+ *    ⇒ 還沒改成 LINE 登入的頁（`lineReady:false`）**列出來但不可點**，
+ *      要進去請用原本的舊連結。
+ *
+ * **③ 未遷移的頁不會被藏起來。** 藏起來的話，「我沒有那個權限」與
+ *    「那一頁還沒改好」在畫面上長得一模一樣，而這兩件事的處置相反
+ *    （一個要找人開權限，一個是等工程做完）。
+ */
+
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+/** 與 index.html／board.html／welfare.html 同一條 LIFF，不多開（`tools.md`：同一條 LIFF ＋ 參數）。 */
+var LIFF_ID = '2010451233-a781rqsm';
+
+/**
+ * 後端 `roles.js` `GATE_REJECT` 的代號 → 這一頁要不要給「重新登入」這顆鈕。
+ *
+ * 🔴 **判斷吃 `reason`，顯示吃後端的 `msg`。**
+ *    文案在後端、而且會為了人而改（`deny-no-role.js` 那次實測：拿文案當判準，
+ *    11 種措辭有 9 種會讓處置靜默消失）。這一頁只決定「要不要多一顆鈕」。
+ *
+ * ⚠️ **跨 repo 的手動對齊**（形式沿用 `assets/deny-no-role.js` 的既有慣例）：
+ *    這三個字面值來自 `jdc-line-gas` 的 `line-platform/roles.js` `GATE_REJECT`。
+ *    兩邊各有測試釘住自己那半，**沒有任何機械的東西逼兩邊相等**。
+ *    只改一邊的話兩邊都綠，而這顆鈕靜靜地不再出現（或出現在沒用的地方）。
+ * ⚠️ 漏掉一個代號的後果是**少一顆鈕**（看得見、他會來問），不是誤導——
+ *    所以這裡刻意用白名單，而不是「除了這幾種以外都給鈕」。
+ */
+var 重登有用的 = { line_no_token: 1, line_bad_token: 1 };
+
+function el(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function setWho(t, isErr) {
+  var w = el('who'); w.textContent = t; w.className = isErr ? 'err' : '';
+}
+/** 把整頁換成一段話。**永遠說得出「接下來該做什麼」**，不留純粹的「失敗」。 */
+function showMsg(msg, reason) {
+  var html = '<div class="msg msg-err">' + esc(msg) + '</div>';
+  if (reason && Object.prototype.hasOwnProperty.call(重登有用的, reason)) {
+    html += '<button class="btn" id="relogin">重新登入</button>';
+  }
+  el('list').innerHTML = html;
+  var b = el('relogin');
+  if (b) {
+    b.addEventListener('click', function () {
+      // 🔴 先登出再登入：只呼叫 login 的話，LINE 會認為「已經登入了」而直接回來，
+      //    帶著同一把過期憑證 ⇒ 他會一直按、一直失敗，而畫面每次都說請重新登入。
+      try { if (window.liff && liff.isLoggedIn()) liff.logout(); } catch (e) {}
+      liff.login({ redirectUri: location.href });
+    });
+  }
+}
+
+/** 畫清單。`lineReady` 決定可不可點，`note` 決定要不要加一句「這一格還有別的條件」。 */
+function render(res) {
+  setWho(res.who ? ('以 ' + res.who + ' 的身分登入') : '已登入', false);
+  var pages = res.pages || [];
+  if (!pages.length) {
+    el('list').innerHTML = '<div class="msg msg-info">'
+      + '您的帳號目前沒有可以進入的頁面。<br>'
+      + '若這不符合預期，請把上面那個名字一起告訴系統維護者'
+      + '——登入成另一個 LINE 帳號時，畫面看起來也是這樣。</div>';
+    return;
+  }
+  var html = '';
+  pages.forEach(function (p) {
+    var 副標 = [];
+    if (p.note) 副標.push('<span class="tag tag-note">' + esc(p.note) + '</span>');
+    if (p.lineReady) {
+      html += '<a class="card" href="' + esc(p.page) + '">'
+        + '<div class="name">' + esc(p.title) + '</div>'
+        + (副標.length ? '<div class="sub">' + 副標.join('') + '</div>' : '')
+        + '</a>';
+    } else {
+      // 🔴 **不可點，而且說得出為什麼與怎麼辦。** 一個點了必定失敗的連結
+      //    比沒有連結更糟（board.html 的跨看板切換那一格是同一個判準）。
+      副標.unshift('<span class="tag tag-off">尚未支援 LINE 登入</span>');
+      html += '<div class="card off">'
+        + '<div class="name">' + esc(p.title) + '</div>'
+        + '<div class="sub">' + 副標.join('') + '<br>這一頁還要用原本的連結進入。</div>'
+        + '</div>';
+    }
+  });
+  el('list').innerHTML = html;
+  var 未開放 = pages.filter(function (p) { return !p.lineReady; }).length;
+  el('foot').textContent = 未開放
+    ? ('其中 ' + 未開放 + ' 頁還沒改成 LINE 登入，暫時仍要用原本的連結。')
+    : '';
+}
+
+function freshIdToken() {
+  if (!(window.liff && typeof liff.getIDToken === 'function')) return '';
+  var t = liff.getIDToken();
+  return t ? String(t) : '';
+}
+
+function load() {
+  // ⚠️ 憑證在呼叫當下才取，不是開頁時取一次存起來（它只有效一小時）。
+  //    這一頁很短命，但寫法與 board／welfare 一致才不會變成「只有這一頁不一樣」。
+  return gasCall(GAS_URL, 'listMyPages', { idToken: freshIdToken() }).then(function (r) {
+    if (r && r.ok) { render(r); return; }
+    // 🔴 傳輸失敗與「伺服器說不行」要分開講：一個重試有用、一個重試永遠沒用。
+    if (r && r.transport) {
+      setWho('連不上伺服器', true);
+      showMsg((r && r.msg) || '連線失敗。請確認網路後重新整理。', '');
+      return;
+    }
+    setWho('無法確認您的權限', true);
+    showMsg((r && r.msg) || '目前無法取得您的頁面清單，請稍後再試。', r && r.reason);
+  });
+}
+
+function start() {
+  if (!(window.liff && typeof liff.init === 'function')) {
+    setWho('LINE 元件沒有載入', true);
+    showMsg('LINE 的元件沒有載入成功，沒辦法確認您的身分。'
+      + '請確認網路正常後重新整理；一直這樣的話請找資訊人員。', '');
+    return;
+  }
+  return liff.init({ liffId: LIFF_ID }).then(function () {
+    if (!liff.isLoggedIn()) {
+      setWho('正在前往 LINE 登入，登入後會自動回到這一頁…', false);
+      liff.login({ redirectUri: location.href });
+      return;                                  // 導頁中，不要發車
+    }
+    if (!freshIdToken()) {
+      setWho('拿不到登入憑證', true);
+      showMsg('已經登入 LINE，但拿不到這一頁需要的憑證。'
+        + '這是 LINE 後台的設定問題，重新整理不會好，請找資訊人員。', '');
+      return;
+    }
+    return load();
+  }).catch(function (err) {
+    // **不靜默**：否則畫面只會停在「確認身分中…」，而查不出是哪一段。
+    setWho('確認身分時失敗', true);
+    showMsg('確認身分時失敗：' + ((err && err.message) ? err.message : String(err)), '');
+  });
+}
+
+start();
+</script>
+</body></html>
