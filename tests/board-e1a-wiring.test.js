@@ -281,3 +281,42 @@ test('LIFF ID 與 index／welfare 同一條（tools.md：不多開 LIFF ID）', 
   assert.equal(b, w, 'board 與 welfare 的 LIFF ID 不同');
   assert.equal(b, i, 'board 與 index 的 LIFF ID 不同');
 });
+
+/* ══ 憑證中途失效：不可以靜默改走舊路（2026-09-12）══════════════════════
+ *
+ * 🔴 **這條路真的到得了**：ID token 只有效一小時，而本頁的既有註解自己寫著
+ *    「人事開著這一頁核准一整個上午是常態」。
+ *    原本 `if(fresh)p.idToken=fresh;` 拿不到就靜默不帶 ⇒ 後端分流把它當成**舊路**
+ *    ⇒ 回「無權限或連結已失效。」⇒ **那句話會叫她去換一條連結，而換連結不會有用。**
+ *    「沒登入」與「登入了但此刻取不到憑證」處置相反，卻長得一模一樣。
+ */
+
+test('🔴 憑證中途失效 → **不送出**，而且講的是「重開這一頁」不是「換連結」', async () => {
+  const { ctx, urls, cleanup } = runBoard({ search: '' });
+  await settle();
+  try {
+    const before = urls.length;
+    ctx.liff.getIDToken = () => '';          // 一小時後
+    const r = await ctx.jsonp('getHrPending', { token: ctx.TOKEN });
+    assert.equal(urls.length, before,
+      '沒有憑證還是把請求送出去了 ⇒ 後端會把它當舊路，回一句叫她白跑一趟的話');
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'line_no_token');
+    assert.match(r.msg, /重新開啟/, '訊息沒講出「重開這一頁」⇒ 她不知道下一步該做什麼');
+    assert.equal(/無權限或連結已失效/.test(r.msg), false,
+      '又回到那句會叫她去換連結的話了');
+  } finally { cleanup(); }
+});
+
+test('⬛ 對照組：舊路 ?t= 不受這道守門影響（憑證跟它無關）', async () => {
+  const { ctx, urls, cleanup } = runBoard({ search: '?t=STUBTOKEN' });
+  await settle();
+  try {
+    const before = urls.length;
+    ctx.liff.getIDToken = () => '';
+    ctx.jsonp('getHrPending', { token: ctx.TOKEN });
+    assert.equal(urls.length, before + 1,
+      '舊路被這道新守門擋住了 ⇒ 我把今天唯一還能用的那條路弄壞了');
+    assert.match(urls[urls.length - 1], /[?&]token=STUBTOKEN/);
+  } finally { cleanup(); }
+});

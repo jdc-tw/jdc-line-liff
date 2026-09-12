@@ -228,6 +228,13 @@
 <script src="assets/board-cache.js"></script>
 <script>
 var GAS_URL='https://script.google.com/macros/s/AKfycbxaDoA_7aOW325p8165VegSqdRL8gRhfTEMfjosdh1A0T4rmzj4Pl7F3k5PToe2po-xtg/exec';
+/**
+ * 「前端沒把 LINE 憑證帶上來」這件事要講的話。
+ * ⚠️ **逐字取自後端 `line-platform/roles.js` 的 `GATE_MSG_LINE.line_no_token`**
+ *    ——同一種情況必須講同一句話。改那邊就要改這邊；
+ *    這是刻意的第二份，因為這一發根本不會送出去，後端沒有機會回答。
+ */
+var LINE_NO_TOKEN_MSG='沒有取得您的 LINE 登入資訊，請關掉這一頁重新開啟。';
 var EMAIL_DOMAIN='@jdc-corpn.com.tw';
 var SENTINEL='（找不到，由人事填寫）';   // 新人「找不到」哨兵 → 看板停在請選擇
 // 取值走共用的 assets/url-token.js（E2 準備）——全站四種寫法先收成一支，
@@ -258,7 +265,25 @@ function jsonp(action,params){
   //    而他根本沒登出過」＝失敗偽裝成使用者的錯。
   var p={};
   Object.keys(params||{}).forEach(function(k){p[k]=params[k];});
-  if(!TOKEN){var fresh=freshIdToken();if(fresh)p.idToken=fresh;}
+  // 🔴 **拿不到憑證就不要送。** 原本是 `if(fresh)p.idToken=fresh;`——拿不到就靜默不帶，
+  //    而後端的分流是「有 idToken 且沒 token 才走 LINE 那條」⇒ 不帶就被當成**舊路**，
+  //    舊路看到空 token 回「無權限或連結已失效。」。
+  //    ⚠️ 那句話會叫她去換一條連結，而換連結不會有用——**真正該做的是重開這一頁**。
+  //       「沒登入」與「登入了但此刻取不到憑證」處置相反，卻長得一模一樣。
+  //
+  //    **這條路真的到得了**：ID token 只有效一小時，而上面那段註解自己寫著
+  //    「人事開著這一頁核准一整個上午是常態」——過期後的每一支呼叫都會走到這裡。
+  //
+  //    文案與 `reason` 沿用後端 `roles.js` 的 `line_no_token`（逐字相同）：
+  //    **同一種情況必須講同一句話**，不可以因為這一發沒送出去就另造一句。
+  if(!TOKEN){
+    var fresh=freshIdToken();
+    if(!fresh){
+      authBlock(LINE_NO_TOKEN_MSG,true);
+      return Promise.resolve({ok:false,reason:'line_no_token',msg:LINE_NO_TOKEN_MSG});
+    }
+    p.idToken=fresh;
+  }
   params=p;
   var qs=Object.keys(params||{}).map(function(k){return '&'+encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('');
   // 逾時不靠 AbortController：iOS 12.1 以前沒有它，`new AbortController()` 會直接 ReferenceError，
