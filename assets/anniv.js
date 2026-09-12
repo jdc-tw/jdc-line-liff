@@ -1,8 +1,19 @@
-// 年資里程碑（board/stats 兩看板共用）：當年度年資逢 5 倍數的在職者。
+// 年資里程碑：當年度年資逢 5 倍數的在職者。
+//
+// ⚠️ **2026-09-12 更正：只有 board.html 載入本檔，stats.html 沒有。**
+//    這三行原本寫「board/stats 兩看板共用」「stats 獨立分頁用」，下面 annivPaint_
+//    裡還有一句「呼叫端（stats/board）已經放在卡片裡」——**全部是過期的**，
+//    stats 後來不載它了而註解沒回填。
+//    🔴 那幾句害人繞了一圈：有人（我）據此判斷「改它會動到 stats.html」，
+//       因而把一個其實在範圍內的修正列成界線外的事。
+//       **註解是二手、`<script src>` 清單是一手**——要問「誰載入它」就去數載入清單。
+//    重算：`for f in *.html; do grep -cE '<script[^>]*src="assets/anniv\.js"' $f; done`
+//    ⬛ 對照組：同一把尺數 board-cache.js 會得到 6 頁，所以它不是恆回 1。
+//
 // 用法：頁面放 <div id="anniv-box">…</div>，載入後呼叫 annivInit(jsonp, token[, opts])。
-// 預設名單空＝整塊不顯示（board 員工名冊分頁內嵌用）；opts.emptyText 有給＝空名單也顯示該訊息（stats 獨立分頁用）。
+// opts.emptyText  有給＝名單空也顯示這句；不給＝整塊不顯示（board 目前如此）。
+// opts.failBox    有給＝後端回失敗時用它畫。**本檔刻意不自備失敗樣式**，理由見 annivPaint_。
 function annivInit(jsonpFn, token, opts) {
-  var emptyText = opts && opts.emptyText;
   var painted = false;
   // 秒顯（2026-08-20）：這一支本來只寫進快取、沒有任何地方讀回來——姓名在磁碟躺七天卻零好處。
   // 補上讀取端之後，重開頁時這張卡跟名冊列表同時出現，不會晚一步才「長出來」。
@@ -11,12 +22,12 @@ function annivInit(jsonpFn, token, opts) {
   if (typeof CACHE_READY !== 'undefined' && typeof cacheGet === 'function' && typeof N !== 'undefined') {
     CACHE_READY.then(function () {
       var c = cacheGet(N.anniversaries);
-      if (c) { annivPaint_(c.value, emptyText); painted = true; }
+      if (c) { annivPaint_(c.value, opts); painted = true; }
     });
   }
   jsonpFn('getAnniversaries', { token: token }).then(function (r) {
     // 失敗時只有「畫面上還沒有東西」才蓋上去，否則會把剛秒顯的內容抹掉
-    if ((r && r.ok) || !painted) annivPaint_(r, emptyText);
+    if ((r && r.ok) || !painted) annivPaint_(r, opts);
   });
 }
 /**
@@ -36,22 +47,36 @@ function annivOnLeave_(o) {
   return !sep(st) && !duty(st);
 }
 // 只負責畫。成功與失敗兩種輸入都收，快取與網路兩條路才能共用同一份繪製邏輯。
-function annivPaint_(r, emptyText) {
+function annivPaint_(r, opts) {
+  var emptyText = opts && opts.emptyText;
+  var failBox = opts && opts.failBox;
   {
     var box = document.getElementById('anniv-box');
     if (!box) return;
     var rows = (r && r.ok && r.rows) || [];
     if (!rows.length) {
-      if (emptyText) { box.innerHTML = '<div class="empty">' + annivEsc_((r && !r.ok && r.msg) || emptyText) + '</div>'; box.style.display = ''; }
+      // 🔴 **「載不到／被擋住」與「沒有資料」是兩條路，在這裡就分開。**
+      //    原本兩者擠在同一個運算式的兩側
+      //    （`annivEsc_((r && !r.ok && r.msg) || emptyText)`），外層 class 寫死 `.empty`
+      //    ⇒ 被擋住的人看到的東西，跟「今年沒有人逢五週年」長得一模一樣。
+      //    分開寫的好處是**走錯路就會紅**，不是「顏色錯才會紅」。
+      if (r && !r.ok) {
+        // ⚠️ **失敗長什麼樣不由本檔決定**——呼叫端傳 failBox 進來，
+        //    全站「錯誤長什麼樣」才只有一份定義。沒傳就不畫（維持今天的行為），
+        //    **不在這裡寫第二份樣式**——那正是這一輪在消滅的形狀。
+        if (failBox) { box.innerHTML = failBox(r.msg, '載入失敗'); box.style.display = ''; }
+        return;
+      }
+      if (emptyText) { box.innerHTML = '<div class="empty">' + annivEsc_(emptyText) + '</div>'; box.style.display = ''; }
       return;
     }
     // 2026-08-16 改版（使用者逐項指定）：
     // ① 拿掉 🎖 與 border-left:4px solid #b8860b（他說的那條「奇怪的黃色直線」）
-    // ② 不再自己包一層 .card——呼叫端（stats/board）已經放在卡片裡，內層再包就是卡中卡
+    // ② 不再自己包一層 .card——呼叫端（board）已經放在卡片裡，內層再包就是卡中卡
     // ③ 改標籤語彙：名字大、單位與入社日縮成小標籤（淺底淡字）
     // ④ 以年資分組，由高到低——這份名單的用途就是「今年誰滿幾年」，年資才是主鍵，不是姓名
-    // 樣式寫成 inline：這支 board.html 也在用，那頁沒有 stats.html 的 class，
-    // 靠 class 會在其中一頁變成裸文字（而且不會報錯）。
+    // 樣式寫成 inline：不依賴任何一頁的 class——靠 class 會在沒有那份樣式的頁面
+    // 變成裸文字（而且不會報錯）。
     var TAG = 'display:inline-block;font-size:11px;line-height:1.75;padding:0 6px;'
       + 'border-radius:2px;background:#f1f1ef;color:#6b6b68;vertical-align:2px;white-space:nowrap';
     var groups = {}, order = [];
