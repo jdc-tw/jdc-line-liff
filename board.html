@@ -317,15 +317,21 @@ function freshIdToken(){
 function lineSub(){
   try{var d=liff.getDecodedIDToken();return (d&&d.sub)?String(d.sub):'';}catch(e){return '';}
 }
-/** 擋住整頁並說明原因。**不靜默**——否則畫面只會停在「載入中」而查不出哪一段。 */
-function authBlock(msg){
+/**
+ * 說明目前的身分狀態。**不靜默**——否則畫面只會停在「載入中」而查不出哪一段。
+ *
+ * ⚠️ **`isErr` 不是可有可無的參數。** 第一版所有訊息都印紅色，實際畫出來看才發現
+ *    「正在前往 LINE 登入…」**也是紅的**——那是一個正常的過場，紅色會讓人以為壞了。
+ *    紅色要留給真的擋住的情況，否則紅色就不再代表任何事。
+ */
+function authBlock(msg,isErr){
   var el=document.getElementById('who');
-  if(el){el.textContent=msg;el.style.color='#c00';}
+  if(el){el.textContent=msg;el.style.color=isErr?'#c00':'#888';}
   else{document.body.insertAdjacentHTML('afterbegin',
-    '<div style="padding:16px;color:#c00;font-weight:700">'+msg+'</div>');}
+    '<div style="padding:16px;font-weight:700;color:'+(isErr?'#c00':'#888')+'">'+msg+'</div>');}
 }
 /** 永遠不 resolve ⇒ 後面的首載整批不會發車。**fail-closed，不是忘了 resolve。** */
-function authHalt(msg){authBlock(msg);return new Promise(function(){});}
+function authHalt(msg){authBlock(msg,true);return new Promise(function(){});}
 
 function startAuth(){
   if(TOKEN)return Promise.resolve('token');           // ①舊路
@@ -335,7 +341,7 @@ function startAuth(){
   }
   return liff.init({liffId:LIFF_ID}).then(function(){
     if(!liff.isLoggedIn()){
-      authBlock('正在前往 LINE 登入，登入後會自動回到這一頁…');
+      authBlock('正在前往 LINE 登入，登入後會自動回到這一頁…',false);
       liff.login({redirectUri:location.href});
       return new Promise(function(){});               // 導頁中，不要發車
     }
