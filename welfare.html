@@ -263,18 +263,20 @@
       反覆在防的「畫面說 A、系統送 B」。**那句話寫的當下是真的，現在過期了**——
       改名與開放授權是同一天的兩件事，先後差幾個小時。
 
-      實測後端 `5593e3d` 的 `isWelfareIdentity_`（第二道守門「誰進得來」的唯一判準）：
+      實測後端 `5593e3d` 的 `isMessagingIdentity_`（第二道守門「誰進得來」的唯一判準）：
+        ⚠️ 2026-09-12 改名：這一支原叫 `isWelfareIdentity_`，角色名 `welfare` → `messaging`。
         · 原本第一格是 `identity.source !== 'scoped'` ⇒ **只有受限身分進得來**。
           那一格已被 `2416484` 拿掉，board 身分現在照過。
         · 現在的判準是「`source` 欄位存在（fail-closed，擋接線漏掉的殘缺身分）
-          **且** `hasWelfareRole(identity.roles)`」，而 `WELFARE_ROLES` 是
-          `['welfare', 'broadcast']`。
-      ⇒ 授權名單上掛 `welfare` 或 `broadcast` 的人都進得來，不再限於福委會那一份白名單。
+          **且** `hasMessagingRole(identity.roles)`」，而 `MESSAGING_ROLES` 是
+          `['messaging', 'welfare', 'broadcast']`（後兩個是還沒退場的舊名字）。
+      ⇒ 授權名單上掛 `messaging`（或還沒換掉的 `welfare`／`broadcast`）的人都進得來，
+        不再限於福委會那一份白名單。
         畫面上這個名字與系統實際認的範圍**現在是一致的**。
 
       ⚠️ **這一段不要照抄成新的永久宣稱**——它跟上一版一樣會過期。要重新確認就去量：
-        `grep -n "function isWelfareIdentity_" line-platform/Code.js` 讀它的本體，
-        再 `grep -n "var WELFARE_ROLES" line-platform/roles.js` 看角色清單。
+        `grep -n "function isMessagingIdentity_" line-platform/Code.js` 讀它的本體，
+        再 `grep -n "var MESSAGING_ROLES" line-platform/roles.js` 看角色清單。
         **刻意不寫行號**：上一版寫了 `Code.js:5957`，五個小時後它是 6011。
       ⚠️ 仍然成立的那一半：**要再擴大範圍是動後端那一支的事，不是改這裡的字。**
 
