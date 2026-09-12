@@ -1048,7 +1048,10 @@ function lockText() {
  */
 function gateFailText(r) {
   var reason = String((r && r.reason) || '');
-  var msg = String((r && r.msg) || '');
+  // ⚠️ `error` 不是多餘的：後端 `doGet` 的外層 catch 回的是
+  //    `{ok:false, error:...}`——**一個 `msg` 都沒有**。只看 `msg` 的話，
+  //    程式炸掉那一種會變成「取得姓名資料失敗。」而把唯一的線索丟掉。
+  var msg = String((r && r.msg) || (r && r.error) || '');
   var M = {
     role_mismatch: ['您的權限看不到這一頁的姓名。請改用您自己的看板連結；'
       + '若確認需要這一頁，請聯絡系統維護者調整權限。', '無權限'],

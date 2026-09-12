@@ -120,6 +120,13 @@ test('🔴 完全沒有 reason（後端沒給）：也要說，而且要說「�
   assert.match(v.banner, /找不到員工名冊/);
 });
 
+test('🔴 後端外層 catch 回的是 {ok:false, error}——沒有 msg，線索不可以被丟掉', () => {
+  // jdc-line-gas Code.js doGet 的 `} catch (err) { result = {ok:false, error:...} }`。
+  // 只讀 msg 的話，程式炸掉那一種會變成一句空泛的「取得姓名資料失敗。」
+  const v = fail({ ok: false, error: 'TypeError: x is not a function' });
+  assert.match(v.banner, /TypeError: x is not a function/);
+});
+
 test('🔴 空物件／null 也不能靜默', () => {
   for (const r of [{}, null, undefined, { ok: false }]) {
     const v = fail(r);
